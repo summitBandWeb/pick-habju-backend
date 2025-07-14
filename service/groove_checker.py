@@ -1,7 +1,7 @@
 from typing import List
 from bs4 import BeautifulSoup
 import httpx
-from config import GROOVE_BASE_URL, GROOVE_RESERVE_URL
+from config import GROOVE_RESERVE_URL1, GROOVE_RESERVE_URL
 from utils.login import LoginManager
 from models.dto import RoomAvailability, RoomKey
 from datetime import datetime, timedelta
@@ -44,7 +44,7 @@ async def get_groove_availability(
             data={"reserve_date": date, "gubun": "sadang"},
             headers={
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{GROOVE_BASE_URL}/reservation/reserve.asp"
+                "Referer": GROOVE_RESERVE_URL1
             }
         )
 
