@@ -7,6 +7,7 @@ from utils.room_loader import load_rooms
 from models.dto import RoomKey
 from models.dto import RoomAvailability
 from typing import List
+from utils.client_loader import load_client
 
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -30,9 +31,8 @@ async def _fetch_dream_availability_room(date: str, hour_slots: List[str], biz_i
         'sch_date': date
     }
 
-    async with httpx.AsyncClient() as client:
-      response = await client.post(_URL, headers=HEADERS, data=data)
-      response_data = response.json()
+    response = await load_client(_URL, headers=HEADERS, data=data)
+    response_data = response.json()
 
     available = True
     available_slots = {}
