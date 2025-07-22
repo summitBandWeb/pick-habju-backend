@@ -9,7 +9,7 @@ from models.dto import AvailabilityRequest, AvailabilityResponse
 from service.naver_checker import get_naver_availability
 from service.groove_checker import get_groove_availability
 
-router = APIRouter(prefix="/api/available")
+router = APIRouter(prefix="/api/rooms/availability")
 
 @router.post("/")
 async def your_handler(request: AvailabilityRequest):
@@ -18,12 +18,12 @@ async def your_handler(request: AvailabilityRequest):
     naver_rooms = filter_rooms_by_type(request.rooms, "naver")
 
     # 각 크롤러에 바로 전달
-    #dream_result= await get_dream_availability(request.date, request.hour_slots, dream_rooms)
+    dream_result= await get_dream_availability(request.date, request.hour_slots, dream_rooms)
     groove_result= await get_groove_availability(request.date, request.hour_slots, groove_rooms)
     naver_result = await get_naver_availability(request.date, request.hour_slots, naver_rooms)
 
     # 응답 구성
-    results = groove_result + naver_result # + dream_result
+    results = groove_result #+ naver_result + dream_result
     return AvailabilityResponse(
         date=request.date,
         hour_slots=request.hour_slots,
