@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Union
 
 # 요청 DTO
 class RoomKey(BaseModel):
@@ -19,8 +19,8 @@ class RoomAvailability(BaseModel):
     branch: str # 합주실 지점 이름(비쥬합주실 1호점)
     business_id: str # 합주실 지점 id
     biz_item_id: str # 합주실 룸 id
-    available: bool # 합주실 최종 예약 가능 여부 
-    available_slots: Dict[str, bool] # 합주실 예약 가능한 시간슬롯들("16:00": true,"17:00": false)
+    available: Union[bool, str] # 합주실 최종 예약 가능 여부
+    available_slots: Dict[str, Union[bool, str]] # 합주실 예약 가능한 시간슬롯들("16:00": true,"17:00": false)
 
 # 응답 전체 DTO (요약 필드 포함)
 class AvailabilityResponse(BaseModel):

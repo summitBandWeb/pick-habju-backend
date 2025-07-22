@@ -18,7 +18,7 @@ def validate_room_key_exists(room: RoomKey):
         for r in rooms
     )
     if not found:
-        raise RoomKeyNotFoundError(f"RoomKey가 rooms.json에 존재하지 않습니다: {room}")
+        raise RoomKeyNotFoundError(rooms)
 
 def validate_room_key(room: RoomKey):
     """RoomKey 전체 검증(필드 + 존재여부)"""

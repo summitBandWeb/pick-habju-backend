@@ -8,9 +8,8 @@ from service.dream_checker import get_dream_availability
 from service.naver_checker import get_naver_availability
 from service.groove_checker import get_groove_availability
 
-RoomResult = Union[RoomAvailability, Exception]
-
 router = APIRouter(prefix="/api/rooms/availability")
+RoomResult = Union[RoomAvailability, Exception]
 
 @router.post("/")
 async def your_handler(request: AvailabilityRequest):

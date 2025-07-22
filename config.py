@@ -13,6 +13,7 @@ DREAM_BASE_URL = os.getenv("DREAM_BASE_URL")
 
 GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp"
 GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp"
+GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp"
 
 DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php" # 드림 합주실 실제 로그인 URL
 DREAM_HEADERS = {
