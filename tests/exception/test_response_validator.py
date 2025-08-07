@@ -7,7 +7,7 @@ import json
 
 def load_roomkeys_from_json():
     """data/rooms.json 파일에서 RoomKey 리스트를 생성한다."""
-    rooms_path = Path(__file__).parent.parent.parent / "data" / "rooms.json"
+    rooms_path = Path(__file__).parent.parent / "rooms.json"
     with open(rooms_path, encoding="utf-8") as f:
         rooms = json.load(f)
     return [RoomKey(**room) for room in rooms]

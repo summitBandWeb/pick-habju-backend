@@ -1,5 +1,5 @@
 import pytest
-from app.validate import validate_room_key_fields, validate_room_key_exists
+from app.validate.roomkey_validator import validate_room_key_fields, validate_room_key_exists
 from app.exception.common.roomkey_exception import RoomKeyFieldMissingError, RoomKeyNotFoundError
 from app.models.dto import RoomKey
 

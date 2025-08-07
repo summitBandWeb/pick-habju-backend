@@ -1,5 +1,5 @@
 import pytest
-from app.validate import validate_date_format, validate_date_not_past
+from app.validate.date_validator import validate_date_format, validate_date_not_past
 from app.exception.common.date_exception import InvalidDateFormatError, PastDateNotAllowedError
 from datetime import datetime, timedelta
 

@@ -1,7 +1,11 @@
 import pytest
 from datetime import datetime, timedelta
+
+from app.exception.groove_exception import GrooveLoginError, GrooveCredentialError
 from app.models.dto import RoomKey
 from app.crawler.groove_checker import get_groove_availability
+from app.utils.room_loader import load_rooms
+
 
 @pytest.mark.asyncio
 async def test_get_groove_availability():

@@ -80,23 +80,5 @@ async def get_naver_availability(
     hour_slots: List[str],
     naver_rooms: List[RoomKey]
 ) -> List[RoomResult]:
-    try:
-        validate_date(date)
-    except InvalidDateFormatError as e:
-        print(f"[날짜 형식 오류]: {e}")
-        raise
 
-    try:
-        validate_hour_slots(hour_slots,date)
-    except InvalidHourSlotError as e:
-        print(f"[시간 형식 오류]: {e}")
-        raise
-
-    async def safe_fetch(room: RoomKey, InvalidRoomKeyError=None) -> RoomResult:
-        try:
-            validate_room_key(room)
-            return await fetch_naver_availability_room(date, hour_slots, room)
-        except (InvalidRoomKeyError, NaverAvailabilityError) as e:
-            return e
-
-    return await asyncio.gather(*[safe_fetch(room) for room in naver_rooms])
+    return await asyncio.gather(*[fetch_naver_availability_room(date, hour_slots, room) for room in naver_rooms])

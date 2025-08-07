@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import Union, List
 
-from app.validate.common import validate_availability_request
+from app.validate.common_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
 

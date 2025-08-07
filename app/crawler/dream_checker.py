@@ -1,4 +1,3 @@
-import httpx
 import re
 import html
 import sys
@@ -11,11 +10,6 @@ from app.utils.client_loader import load_client
 from typing import List, Union
 
 from app.exception.dream_exception import DreamAvailabilityError
-from app.validate.date_validator import validate_date
-from app.validate.hour_validator import validate_hour_slots
-from app.validate.response_validator import validate_response_rooms
-from app.validate.roomkey_validator import validate_room_key
-
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -34,8 +28,6 @@ async def get_dream_availability(
       hour_slots: List[str], 
       dream_rooms: List[RoomKey]
 ) -> List[RoomAvailability]:
-    validate_date(date)
-    validate_hour_slots(hour_slots)
     
     today = datetime.today().date()
 
@@ -57,7 +49,6 @@ async def get_dream_availability(
     return await asyncio.gather(*[safe_fetch(date, hour_slots, room.biz_item_id) for room in dream_rooms])
 
 async def safe_fetch(date, hour_slots, room: RoomKey) -> RoomResult:
-    validate_room_key(room)
     return await _fetch_dream_availability_room(date, hour_slots, room)
 
 

@@ -13,17 +13,6 @@ from app.validate.hour_validator import validate_hour_slots
 from app.validate.roomkey_validator import validate_room_key, validate_room_key_exists
 
 
-# --- 입력값 검증 함수 ---
-def validate_inputs(date: str, hour_slots: List[str], rooms: List[RoomKey]):
-    validate_date(date)
-    validate_hour_slots(hour_slots, date)  # 이 함수가 각 slot 형식("HH:MM")과 미래시간 검증
-    if not rooms:
-        raise RoomKeyNotFoundError(f"RoomKey가 rooms.json에 존재하지 않습니다: {rooms}")
-
-def validate_room_keys(rooms: List[RoomKey]):
-    for room in rooms:
-        validate_room_key(room)
-
 # --- 개별 슬롯(off/on) 체크 함수 ---
 def check_hour_slot(soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> bool:
     hour_int = int(hour_str.split(":")[0])
@@ -58,7 +47,6 @@ async def login_and_fetch_html(date: str, branch_gubun: str="sadang"):
 async def fetch_room_availability(
         room: RoomKey, hour_slots: List[str], soup: BeautifulSoup
 ) -> RoomAvailability:
-    validate_room_key(room)
     rm_ix = room.biz_item_id
 
     # 예외 또는 정보 없음 상태 판단용 임시 값 예시
@@ -100,8 +88,6 @@ async def get_groove_availability(
     hour_slots: List[str],
     rooms: List[RoomKey]
 ) -> List[RoomAvailability]:
-    validate_inputs(date, hour_slots, rooms)
-    validate_room_keys(rooms)
 
     html = await login_and_fetch_html(date, branch_gubun="sadang")
     soup = BeautifulSoup(html, "html.parser")
