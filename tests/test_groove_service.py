@@ -23,7 +23,7 @@ async def test_get_groove_availability():
             groove_rooms.append(room)
 
     result = await get_groove_availability(date, hour_slots, groove_rooms)
-    print(result)  # 가공 없이 그대로 출력
+    print(result)
 
 @pytest.mark.asyncio
 async def test_groove_login_error():

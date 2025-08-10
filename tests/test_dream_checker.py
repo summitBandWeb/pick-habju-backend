@@ -16,10 +16,8 @@ async def test_get_dream_availability():
         ]
     hour_slots = ["13:00", "14:00"]
     result = await get_dream_availability(date, hour_slots, rooms)
-    # ✅ 결과가 리스트인지 확인
     assert isinstance(result, list)
     assert len(result) == 5
 
-    # ✅ 각 요소에 필요한 키가 들어있는지 확인
     for room_result in result:
         assert isinstance(room_result, RoomAvailability)
