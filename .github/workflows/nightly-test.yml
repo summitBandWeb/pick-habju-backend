@@ -18,7 +18,7 @@ jobs:
         if: failure()
         uses: Ilshidur/action-discord@master
         with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           message: |
             🚨 **Nightly Test 실패**
             워크플로우: ${{ github.workflow }}
