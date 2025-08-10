@@ -7,29 +7,105 @@ on:
       - main
       - master
 
-jobs:
-  test-and-deploy:
-    runs-on: ubuntu-latest
+env:
+  AWS_REGION: ap-northeast-2
+  AWS_S3_BUCKET: pick-habju-back-deploy-bucket
+  AWS_CODE_DEPLOY_APPLICATION: pick-habju-Application-CD
+  AWS_CODE_DEPLOY_GROUP: pick-habju-Deployment-Group
 
+jobs:
+  # 1. 테스트 잡(Job)
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Python 셋업 (예시)
+      - name: Python 셋업 및 가상환경 생성
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: 'pip' # 패키지 캐싱으로 설치 속도 향상
 
-      - name: 패키지 설치
-        run: pip install -r ./pick-habju-backend/requirements.txt
+      - name: 가상환경 활성화 및 패키지 설치
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r ./pick-habju-backend/requirements.txt
 
-      - name: 테스트 실행
-        run: pytest  # 실패시 아래 단계로 못 넘어감
+      - name: 테스트 실행 (가상환경 내에서)
+        run: |
+          source venv/bin/activate
+          pytest
 
-      - name: Vercel 배포
-        if: success()
-        uses: amondnet/vercel-action@v25
+      - name: Discord에 테스트 실패 알림 전송
+        if: failure() && steps.pytest.outcome == 'failure'
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "🚨 **테스트 실패!** 배포가 중단되었습니다.",
+            "embeds": [
+              {
+                "title": "실패한 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 15158332,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # 2. 배포 잡(Job) - 테스트 잡이 성공해야만 실행됨
+  deploy:
+    name: Deploy
+    needs: test # 'test' 잡이 성공적으로 끝나야 이 잡을 시작
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: make application.yml
+        run: |
+          mkdir -p ./src/main/resources
+          cd ./src/main/resources
+          touch ./application.yml
+          touch ./application-common.yml
+          touch ./application-prod.yml
+          echo "${{ secrets.APPLICATION }}" > ./application.yml
+          echo "${{ secrets.COMMON }}" > ./application-common.yml
+          echo "${{ secrets.PROD }}" > ./application-prod.yml
+
+      - name: Make zip file
+        run: zip -r ./$GITHUB_SHA.zip .
+        shell: bash
+
+      - name: AWS credential 설정
+        uses: aws-actions/configure-aws-credentials@v1
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.CICD_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.CICD_SECRET_KEY }}
+
+      - name: Upload to S3
+        run: aws s3 cp --region ap-northeast-2 ./$GITHUB_SHA.zip s3://$AWS_S3_BUCKET/$GITHUB_SHA.zip
+
+      - name: EC2에 배포
+        run: aws deploy create-deployment --application-name ${{ env.AWS_CODE_DEPLOY_APPLICATION }} --deployment-config-name CodeDeployDefault.AllAtOnce --deployment-group-name ${{ env.AWS_CODE_DEPLOY_GROUP }} --s3-location bucket=$AWS_S3_BUCKET,key=$GITHUB_SHA.zip,bundleType=zip
+      
+      - name: Discord에 배포 성공 알림 전송
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "✅ **배포 성공!**",
+            "embeds": [
+              {
+                "title": "배포된 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 3066993,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
