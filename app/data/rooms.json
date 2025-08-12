@@ -43,25 +43,25 @@
   },
   {
     "name": "R룸",
-    "branch": "준사운드 사당점",
+    "branch": "준사운드",
     "business_id": "1384809",
     "biz_item_id": "6649826"
   },
   {
     "name": "S룸",
-    "branch": "준사운드 사당점",
+    "branch": "준사운드",
     "business_id": "1384809",
     "biz_item_id": "6649835"
   },
   {
     "name": "A룸",
-    "branch": "준사운드 사당점",
+    "branch": "준사운드",
     "business_id": "1384809",
     "biz_item_id": "6649859"
   },
   {
     "name": "B룸",
-    "branch": "준사운드 사당점",
+    "branch": "준사운드",
     "business_id": "1384809",
     "biz_item_id": "6677665"
   },
@@ -76,7 +76,7 @@
   "branch": "그루브 사당점",
   "business_id": "sadang",
   "biz_item_id": "14"
-  },  
+  },
   {
   "name": "C룸",
   "branch": "그루브 사당점",
