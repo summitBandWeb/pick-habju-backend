@@ -1,4 +1,3 @@
-# app/api/rooms.py
 from fastapi import APIRouter, HTTPException
 from typing import Union, List
 
