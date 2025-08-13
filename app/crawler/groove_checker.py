@@ -7,6 +7,8 @@ from app.exception.crawler.groove_exception import GrooveCredentialError, Groove
 from app.utils.login import LoginManager
 from app.models.dto import RoomAvailability, RoomKey
 import asyncio
+from datetime import datetime, timedelta
+
 
 from app.validate.date_validator import validate_date
 from app.validate.hour_validator import validate_hour_slots
@@ -65,18 +67,7 @@ async def fetch_room_availability(
     # 만약 soup에 예약 정보가 없으면 (예: 특정 태그가 없음) "unknown" 반환
     # 확인용 조건 (예시)
     reserve_section = soup.select_one(f"#reserve_section_{rm_ix}")
-    if reserve_section is None:
-        # 예약 정보가 없는 경우 문자열로 unknown 처리
-        slots = {hour_str: "unknown" for hour_str in hour_slots}
-        overall = "unknown"
-        return RoomAvailability(
-            name=room.name,
-            branch=room.branch,
-            business_id=room.business_id,
-            biz_item_id=room.biz_item_id,
-            available=overall,
-            available_slots=slots,
-        )
+
 
     # 정상 처리: 기존 check_hour_slot 호출
     slots = {}
@@ -102,6 +93,27 @@ async def get_groove_availability(
 ) -> List[RoomAvailability]:
     validate_inputs(date, hour_slots, rooms)
     validate_room_keys(rooms)
+
+    # 1. 오늘 날짜와 목표 날짜를 date 객체로 변환
+    today = datetime.now().date()
+    target_date = datetime.strptime(date, '%Y-%m-%d').date()
+
+    # 2. 오늘로부터 84일 이후인지 확인
+    if (target_date - today).days >= 84:
+        # 84일 이상 차이나면 'unknown'으로 채워진 결과를 즉시 반환
+        unknown_results = []
+        for room in rooms:
+            slots = {hour_str: "unknown" for hour_str in hour_slots}
+            result = RoomAvailability(
+                name=room.name,
+                branch=room.branch,
+                business_id=room.business_id,
+                biz_item_id=room.biz_item_id,
+                available="unknown",
+                available_slots=slots,
+            )
+            unknown_results.append(result)
+        return unknown_results
 
     html = await login_and_fetch_html(date, branch_gubun="sadang")
     soup = BeautifulSoup(html, "html.parser")
