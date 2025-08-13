@@ -63,11 +63,7 @@ async def fetch_room_availability(
     validate_room_key(room)
     rm_ix = room.biz_item_id
 
-    # 예외 또는 정보 없음 상태 판단용 임시 값 예시
-    # 만약 soup에 예약 정보가 없으면 (예: 특정 태그가 없음) "unknown" 반환
-    # 확인용 조건 (예시)
     reserve_section = soup.select_one(f"#reserve_section_{rm_ix}")
-
 
     # 정상 처리: 기존 check_hour_slot 호출
     slots = {}
