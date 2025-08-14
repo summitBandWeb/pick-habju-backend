@@ -3,11 +3,9 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 from app.exception.crawler.groove_exception import GrooveLoginError, GrooveCredentialError
-from app.exception.common.roomkey_exception import RoomKeyNotFoundError
-from app.models.dto import RoomKey, RoomAvailability
+from app.models.dto import RoomKey
 from app.crawler.groove_checker import get_groove_availability
 from app.utils.room_loader import load_rooms
-
 
 @pytest.fixture(scope="module")
 def sample_groove_rooms():

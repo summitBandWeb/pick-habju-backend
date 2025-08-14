@@ -12,36 +12,48 @@ from app.crawler.groove_checker import get_groove_availability
 router = APIRouter(prefix="/api/rooms/availability")
 RoomResult = Union[RoomAvailability, Exception]
 
+
 @router.post("/", response_model=AvailabilityResponse)
-async def your_handler(request: AvailabilityRequest):
-    # 1) 공통 입력 검증
+async def get_all_availability(request: AvailabilityRequest):
+    # 1. 중앙화된 입력값 검증
     try:
         validate_availability_request(request.date, request.hour_slots, request.rooms)
     except Exception as e:
-        # 원하는 예외 타입/메시지로 변경
-        raise HTTPException(status_code=400, detail=str(e))
+        # 더 세분화된 오류 메시지를 위해 특정 유효성 검사 예외를 잡을 수 있음
+        raise HTTPException(status_code=400, detail=f"잘못된 입력값: {e}")
 
-    # 2) 타입별 룸 분리
+    # 2. 타입별로 룸 필터링 (dream, groove, naver)
     dream_rooms = filter_rooms_by_type(request.rooms, "dream")
     groove_rooms = filter_rooms_by_type(request.rooms, "groove")
     naver_rooms = filter_rooms_by_type(request.rooms, "naver")
 
-    # 3) 크롤러 실행 (내부 검증 제거)
-    dream_result: List[RoomResult] = await get_dream_availability(request.date, request.hour_slots, dream_rooms)
-    groove_result: List[RoomResult] = await get_groove_availability(request.date, request.hour_slots, groove_rooms)
-    naver_result: List[RoomResult] = await get_naver_availability(request.date, request.hour_slots, naver_rooms)
+    # 3. 각 타입에 대한 크롤러를 동시에 실행
+    tasks = []
+    if dream_rooms:
+        tasks.append(get_dream_availability(request.date, request.hour_slots, dream_rooms))
+    if groove_rooms:
+        tasks.append(get_groove_availability(request.date, request.hour_slots, groove_rooms))
+    if naver_rooms:
+        tasks.append(get_naver_availability(request.date, request.hour_slots, naver_rooms))
 
-    # 4) 결과 통합 및 예외 로깅
-    all_results: List[RoomResult] = dream_result + groove_result + naver_result
+    # 이제 크롤러는 자체적으로 유효성 검사를 수행하지 않음.
+    import asyncio
+    results_of_lists = await asyncio.gather(*tasks)
+
+    # 4. 리스트의 리스트를 단일 리스트로 만들고 예외를 로깅
+    all_results: List[RoomResult] = [item for sublist in results_of_lists for item in sublist]
+
     for result in all_results:
         if isinstance(result, Exception):
-            print(f"예약 실패: {type(result).__name__} - {result}")
+            # 실제 애플리케이션에서는 적절한 로깅을 사용해야 함 (예: structlog, logging 모듈)
+            print(f"크롤러 오류: {type(result).__name__} - {result}")
 
-    # 5) 정상 결과만 응답에 포함
-    available_results = [r for r in all_results if isinstance(r, RoomAvailability)]
+    # 5. 예외를 필터링하고 최종 성공 응답을 준비
+    successful_results = [r for r in all_results if isinstance(r, RoomAvailability)]
+
     return AvailabilityResponse(
         date=request.date,
         hour_slots=request.hour_slots,
-        results=available_results,
-        available_biz_item_ids=[r.biz_item_id for r in available_results if r.available]
+        results=successful_results,
+        available_biz_item_ids=[r.biz_item_id for r in successful_results if r.available is True]
     )
