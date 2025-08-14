@@ -66,7 +66,6 @@ async def get_dream_availability(
       hour_slots: List[str],
       dream_rooms: List[RoomKey]
 ) -> List[RoomResult]:
-    # --- 제거됨: 입력값 검증은 이제 메인 라우터에서 처리됩니다 ---
 
     today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
     target_date = datetime.strptime(date, '%Y-%m-%d').date()

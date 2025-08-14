@@ -83,7 +83,6 @@ async def get_naver_availability(
     # --- 제거됨: 모든 입력값 검증은 이제 메인 라우터에서 처리됩니다 ---
 
     async def safe_fetch(room: RoomKey) -> RoomResult:
-        # --- 제거됨: RoomKey 검증은 메인 라우터에서 처리됩니다 ---
         try:
             return await fetch_naver_availability_room(date, hour_slots, room)
         except NaverAvailabilityError as e:
