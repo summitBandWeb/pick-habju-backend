@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-ROOMS_FILE = Path(__file__).resolve().parent.parent / "data" / "rooms.json"
+ROOMS_FILE = Path(__file__).resolve().parent.parent.parent / "rooms.json"
 
 def load_rooms():
     try:
