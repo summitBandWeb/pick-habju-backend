@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from typing import Union, List
+import asyncio
 
 from app.validate.common import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
@@ -15,14 +16,10 @@ RoomResult = Union[RoomAvailability, Exception]
 
 @router.post("/", response_model=AvailabilityResponse)
 async def get_all_availability(request: AvailabilityRequest):
-    # 1. 중앙화된 입력값 검증
-    try:
-        validate_availability_request(request.date, request.hour_slots, request.rooms)
-    except Exception as e:
-        # 더 세분화된 오류 메시지를 위해 특정 유효성 검사 예외를 잡을 수 있음
-        raise HTTPException(status_code=400, detail=f"잘못된 입력값: {e}")
+    # 1. 유효성 검증 호출 (try-except 블록 완전 삭제)
+    validate_availability_request(request.date, request.hour_slots, request.rooms)
 
-    # 2. 타입별로 룸 필터링 (dream, groove, naver)
+    # 2. 타입별로 룸 필터링
     dream_rooms = filter_rooms_by_type(request.rooms, "dream")
     groove_rooms = filter_rooms_by_type(request.rooms, "groove")
     naver_rooms = filter_rooms_by_type(request.rooms, "naver")
@@ -36,19 +33,18 @@ async def get_all_availability(request: AvailabilityRequest):
     if naver_rooms:
         tasks.append(get_naver_availability(request.date, request.hour_slots, naver_rooms))
 
-    # 이제 크롤러는 자체적으로 유효성 검사를 수행하지 않음.
-    import asyncio
     results_of_lists = await asyncio.gather(*tasks)
 
-    # 4. 리스트의 리스트를 단일 리스트로 만들고 예외를 로깅
+    # 4. 결과 통합 및 크롤러 내부 예외 로깅
     all_results: List[RoomResult] = [item for sublist in results_of_lists for item in sublist]
 
     for result in all_results:
+        # 이 예외들은 BaseCustomException을 상속받지 않으므로, 전역 처리기에 잡히지 않습니다.
+        # 따라서 여기서 별도로 로깅하거나 처리해야 합니다.
         if isinstance(result, Exception):
-            # 실제 애플리케이션에서는 적절한 로깅을 사용해야 함 (예: structlog, logging 모듈)
             print(f"크롤러 오류: {type(result).__name__} - {result}")
 
-    # 5. 예외를 필터링하고 최종 성공 응답을 준비
+    # 5. 최종 성공 응답 준비
     successful_results = [r for r in all_results if isinstance(r, RoomAvailability)]
 
     return AvailabilityResponse(

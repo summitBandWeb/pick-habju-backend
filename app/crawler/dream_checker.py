@@ -3,7 +3,6 @@ import html
 import sys
 import asyncio
 from datetime import datetime
-from app.utils.room_loader import load_rooms
 from app.models.dto import RoomKey, RoomAvailability
 from app.utils.client_loader import load_client
 from typing import List, Union
