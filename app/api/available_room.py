@@ -11,12 +11,10 @@ from app.crawler.naver_checker import get_naver_availability
 from app.crawler.groove_checker import get_groove_availability
 
 router = APIRouter(prefix="/api/rooms/availability")
-RoomResult = Union[RoomAvailability, Exception]
-
 
 @router.post("/", response_model=AvailabilityResponse)
 async def get_all_availability(request: AvailabilityRequest):
-    # 1. 유효성 검증 호출 (try-except 블록 완전 삭제)
+    # 1. 유효성 검증 (BaseCustomException은 전역 처리기가 처리)
     validate_availability_request(request.date, request.hour_slots, request.rooms)
 
     # 2. 타입별로 룸 필터링
@@ -35,17 +33,11 @@ async def get_all_availability(request: AvailabilityRequest):
 
     results_of_lists = await asyncio.gather(*tasks)
 
-    # 4. 결과 통합 및 크롤러 내부 예외 로깅
-    all_results: List[RoomResult] = [item for sublist in results_of_lists for item in sublist]
+    # 4. 결과 통합
+    all_results = [item for sublist in results_of_lists for item in sublist]
 
-    for result in all_results:
-        # 이 예외들은 BaseCustomException을 상속받지 않으므로, 전역 처리기에 잡히지 않습니다.
-        # 따라서 여기서 별도로 로깅하거나 처리해야 합니다.
-        if isinstance(result, Exception):
-            print(f"크롤러 오류: {type(result).__name__} - {result}")
-
-    # 5. 최종 성공 응답 준비
-    successful_results = [r for r in all_results if isinstance(r, RoomAvailability)]
+    # 5. 최종 성공 응답 준비 (None 값을 필터링하여 유효한 결과만 포함)
+    successful_results = [r for r in all_results if r is not None]
 
     return AvailabilityResponse(
         date=request.date,
