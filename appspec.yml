@@ -1,0 +1,23 @@
+version: 0.0
+os: linux
+
+files:
+  - source: pick-habju-backend
+    destination: /home/ubuntu/app/backend
+    overwrite: yes
+  - source: app
+    destination: /home/ubuntu/app/scripts
+
+permissions:
+  - object: /home/ubuntu/app
+    owner: ubuntu
+    group: ubuntu
+    type:
+      - file
+      - directory
+
+hooks:
+  ApplicationStart:
+    - location: scripts/deploy.sh
+      timeout: 600
+      run: ubuntu

@@ -1,0 +1,98 @@
+# .github/workflows/ci-cd.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  PROJECT_DIR: /home/ubuntu/pick-habju-backend
+
+jobs:
+  # 1. 테스트 잡(Job)
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 셋업 및 가상환경 생성
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip' # 패키지 캐싱으로 설치 속도 향상
+          cache-dependency-path: ./pick-habju-backend/requirements.txt  
+
+      - name: 가상환경 활성화 및 패키지 설치
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r ./pick-habju-backend/requirements.txt
+
+      - name: 테스트 실행 (가상환경 내에서)
+        id: pytest_run
+        run: |
+          source venv/bin/activate
+          pytest
+
+      - name: Discord에 테스트 실패 알림 전송
+        if: failure() && steps.pytest_run.outcome == 'failure'
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "🚨 **테스트 실패!** 배포가 중단되었습니다.",
+            "embeds": [
+              {
+                "title": "실패한 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 15158332,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # 2. 배포 잡(Job) - SSH를 통해 EC2에 git pull
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH로 EC2에 접속하여 배포
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            # 1. 프로젝트 디렉토리로 이동
+            cd ${{ env.PROJECT_DIR }}
+
+            # 2. git pull로 최신 코드 가져오기
+            git pull origin main # 또는 master
+
+            # 3. 애플리케이션 재시작
+            # 이 스크립트 파일이 EC2에 존재해야 합니다.
+            # 예: /home/ubuntu/app/scripts/deploy.sh
+            bash ./scripts/deploy.sh
+      
+      - name: Discord에 배포 성공 알림 전송
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "✅ **배포 성공!**",
+            "embeds": [
+              {
+                "title": "배포된 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 3066993,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
