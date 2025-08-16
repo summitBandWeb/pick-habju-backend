@@ -78,7 +78,17 @@ jobs:
       #     echo "${{ secrets.PROD }}" > ./application-prod.yml
 
       - name: Make zip file
-        run: zip -r ./$GITHUB_SHA.zip  . --exclude ".github/*"
+        run: |
+          # -r: 재귀적으로 폴더 포함
+          # -x: 특정 패턴 제외
+          zip -r ./$GITHUB_SHA.zip . \
+              -x ".git/*" \
+              -x ".github/*" \
+              -x "venv/*" \
+              -x "__pycache__/*" \
+              -x "*.DS_Store" \
+              -x "*.pytest_cache*" \
+              -x "tests/*"           
         shell: bash
 
       - name: AWS credential 설정
