@@ -26,6 +26,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: 'pip' # 패키지 캐싱으로 설치 속도 향상
+          cache-dependency-path: ./pick-habju-backend/requirements.txt  
 
       - name: 가상환경 활성화 및 패키지 설치
         run: |
@@ -34,12 +35,13 @@ jobs:
           pip install -r ./pick-habju-backend/requirements.txt
 
       - name: 테스트 실행 (가상환경 내에서)
+        id: pytest_run
         run: |
           source venv/bin/activate
           pytest
 
       - name: Discord에 테스트 실패 알림 전송
-        if: failure() && steps.pytest.outcome == 'failure'
+        if: failure() && steps.pytest_run.outcome == 'failure'
         run: |
           curl -H "Content-Type: application/json" -d '{
             "content": "🚨 **테스트 실패!** 배포가 중단되었습니다.",
@@ -76,7 +78,7 @@ jobs:
       #     echo "${{ secrets.PROD }}" > ./application-prod.yml
 
       - name: Make zip file
-        run: zip -r ./$GITHUB_SHA.zip .
+        run: zip -r ./$GITHUB_SHA.zip  . --exclude ".github/*"
         shell: bash
 
       - name: AWS credential 설정
