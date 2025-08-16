@@ -8,10 +8,7 @@ on:
       - master
 
 env:
-  AWS_REGION: ap-northeast-2
-  AWS_S3_BUCKET: pick-habju-back-deploy-bucket
-  AWS_CODE_DEPLOY_APPLICATION: pick-habju-Application-CD
-  AWS_CODE_DEPLOY_GROUP: pick-habju-Deployment-Group
+  PROJECT_DIR: /home/ubuntu/pick-habju-backend
 
 jobs:
   # 1. 테스트 잡(Job)
@@ -58,51 +55,29 @@ jobs:
             ]
           }' ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-  # 2. 배포 잡(Job) - 테스트 잡이 성공해야만 실행됨
+  # 2. 배포 잡(Job) - SSH를 통해 EC2에 git pull
   deploy:
     name: Deploy
-    needs: test # 'test' 잡이 성공적으로 끝나야 이 잡을 시작
+    needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # - name: make application.yml
-      #   run: |
-      #     mkdir -p ./src/main/resources
-      #     cd ./src/main/resources
-      #     touch ./application.yml
-      #     touch ./application-common.yml
-      #     touch ./application-prod.yml
-      #     echo "${{ secrets.APPLICATION }}" > ./application.yml
-      #     echo "${{ secrets.COMMON }}" > ./application-common.yml
-      #     echo "${{ secrets.PROD }}" > ./application-prod.yml
-
-      - name: Make zip file
-        run: |
-          # -r: 재귀적으로 폴더 포함
-          # -x: 특정 패턴 제외
-          zip -r ./$GITHUB_SHA.zip . \
-              -x ".git/*" \
-              -x ".github/*" \
-              -x "venv/*" \
-              -x "__pycache__/*" \
-              -x "*.DS_Store" \
-              -x "*.pytest_cache*" \
-              -x "tests/*"           
-        shell: bash
-
-      - name: AWS credential 설정
-        uses: aws-actions/configure-aws-credentials@v1
+      - name: SSH로 EC2에 접속하여 배포
+        uses: appleboy/ssh-action@master
         with:
-          aws-region: ${{ env.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.CICD_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.CICD_SECRET_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            # 1. 프로젝트 디렉토리로 이동
+            cd ${{ env.PROJECT_DIR }}
 
-      - name: Upload to S3
-        run: aws s3 cp --region ap-northeast-2 ./$GITHUB_SHA.zip s3://$AWS_S3_BUCKET/$GITHUB_SHA.zip
+            # 2. git pull로 최신 코드 가져오기
+            git pull origin main # 또는 master
 
-      - name: EC2에 배포
-        run: aws deploy create-deployment --application-name ${{ env.AWS_CODE_DEPLOY_APPLICATION }} --deployment-config-name CodeDeployDefault.AllAtOnce --deployment-group-name ${{ env.AWS_CODE_DEPLOY_GROUP }} --s3-location bucket=$AWS_S3_BUCKET,key=$GITHUB_SHA.zip,bundleType=zip
+            # 3. 애플리케이션 재시작
+            # 이 스크립트 파일이 EC2에 존재해야 합니다.
+            # 예: /home/ubuntu/app/scripts/deploy.sh
+            bash ./scripts/deploy.sh
       
       - name: Discord에 배포 성공 알림 전송
         if: success()
