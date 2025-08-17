@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timedelta
 from typing import List
-from app.exception.common.hour_excpetion import InvalidHourSlotError, PastHourSlotNotAllowedError
+from app.exception.common.hour_excpetion import InvalidHourSlotError, PastHourSlotNotAllowedError, HourDiscontinuousError
 
 HOUR_PATTERN = r"^\d{2}:\d{2}$"
 
@@ -25,13 +25,13 @@ def validate_hour_slot_not_past(slot: str, now_time):
             return  # 미래 날짜는 시간 검증 불필요
         now_time = datetime.now().time()
 
-    # time 객체끼리 비교
-    if slot_time < now_time:
+    # time 객체끼리 비교 (현재 시각과 동일한 슬롯도 과거로 간주)
+    if slot_time <= now_time:
         raise PastHourSlotNotAllowedError(f"과거 시간은 허용되지 않습니다: {slot}")
 
 
 def validate_hour_slots(hour_slots: List[str], date: str):
-    """시간 슬롯 전체 검증(형식 + 과거여부)"""
+    """시간 슬롯 전체 검증(형식 + 과거여부 + 연속성)"""
     now = datetime.now()
     today = now.date()
     input_date = datetime.strptime(date, "%Y-%m-%d").date()
@@ -39,6 +39,8 @@ def validate_hour_slots(hour_slots: List[str], date: str):
         validate_hour_slot_format(slot)
         if input_date == today:
             validate_hour_slot_not_past(slot, now.time())
+    # 1시간 단위 연속성 검증
+    validate_hour_continuous(hour_slots, date)
 
 
 def validate_hour_continuous(hour_slots: List[str], date: str):
@@ -63,5 +65,4 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
         dt_next = datetime.combine(datetime.today(), times[i + 1])
         diff = dt_next - dt_current
         if diff != timedelta(hours=1):
-            raise InvalidHourSlotError(f"시간 슬롯이 연속적이지 않습니다: 간격이 1시간이 아닙니다.")
-
+            raise HourDiscontinuousError(f"시간 슬롯이 1시간 단위로 연속적이지 않습니다.")
