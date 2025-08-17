@@ -35,7 +35,7 @@ async def test_groove_login_error_simulation(sample_groove_rooms):
         with patch('app.crawler.groove_checker.login_and_fetch_html', side_effect=GrooveLoginError):
             await get_groove_availability(future_date, ["20:00"], sample_groove_rooms)
 
-    assert exc_info.value.error_code == "Login-001"
+    assert exc_info.value.error_code == "Groove-002"
     assert exc_info.value.status_code == 500
 
 
@@ -47,7 +47,7 @@ async def test_groove_credential_error_simulation(sample_groove_rooms):
         with patch('app.crawler.groove_checker.login_and_fetch_html', side_effect=GrooveCredentialError):
             await get_groove_availability(future_date, ["20:00"], sample_groove_rooms)
 
-    assert exc_info.value.error_code == "Login-002"
+    assert exc_info.value.error_code == "Groove-001"
     assert exc_info.value.status_code == 401
 
 # --- 2. 경계값 분석 테스트 ---
@@ -98,4 +98,3 @@ async def test_availability_at_and_after_84_days_boundary(sample_groove_rooms):
     assert result.available == "unknown"
     assert result.available_slots["20:00"] == "unknown"
     assert result.available_slots["21:00"] == "unknown"
-

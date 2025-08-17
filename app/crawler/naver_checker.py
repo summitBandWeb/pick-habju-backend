@@ -1,7 +1,9 @@
 import httpx
 from typing import List, Dict, Union
 from app.models.dto import RoomKey, RoomAvailability
-from app.exception.crawler.naver_exception import NaverAvailabilityError
+from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverRequestError
+from app.exception.api.client_loader_exception import RequestFailedError
+from app.utils.client_loader import load_client
 import asyncio
 
 RoomResult = Union[RoomAvailability, Exception]
@@ -39,13 +41,14 @@ async def fetch_naver_availability_room(date: str, hour_slots: List[str], room: 
         }
     }
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, json=body, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            raise NaverAvailabilityError(f"[{room.name}] 네이버 API 호출 오류: {e}")
+    try:
+        response = await load_client(url, json=body, headers=headers)
+        data = response.json()
+    except RequestFailedError as e:
+        # 공통 클라이언트 계층의 실패를 네이버 전용 예외로 매핑
+        raise NaverRequestError(f"[{room.name}] 네이버 API 호출 실패: {e}")
+    except Exception as e:
+        raise NaverAvailabilityError(f"[{room.name}] 네이버 API 호출/파싱 오류: {e}")
 
     try:
         api_slots = data.get("data", {}).get("schedule", {}).get("bizItemSchedule", {}).get("hourly", [])
