@@ -9,7 +9,7 @@ app = FastAPI()
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
-origins = ALLOWED_ORIGINS
+origins = ALLOWED_ORIGINS + ["https://6w9bh0usvh.execute-api.ap-northeast-2.amazonaws.com"] # API Gateway URL 추가
 
 app.add_middleware(
     CORSMiddleware,
