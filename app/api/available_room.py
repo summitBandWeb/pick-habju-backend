@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/rooms/availability")
 RoomResult = Union[RoomAvailability, Exception]
 
 @router.post("/", response_model=AvailabilityResponse)
+@router.post("", response_model=AvailabilityResponse)
 async def your_handler(request: AvailabilityRequest):
     # 1) 공통 입력 검증
     try:
