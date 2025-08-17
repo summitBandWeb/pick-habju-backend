@@ -24,4 +24,3 @@ app.include_router(available_router)
 
 # 커스텀 예외 핸들러는 라우터 포함 이후에 추가
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
-

@@ -4,7 +4,14 @@ from app.exception.common.roomkey_exception import RoomKeyFieldMissingError, Roo
 
 def validate_room_key_fields(room: RoomKey):
     """RoomKey 필수 필드 누락 검증"""
-    if not room.business_id or not room.biz_item_id or not room.name or not room.branch:
+    if (not room.business_id or
+        not room.biz_item_id or
+        not room.name or
+        not room.branch or
+        room.business_id == "" or
+        room.biz_item_id == "" or
+        room.name == "" or
+        room.branch == ""):
         raise RoomKeyFieldMissingError(f"RoomKey 정보가 누락되었습니다: {room}")
 
 def validate_room_key_exists(room: RoomKey):
@@ -18,7 +25,7 @@ def validate_room_key_exists(room: RoomKey):
         for r in rooms
     )
     if not found:
-        raise RoomKeyNotFoundError(rooms)
+        raise RoomKeyNotFoundError(f"RoomKey를 찾을 수 없습니다: {room.name} ({room.branch})")
 
 def validate_room_key(room: RoomKey):
     """RoomKey 전체 검증(필드 + 존재여부)"""

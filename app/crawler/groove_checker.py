@@ -15,10 +15,9 @@ from app.validate.roomkey_validator import validate_room_key
 
 # --- 입력값 검증 함수 ---
 def validate_inputs(date: str, hour_slots: List[str], rooms: List[RoomKey]):
+    # 중복 검증 제거: 공통 밸리데이터가 처리함
     validate_date(date)
-    validate_hour_slots(hour_slots, date)  # 이 함수가 각 slot 형식("HH:MM")과 미래시간 검증
-    if not rooms:
-        raise RoomKeyNotFoundError(f"RoomKey가 rooms.json에 존재하지 않습니다: {rooms}")
+    validate_hour_slots(hour_slots, date)
 
 def validate_room_keys(rooms: List[RoomKey]):
     for room in rooms:

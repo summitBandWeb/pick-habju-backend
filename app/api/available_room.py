@@ -5,6 +5,7 @@ from typing import Union, List
 from app.validate.common import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
+from app.exception.base_exception import BaseCustomException
 
 from app.crawler.dream_checker import get_dream_availability
 from app.crawler.naver_checker import get_naver_availability
@@ -14,13 +15,10 @@ router = APIRouter(prefix="/api/rooms/availability")
 RoomResult = Union[RoomAvailability, Exception]
 
 @router.post("/", response_model=AvailabilityResponse)
+@router.post("", response_model=AvailabilityResponse)
 async def your_handler(request: AvailabilityRequest):
-    # 1) 공통 입력 검증
-    try:
-        validate_availability_request(request.date, request.hour_slots, request.rooms)
-    except Exception as e:
-        # 원하는 예외 타입/메시지로 변경
-        raise HTTPException(status_code=400, detail=str(e))
+    # 1) 공통 입력 검증 - 커스텀 예외는 전역 핸들러가 처리
+    validate_availability_request(request.date, request.hour_slots, request.rooms)
 
     # 2) 타입별 룸 분리
     dream_rooms = filter_rooms_by_type(request.rooms, "dream")
