@@ -3,19 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.available_room import router as available_router
 from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler
+from app.core.config import ALLOWED_ORIGINS
 
 app = FastAPI()
 app.include_router(available_router)
 
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
 
-# CORS 설정 (로컬 프론트엔드용)
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS 설정 (환경변수 기반)
+origins = ALLOWED_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
