@@ -5,7 +5,10 @@ from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler
 from app.core.config import ALLOWED_ORIGINS
 
-app = FastAPI(root_path='/dev')
+app = FastAPI()
+@app.get("/ping")
+def ping():
+    return {"ok": True}
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
