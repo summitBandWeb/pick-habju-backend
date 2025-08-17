@@ -24,3 +24,26 @@ DREAM_COOKIES = {
     'PHPSESSID': 'your_dream_php_session_id',
     'e1192aefb64683cc97abb83c71057733': 'your_dream_cookie_value'
 }
+
+# CORS 허용 오리진 (환경변수 기반)
+def _parse_origins(value: str | None) -> list[str]:
+    if not value:
+        return []
+    normalized = value.replace("\n", ",").replace(";", ",")
+    items = [item.strip() for item in normalized.split(",")]
+    return [item for item in items if item]
+
+_DEFAULT_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# 우선순위: CORS_ALLOWED_ORIGINS(복수) > FRONTEND_ORIGINS(복수) > FRONTEND_URL(단일)
+_cors_allowed_origins = _parse_origins(os.getenv("CORS_ALLOWED_ORIGINS"))
+_frontend_origins = _parse_origins(os.getenv("FRONTEND_ORIGINS"))
+_single_frontend_url = [os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else []
+
+# 중복 제거를 위해 dict 키 보존 방식 사용
+ALLOWED_ORIGINS = list(dict.fromkeys(_DEFAULT_ALLOWED_ORIGINS + _cors_allowed_origins + _frontend_origins + _single_frontend_url))

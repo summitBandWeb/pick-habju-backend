@@ -4,6 +4,7 @@ from app.models.dto import RoomKey
 from app.validate.date_validator import validate_date
 from app.validate.hour_validator import validate_hour_slots
 from app.validate.roomkey_validator import validate_room_key
+from app.exception.common.roomkey_exception import RoomKeyListEmptyError
 
 def validate_availability_request(
     date: str,
@@ -18,6 +19,6 @@ def validate_availability_request(
     validate_date(date)
     validate_hour_slots(hour_slots, date)
     if not rooms:
-        raise ValueError("rooms 목록이 비어 있습니다.")
+        raise RoomKeyListEmptyError()
     for room in rooms:
         validate_room_key(room)
