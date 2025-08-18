@@ -12,7 +12,15 @@ def ping():
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
-origins = ALLOWED_ORIGINS + ["https://6w9bh0usvh.execute-api.ap-northeast-2.amazonaws.com"] # API Gateway URL 추가
+# origins = ALLOWED_ORIGINS + ["https://6w9bh0usvh.execute-api.ap-northeast-2.amazonaws.com"] # API Gateway URL 추가
+
+origins = list({
+    *ALLOWED_ORIGINS,
+    "https://www.pickhabju.com",
+    "https://pickhabju.com",
+    # 개발용 필요하면 여기에 추가:
+    # "http://localhost:3000", "http://localhost:5173",
+})
 
 app.add_middleware(
     CORSMiddleware,
