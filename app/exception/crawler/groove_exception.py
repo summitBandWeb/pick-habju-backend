@@ -23,3 +23,4 @@ class GrooveRoomParseError(BaseCustomException):
     error_code = "Groove-004"
     message = "그루브 예약 페이지에서 방 정보를 파싱하는 중 오류가 발생했습니다."
     status_code = 500
+
