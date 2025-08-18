@@ -1,21 +1,35 @@
 import json
 from pathlib import Path
+import logging
 
-ROOMS_FILE = Path(__file__).resolve().parent.parent.parent / "rooms.json"
+ROOMS_FILE = Path(__file__).resolve().parent.parent / "data/rooms.json"
+logger = logging.getLogger("app")
 
 def load_rooms():
     try:
         with open(ROOMS_FILE, encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"[ERROR] 파일을 찾을 수 없습니다: {ROOMS_FILE}")
+        logger.error(
+            "rooms.json not found",
+            extra={"status": 500, "errorCode": "Common-002"}
+        )
         raise
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] JSON 형식 오류: {e}")
+    except json.JSONDecodeError:
+        logger.error(
+            "rooms.json decode error",
+            extra={"status": 500, "errorCode": "Common-002"}
+        )
         raise
     except PermissionError:
-        print(f"[ERROR] 파일에 접근할 권한이 없습니다: {ROOMS_FILE}")
+        logger.error(
+            "rooms.json permission denied",
+            extra={"status": 500, "errorCode": "Common-002"}
+        )
         raise
-    except OSError as e:
-        print(f"[ERROR] 기타 파일 입출력 오류: {e}")
+    except OSError:
+        logger.error(
+            "rooms.json IO error",
+            extra={"status": 500, "errorCode": "Common-002"}
+        )
         raise

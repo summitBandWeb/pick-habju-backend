@@ -1,18 +1,13 @@
 import httpx
 from typing import List, Dict, Union
-
-from app.exception.common.date_exception import InvalidDateFormatError
-from app.exception.common.hour_excpetion import InvalidHourSlotError
 from app.models.dto import RoomKey, RoomAvailability
-from app.exception.crawler.naver_exception import NaverAvailabilityError
-
+from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverRequestError
+from app.exception.api.client_loader_exception import RequestFailedError
+from app.utils.client_loader import load_client
 import asyncio
 
-from app.validate.date_validator import validate_date
-from app.validate.hour_validator import validate_hour_slots
-from app.validate.roomkey_validator import validate_room_key
-
 RoomResult = Union[RoomAvailability, Exception]
+
 
 async def fetch_naver_availability_room(date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
     url = "https://booking.naver.com/graphql?opName=schedule"
@@ -46,25 +41,33 @@ async def fetch_naver_availability_room(date: str, hour_slots: List[str], room: 
         }
     }
 
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, json=body, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-        except Exception as e:
-            raise NaverAvailabilityError(f"[{room.name}] 네이버 API 호출 오류: {e}")
+    try:
+        response = await load_client(url, json=body, headers=headers)
+        data = response.json()
+    except RequestFailedError as e:
+        # 공통 클라이언트 계층의 실패를 네이버 전용 예외로 매핑
+        raise NaverRequestError(f"[{room.name}] 네이버 API 호출 실패: {e}")
+    except Exception as e:
+        raise NaverAvailabilityError(f"[{room.name}] 네이버 API 호출/파싱 오류: {e}")
 
     try:
-        available_slots: Dict[str, bool] = {}
-        for slot in data["data"]["schedule"]["bizItemSchedule"]["hourly"]:
-            time_str = slot["unitStartTime"][-8:]
+        api_slots = data.get("data", {}).get("schedule", {}).get("bizItemSchedule", {}).get("hourly", [])
+        if api_slots is None:
+            api_slots = []
+
+        available_slots: Dict[str, bool] = {slot: False for slot in hour_slots}
+
+        for slot_data in api_slots:
+            time_str = slot_data["unitStartTime"][-8:]
             hour_min = time_str[:5]
-            if hour_min in hour_slots:
-                available_slots[hour_min] = slot["unitBookingCount"] < slot["unitStock"]
+            if hour_min in available_slots:
+                available_slots[hour_min] = slot_data["unitBookingCount"] < slot_data["unitStock"]
+
     except Exception as e:
         raise NaverAvailabilityError(f"[{room.name}] 응답 파싱 오류: {e}")
 
-    available = all(available_slots.values())
+    available = all(val for hour, val in available_slots.items() if hour in hour_slots)
+
     return RoomAvailability(
         name=room.name,
         branch=room.branch,
@@ -76,27 +79,16 @@ async def fetch_naver_availability_room(date: str, hour_slots: List[str], room: 
 
 
 async def get_naver_availability(
-    date: str,
-    hour_slots: List[str],
-    naver_rooms: List[RoomKey]
+        date: str,
+        hour_slots: List[str],
+        naver_rooms: List[RoomKey]
 ) -> List[RoomResult]:
-    try:
-        validate_date(date)
-    except InvalidDateFormatError as e:
-        print(f"[날짜 형식 오류]: {e}")
-        raise
+    # --- 제거됨: 모든 입력값 검증은 이제 메인 라우터에서 처리됩니다 ---
 
-    try:
-        validate_hour_slots(hour_slots,date)
-    except InvalidHourSlotError as e:
-        print(f"[시간 형식 오류]: {e}")
-        raise
-
-    async def safe_fetch(room: RoomKey, InvalidRoomKeyError=None) -> RoomResult:
+    async def safe_fetch(room: RoomKey) -> RoomResult:
         try:
-            validate_room_key(room)
             return await fetch_naver_availability_room(date, hour_slots, room)
-        except (InvalidRoomKeyError, NaverAvailabilityError) as e:
+        except NaverAvailabilityError as e:
             return e
 
     return await asyncio.gather(*[safe_fetch(room) for room in naver_rooms])
