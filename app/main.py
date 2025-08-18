@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.available_room import router as available_router
 from app.exception.base_exception import BaseCustomException
-from app.exception.exception_handler import custom_exception_handler
+from app.exception.exception_handler import custom_exception_handler, global_exception_handler
+from app.core.logging_config import setup_logging
 from app.core.config import ALLOWED_ORIGINS
 
 app = FastAPI()
@@ -35,3 +36,7 @@ app.include_router(available_router)
 
 # 커스텀 예외 핸들러는 라우터 포함 이후에 추가
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
+
+# 로깅 설정(콘솔 + 일자별 파일 로테이션, JSON 포맷)
+setup_logging()

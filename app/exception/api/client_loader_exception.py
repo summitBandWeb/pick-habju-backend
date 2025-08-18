@@ -1,7 +1,7 @@
 from app.exception.base_exception import BaseCustomException
 
 class RequestFailedError(BaseCustomException):
-    """날짜 형식이 잘못된 경우"""
+    """외부 API 호출 실패(네트워크/상태코드/타임아웃 등)"""
     error_code = "API-001"
-    message = "API 응답 요청 실패 오류:"
-    status_code = 422
+    message = "외부 API 호출에 실패했습니다."
+    status_code = 503

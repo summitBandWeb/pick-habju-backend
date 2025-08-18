@@ -2,26 +2,11 @@ from typing import List
 from bs4 import BeautifulSoup
 import httpx
 from app.core.config import GROOVE_RESERVE_URL, GROOVE_RESERVE_URL1
-from app.exception.common.roomkey_exception import RoomKeyNotFoundError
 from app.exception.crawler.groove_exception import GrooveCredentialError, GrooveLoginError
 from app.utils.login import LoginManager
 from app.models.dto import RoomAvailability, RoomKey
 import asyncio
-
-from app.validate.date_validator import validate_date
-from app.validate.hour_validator import validate_hour_slots
-from app.validate.roomkey_validator import validate_room_key
-
-
-# --- 입력값 검증 함수 ---
-def validate_inputs(date: str, hour_slots: List[str], rooms: List[RoomKey]):
-    # 중복 검증 제거: 공통 밸리데이터가 처리함
-    validate_date(date)
-    validate_hour_slots(hour_slots, date)
-
-def validate_room_keys(rooms: List[RoomKey]):
-    for room in rooms:
-        validate_room_key(room)
+from datetime import datetime
 
 # --- 개별 슬롯(off/on) 체크 함수 ---
 def check_hour_slot(soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> bool:
@@ -48,40 +33,18 @@ async def login_and_fetch_html(date: str, branch_gubun: str="sadang"):
             await LoginManager.login(client)
             resp = await fetch_reserve_html(client, date, branch_gubun)
         return resp.text
-    except GrooveCredentialError as e:
-        raise
-    except GrooveLoginError as e:
+    except (GrooveCredentialError, GrooveLoginError):
+        # 특정 로그인/자격증명 예외를 다시 발생시켜 호출자가 처리하도록 함
         raise
 
 # --- 방의 예약가능 상태 확인 함수 ---
 async def fetch_room_availability(
         room: RoomKey, hour_slots: List[str], soup: BeautifulSoup
 ) -> RoomAvailability:
-    validate_room_key(room)
     rm_ix = room.biz_item_id
 
-    # 예외 또는 정보 없음 상태 판단용 임시 값 예시
-    # 만약 soup에 예약 정보가 없으면 (예: 특정 태그가 없음) "unknown" 반환
-    # 확인용 조건 (예시)
-    reserve_section = soup.select_one(f"#reserve_section_{rm_ix}")
-    if reserve_section is None:
-        # 예약 정보가 없는 경우 문자열로 unknown 처리
-        slots = {hour_str: "unknown" for hour_str in hour_slots}
-        overall = "unknown"
-        return RoomAvailability(
-            name=room.name,
-            branch=room.branch,
-            business_id=room.business_id,
-            biz_item_id=room.biz_item_id,
-            available=overall,
-            available_slots=slots,
-        )
-
-    # 정상 처리: 기존 check_hour_slot 호출
-    slots = {}
-    for hour_str in hour_slots:
-        slots[hour_str] = check_hour_slot(soup, rm_ix, hour_str)
-    overall = all(v is True for v in slots.values())
+    slots = {hour_str: check_hour_slot(soup, rm_ix, hour_str) for hour_str in hour_slots}
+    overall = all(slots.values())
 
     return RoomAvailability(
         name=room.name,
@@ -92,16 +55,36 @@ async def fetch_room_availability(
         available_slots=slots,
     )
 
-
 # --- 메인 함수 ---
 async def get_groove_availability(
     date: str,
     hour_slots: List[str],
     rooms: List[RoomKey]
 ) -> List[RoomAvailability]:
-    validate_inputs(date, hour_slots, rooms)
-    validate_room_keys(rooms)
+    # --- 제거됨: 입력값 검증은 이제 메인 라우터에서 처리됩니다 ---
 
+    # 1. 오늘 날짜와 목표 날짜를 date 객체로 변환
+    today = datetime.now().date()
+    target_date = datetime.strptime(date, '%Y-%m-%d').date()
+
+    # 2. 오늘로부터 84일 이후인지 확인
+    if (target_date - today).days >= 84:
+        # 즉시 'unknown' 결과를 반환
+        unknown_results = []
+        for room in rooms:
+            slots = {hour_str: "unknown" for hour_str in hour_slots}
+            result = RoomAvailability(
+                name=room.name,
+                branch=room.branch,
+                business_id=room.business_id,
+                biz_item_id=room.biz_item_id,
+                available="unknown",
+                available_slots=slots,
+            )
+            unknown_results.append(result)
+        return unknown_results
+
+    # 3. 날짜가 유효한 범위 내에 있으면 데이터 가져오기 진행
     html = await login_and_fetch_html(date, branch_gubun="sadang")
     soup = BeautifulSoup(html, "html.parser")
     tasks = [fetch_room_availability(room, hour_slots, soup) for room in rooms]
