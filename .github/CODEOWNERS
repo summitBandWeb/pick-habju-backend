@@ -1,0 +1,4 @@
+# pick-habju-backend / CODEOWNERS
+
+# 기본적으로 백엔드 전반은 백엔드 팀이 소유
+*                          @summitBandWeb/backend
