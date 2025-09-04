@@ -118,5 +118,47 @@
   "branch": "드림합주실 사당점",
   "business_id": "dream_sadang",
   "biz_item_id": "29"
+  },
+  {
+  "name": "L룸",
+  "branch": "스페이스 개러지 중앙대점",
+  "business_id": "1042278",
+  "biz_item_id": "5865609"
+  },
+  {
+  "name": "R룸",
+  "branch": "스페이스 개러지 중앙대점",
+  "business_id": "1042278",
+  "biz_item_id": "5667365"
+  },
+  {
+    "name": "X룸",
+    "branch": "스페이스 개러지 중앙대점",
+    "business_id": "1042278",
+    "biz_item_id": "6925753"
+  },
+  {
+  "name": "A룸",
+  "branch": "사운딕트합주실",
+  "business_id": "1132767",
+  "biz_item_id": "5836982"
+  },
+  {
+    "name": "B룸",
+    "branch": "사운딕트합주실",
+    "business_id": "1132767",
+    "biz_item_id": "5850284"
+  },
+  {
+    "name": "C룸",
+    "branch": "사운딕트합주실",
+    "business_id": "1132767",
+    "biz_item_id": "5836988"
+  },
+  {
+    "name": "라운지룸",
+    "branch": "에이타입사운드 라운지점",
+    "business_id": "984268",
+    "biz_item_id": "5326848"
   }
 ]
