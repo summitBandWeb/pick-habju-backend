@@ -1,6 +1,6 @@
 import json
 import logging
-from app.core.paths import pkg_data_path
+from app.core.path import pkg_data_path
 
 logger = logging.getLogger("app")
 
