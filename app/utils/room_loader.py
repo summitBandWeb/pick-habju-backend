@@ -1,13 +1,13 @@
 import json
-from pathlib import Path
 import logging
+from app.core.path import pkg_data_path
 
-ROOMS_FILE = Path(__file__).resolve().parent.parent / "data/rooms.json"
 logger = logging.getLogger("app")
 
 def load_rooms():
+    rooms_file = pkg_data_path("rooms.json")
     try:
-        with open(ROOMS_FILE, encoding="utf-8") as f:
+        with rooms_file.open(encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         logger.error(
