@@ -7,6 +7,7 @@ from app.utils.login import LoginManager
 from app.models.dto import RoomAvailability, RoomKey
 import asyncio
 from datetime import datetime
+from app.utils.client_loader import load_client
 
 # --- 개별 슬롯(off/on) 체크 함수 ---
 def check_hour_slot(soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> bool:
@@ -17,25 +18,27 @@ def check_hour_slot(soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> boo
 
 # --- 예약정보 조회 함수 ---
 async def fetch_reserve_html(client: httpx.AsyncClient, date: str, branch_gubun: str):
-    return await client.post(
+    return await load_client(
+        client,
+        "POST",
         GROOVE_RESERVE_URL,
         data={"reserve_date": date, "gubun": branch_gubun},
         headers={
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": GROOVE_RESERVE_URL1
-        }
+            "Referer": GROOVE_RESERVE_URL1,
+        },
     )
 
 # --- 로그인 및 HTML fetch를 try~except로 감싸는 함수 ---
-async def login_and_fetch_html(date: str, branch_gubun: str="sadang"):
+async def login_and_fetch_html(client: httpx.AsyncClient, date: str, branch_gubun: str="sadang"):
     try:
-        async with httpx.AsyncClient() as client:
-            await LoginManager.login(client)
-            resp = await fetch_reserve_html(client, date, branch_gubun)
+        # 외부에서 주입받은 client 재사용
+        await LoginManager.login(client)  # 내부도 반드시 주입 client 사용하도록 구현되어야 함
+        resp = await fetch_reserve_html(client, date, branch_gubun)
         return resp.text
     except (GrooveCredentialError, GrooveLoginError):
-        # 특정 로그인/자격증명 예외를 다시 발생시켜 호출자가 처리하도록 함
-        raise
+        # 로그인/자격증명 관련 예외는 상위에서 처리
+         raise
 
 # --- 방의 예약가능 상태 확인 함수 ---
 async def fetch_room_availability(
@@ -57,6 +60,7 @@ async def fetch_room_availability(
 
 # --- 메인 함수 ---
 async def get_groove_availability(
+    client: httpx.AsyncClient,
     date: str,
     hour_slots: List[str],
     rooms: List[RoomKey]
@@ -85,7 +89,7 @@ async def get_groove_availability(
         return unknown_results
 
     # 3. 날짜가 유효한 범위 내에 있으면 데이터 가져오기 진행
-    html = await login_and_fetch_html(date, branch_gubun="sadang")
+    html = await login_and_fetch_html(client, date, branch_gubun="sadang")
     soup = BeautifulSoup(html, "html.parser")
     tasks = [fetch_room_availability(room, hour_slots, soup) for room in rooms]
     results = await asyncio.gather(*tasks)
