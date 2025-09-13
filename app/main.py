@@ -6,6 +6,24 @@ from app.exception.exception_handler import custom_exception_handler, global_exc
 from app.core.logging_config import setup_logging
 from app.core.config import ALLOWED_ORIGINS
 
+REQUEST_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+HTTP_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=30.0)
+DEFAULT_HEADERS = {"User-Agent": "PickHabju/1.0"}
+
+
+async def lifespan(app: FastAPI):
+    app.state.http = httpx.AsyncClient(
+        timeout=REQUEST_TIMEOUT,
+        limits=HTTP_LIMITS,
+        headers=DEFAULT_HEADERS,
+        follow_redirects=True,
+        http2=True,
+    )
+    try:
+        yield
+    finally:
+        await app.state.http.aclose()
+
 app = FastAPI()
 @app.get("/ping")
 def ping():
