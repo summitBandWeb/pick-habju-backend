@@ -38,7 +38,7 @@ async def login_and_fetch_html(client: httpx.AsyncClient, date: str, branch_gubu
         return resp.text
     except (GrooveCredentialError, GrooveLoginError):
         # 로그인/자격증명 관련 예외는 상위에서 처리
-         raise
+        raise
 
 # --- 방의 예약가능 상태 확인 함수 ---
 async def fetch_room_availability(

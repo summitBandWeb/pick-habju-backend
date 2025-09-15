@@ -6,13 +6,14 @@ from app.exception.exception_handler import custom_exception_handler, global_exc
 from app.core.logging_config import setup_logging
 from app.core.config import ALLOWED_ORIGINS
 import httpx
+from contextlib import asynccontextmanager
 
 REQUEST_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
 HTTP_LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=30.0)
 DEFAULT_HEADERS = {"User-Agent": "PickHabju/1.0"}
 
-
-async def lifespan(app: FastAPI):
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> "AsyncGenerator[None, None]":
     app.state.http = httpx.AsyncClient(
         timeout=REQUEST_TIMEOUT,
         limits=HTTP_LIMITS,
