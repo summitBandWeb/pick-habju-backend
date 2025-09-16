@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from typing import Union, List
 import asyncio
 import logging
@@ -16,41 +16,27 @@ from app.crawler.groove_checker import get_groove_availability
 router = APIRouter(prefix="/api/rooms/availability")
 logger = logging.getLogger("app")
 
-AGGREGATE_TIMEOUT = 15.0
-
 @router.post("/", response_model=AvailabilityResponse)
 @router.post("", response_model=AvailabilityResponse)
-async def your_handler(req: AvailabilityRequest, request: Request):
+async def your_handler(request: AvailabilityRequest):
     # 1) 공통 입력 검증 - 커스텀 예외는 전역 핸들러가 처리
-    validate_availability_request(req.date, req.hour_slots, req.rooms)
+    validate_availability_request(request.date, request.hour_slots, request.rooms)
 
     # 2. 타입별로 룸 필터링
-    dream_rooms = filter_rooms_by_type(req.rooms, "dream")
-    groove_rooms = filter_rooms_by_type(req.rooms, "groove")
-    naver_rooms = filter_rooms_by_type(req.rooms, "naver")
+    dream_rooms = filter_rooms_by_type(request.rooms, "dream")
+    groove_rooms = filter_rooms_by_type(request.rooms, "groove")
+    naver_rooms = filter_rooms_by_type(request.rooms, "naver")
 
-    client = request.app.state.http
-
-    async def safe(coro):
-        try:
-            return await coro
-        except Exception as e:
-            return [e]
-
-    tasks = []
-    results_of_lists = []
     # 3. 각 타입에 대한 크롤러를 동시에 실행
-    async with asyncio.timeout(AGGREGATE_TIMEOUT):
-        async with asyncio.TaskGroup() as tg:
-            if dream_rooms:
-                tasks.append(tg.create_task(safe(get_dream_availability(client, req.date, req.hour_slots, dream_rooms))))
-            if groove_rooms:
-                tasks.append(tg.create_task(safe(get_groove_availability(client, req.date, req.hour_slots, groove_rooms))))
-            if naver_rooms:
-                tasks.append(tg.create_task(safe(get_naver_availability(client, req.date, req.hour_slots, naver_rooms))))
+    tasks = []
+    if dream_rooms:
+        tasks.append(get_dream_availability(request.date, request.hour_slots, dream_rooms))
+    if groove_rooms:
+        tasks.append(get_groove_availability(request.date, request.hour_slots, groove_rooms))
+    if naver_rooms:
+        tasks.append(get_naver_availability(request.date, request.hour_slots, naver_rooms))
 
-    for t in tasks:
-        results_of_lists.append(t.result())
+    results_of_lists = await asyncio.gather(*tasks)
 
     # 4. 결과 통합
     all_results = [item for sublist in results_of_lists for item in sublist]
@@ -60,14 +46,14 @@ async def your_handler(req: AvailabilityRequest, request: Request):
     for err in errors:
         if isinstance(err, BaseCustomException):
             logger.warning({
-                "timestamp": req.date,  # 요청 맥락에서 대표 타임스탬프가 없다면 서버 시간으로 대체 가능
+                "timestamp": request.date,  # 요청 맥락에서 대표 타임스탬프가 없다면 서버 시간으로 대체 가능
                 "status": err.status_code,
                 "errorCode": err.error_code,
                 "message": err.message,
             })
         else:
             logger.error({
-                "timestamp": req.date,
+                "timestamp": request.date,
                 "status": 500,
                 "errorCode": "Common-001",
                 "message": str(err),
@@ -78,8 +64,8 @@ async def your_handler(req: AvailabilityRequest, request: Request):
     successful_results = [r for r in all_results if r is not None and not isinstance(r, Exception)]
 
     return AvailabilityResponse(
-        date=req.date,
-        hour_slots=req.hour_slots,
+        date=request.date,
+        hour_slots=request.hour_slots,
         results=successful_results,
         available_biz_item_ids=[r.biz_item_id for r in successful_results if r.available is True]
     )

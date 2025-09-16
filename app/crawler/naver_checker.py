@@ -5,12 +5,11 @@ from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverR
 from app.exception.api.client_loader_exception import RequestFailedError
 from app.utils.client_loader import load_client
 import asyncio
-import httpx
 
 RoomResult = Union[RoomAvailability, Exception]
 
 
-async def fetch_naver_availability_room(client: httpx.AsyncClient, date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
+async def fetch_naver_availability_room(date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
     url = "https://booking.naver.com/graphql?opName=schedule"
     start_dt = f"{date}T00:00:00"
     end_dt = f"{date}T23:59:59"
@@ -43,7 +42,7 @@ async def fetch_naver_availability_room(client: httpx.AsyncClient, date: str, ho
     }
 
     try:
-        response = await load_client(client, "POST", url, json=body, headers=headers)
+        response = await load_client(url, json=body, headers=headers)
         data = response.json()
     except RequestFailedError as e:
         # 공통 클라이언트 계층의 실패를 네이버 전용 예외로 매핑
@@ -80,7 +79,6 @@ async def fetch_naver_availability_room(client: httpx.AsyncClient, date: str, ho
 
 
 async def get_naver_availability(
-        client: httpx.AsyncClient,
         date: str,
         hour_slots: List[str],
         naver_rooms: List[RoomKey]
@@ -89,7 +87,7 @@ async def get_naver_availability(
 
     async def safe_fetch(room: RoomKey) -> RoomResult:
         try:
-            return await fetch_naver_availability_room(client, date, hour_slots, room)
+            return await fetch_naver_availability_room(date, hour_slots, room)
         except NaverAvailabilityError as e:
             return e
 

@@ -2,7 +2,6 @@ import re
 import html
 import sys
 import asyncio
-import httpx
 from datetime import datetime
 from app.models.dto import RoomKey, RoomAvailability
 from app.utils.client_loader import load_client
@@ -21,13 +20,13 @@ HEADERS = {
 DATE_LIMIT_DAYS = 121
 RoomResult = Union[RoomAvailability, Exception]
 
-async def _fetch_dream_availability_room(client: httpx.AsyncClient, date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
+async def _fetch_dream_availability_room(date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
     data = {
         'rm_ix': room.biz_item_id,
         'sch_date': date
     }
 
-    response = await load_client(client, "POST", _URL, headers=HEADERS, data=data)
+    response = await load_client(_URL, headers=HEADERS, data=data)
 
     try:
         response_data = response.json()
@@ -63,7 +62,6 @@ async def _fetch_dream_availability_room(client: httpx.AsyncClient, date: str, h
     )
 
 async def get_dream_availability(
-      client: httpx.AsyncClient,
       date: str,
       hour_slots: List[str],
       dream_rooms: List[RoomKey]
@@ -88,7 +86,7 @@ async def get_dream_availability(
     async def safe_fetch(room: RoomKey) -> RoomResult:
         # --- 제거됨: RoomKey 검증은 메인 라우터에서 처리됩니다 ---
         try:
-            return await _fetch_dream_availability_room(client, date, hour_slots, room)
+            return await _fetch_dream_availability_room(date, hour_slots, room)
         except DreamAvailabilityError as e:
             # 호출자에 의해 로깅될 예외를 반환
             return e
