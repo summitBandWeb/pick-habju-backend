@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI) -> "AsyncGenerator[None, None]":
     finally:
         await app.state.http.aclose()
 
-app = FastAPI()
+app = FastAPI(lifespan = lifespan)
 @app.get("/ping")
 def ping():
     return {"ok": True}
