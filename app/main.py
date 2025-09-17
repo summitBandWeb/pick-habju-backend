@@ -32,6 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.options("/{full_path:path}")
+def options_any(full_path: str):
+    return Response(status_code=204)
+
 # API 라우터 포함
 app.include_router(available_router)
 
