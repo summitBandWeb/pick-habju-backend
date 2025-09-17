@@ -5,8 +5,35 @@ from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler, global_exception_handler
 from app.core.logging_config import setup_logging
 from app.core.config import ALLOWED_ORIGINS
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
+
+ALLOWED_ORIGINS_SET = {
+    "https://www.pickhabju.com",
+    "https://pickhabju.com",
+    # 필요시 추가
+}
+
+class PreflightMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.method == "OPTIONS":
+            origin = request.headers.get("origin", "")
+            allow_origin = origin if origin in ALLOWED_ORIGINS_SET else ""
+            headers = {
+                "Access-Control-Allow-Origin": allow_origin,
+                "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Requested-With",
+                "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
+                "Access-Control-Max-Age": "86400",
+            }
+            # 204로 즉시 종료 (200이어도 무방하지만 204 선호)
+            return Response(status_code=204, headers=headers)
+        return await call_next(request)
 
 app = FastAPI()
+
+app.add_middleware(PreflightMiddleware)
 @app.get("/ping")
 def ping():
     return {"ok": True}
@@ -22,6 +49,7 @@ origins = list({
     # 개발용 필요하면 여기에 추가:
     # "http://localhost:3000", "http://localhost:5173",
 })
+
 
 app.add_middleware(
     CORSMiddleware,
