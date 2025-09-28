@@ -1,0 +1,57 @@
+name: EC2 Power Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action"
+        type: choice
+        options: [status, stop, start]
+        default: status
+      confirm:
+        description: "Type POWER to proceed (start/stop only)"
+        required: false
+        type: string
+
+jobs:
+  power:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC assume role
+      contents: read
+
+    steps:
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::778000733391:role/GithubActionsEc2PowerRole
+          aws-region: ap-northeast-2
+
+      - name: Who am I
+        run: aws sts get-caller-identity
+
+      - name: Guard for start/stop
+        if: ${{ inputs.action == 'stop' || inputs.action == 'start' }}
+        run: |
+          [ "${{ inputs.confirm }}" = "POWER" ] || { echo "Type POWER"; exit 1; }
+
+      - name: Status
+        if: ${{ inputs.action == 'status' }}
+        run: |
+          aws ec2 describe-instances --instance-ids "${{ secrets.ALPHA_INSTANCE_ID }}" \
+            --query "Reservations[0].Instances[0].{State:State.Name,PublicIp:PublicIpAddress}" --output table
+
+      - name: Stop
+        if: ${{ inputs.action == 'stop' }}
+        run: |
+          aws ec2 stop-instances --instance-ids "${{ secrets.ALPHA_INSTANCE_ID }}"
+          aws ec2 wait instance-stopped --instance-ids "${{ secrets.AlPHA_INSTANCE_ID }}"
+          echo "Stopped."
+
+      - name: Start
+        if: ${{ inputs.action == 'start' }}
+        run: |
+          aws ec2 start-instances --instance-ids "${{ secrets.ALPHA_INSTANCE_ID }}"
+          aws ec2 wait instance-running --instance-ids "${{ secrets.ALPHA_INSTANCE_ID }}"
+          aws ec2 wait instance-status-ok --instance-ids "${{ secrets.ALPHA_INSTANCE_ID }}"
+          echo "Running."
