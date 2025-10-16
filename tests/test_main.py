@@ -13,6 +13,7 @@ def test_ping():
 
 
 def test_post_item():
+    # POST 요청 테스트
     response = client.post(
         "/items",
         json={"name": "Song"}
@@ -22,7 +23,7 @@ def test_post_item():
     assert response.json().get("id") == 1
 
 
-def test_create_item():
+def test_post_availability_api():
     # POST 요청 테스트
     url = "/api/rooms/availability"
     payload = {
