@@ -42,12 +42,6 @@ app.add_middleware(
 def ping():
     return {"ok": True}
 
-
-@app.post("/items")
-def create_item(item: dict):
-    return {"id": 1, "name": item.get("name")}
-
-
 # API 라우터 포함
 app.include_router(available_router)
 
