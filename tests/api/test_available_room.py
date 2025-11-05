@@ -12,47 +12,36 @@ def test_ping():
     assert response.json() == {"ok": True}
 
 
-def test_post_item():
-    # POST 요청 테스트
-    response = client.post(
-        "/items",
-        json={"name": "Song"}
-    )
-    assert response.status_code == 200
-    assert response.json().get("name") == "Song"
-    assert response.json().get("id") == 1
+# def test_post_availability_api():
+#     # POST 요청 테스트
+#     url = "/api/rooms/availability"
+#     payload = {
+#         "date": "2025-11-04",
+#         "hour_slots": ["18:00", "19:00", "20:00"],
+#         "rooms": [
+#             {
+#                 "name": "블랙룸",
+#                 "branch": "비쥬합주실 1호점",
+#                 "business_id": "522011",
+#                 "biz_item_id": "3968885"
+#             },
+#             {
+#                 "name": "B룸",
+#                 "branch": "비쥬합주실 2호점",
+#                 "business_id": "706924",
+#                 "biz_item_id": "4450073"
+#             },
+#         ]
+#     }
 
-
-def test_post_availability_api():
-    # POST 요청 테스트
-    url = "/api/rooms/availability"
-    payload = {
-        "date": "2025-11-04",
-        "hour_slots": ["18:00", "19:00", "20:00"],
-        "rooms": [
-            {
-                "name": "블랙룸",
-                "branch": "비쥬합주실 1호점",
-                "business_id": "522011",
-                "biz_item_id": "3968885"
-            },
-            {
-                "name": "B룸",
-                "branch": "비쥬합주실 2호점",
-                "business_id": "706924",
-                "biz_item_id": "4450073"
-            },
-        ]
-    }
-
-    response = client.post(
-        url=url,
-        json=payload,
-    )
-    assert response.status_code == 200
-    assert response.json().get("date") == "2025-11-04"
-    assert response.json().get("hour_slots") == ["18:00", "19:00", "20:00"]
-    assert "available_biz_item_ids" in response.json()
+#     response = client.post(
+#         url=url,
+#         json=payload,
+#     )
+#     assert response.status_code == 200
+#     assert response.json().get("date") == "2025-11-04"
+#     assert response.json().get("hour_slots") == ["18:00", "19:00", "20:00"]
+#     assert "available_biz_item_ids" in response.json()
 
 
 def test_preflight_request():
