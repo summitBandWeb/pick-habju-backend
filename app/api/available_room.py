@@ -9,9 +9,7 @@ from app.utils.room_router import filter_rooms_by_type
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
 from app.exception.base_exception import BaseCustomException
 
-from app.crawler.dream_checker import get_dream_availability
-from app.crawler.naver_checker import get_naver_availability
-from app.crawler.groove_checker import get_groove_availability
+from app.crawler.registry import CRAWLER_REGISTRY
 
 router = APIRouter(prefix="/api/rooms/availability")
 logger = logging.getLogger("app")
@@ -22,19 +20,12 @@ async def your_handler(request: AvailabilityRequest):
     # 1) 공통 입력 검증 - 커스텀 예외는 전역 핸들러가 처리
     validate_availability_request(request.date, request.hour_slots, request.rooms)
 
-    # 2. 타입별로 룸 필터링
-    dream_rooms = filter_rooms_by_type(request.rooms, "dream")
-    groove_rooms = filter_rooms_by_type(request.rooms, "groove")
-    naver_rooms = filter_rooms_by_type(request.rooms, "naver")
-
-    # 3. 각 타입에 대한 크롤러를 동시에 실행
+    # 2. 레지스트리에 등록된 크롤러들을 자동으로 실행
     tasks = []
-    if dream_rooms:
-        tasks.append(get_dream_availability(request.date, request.hour_slots, dream_rooms))
-    if groove_rooms:
-        tasks.append(get_groove_availability(request.date, request.hour_slots, groove_rooms))
-    if naver_rooms:
-        tasks.append(get_naver_availability(request.date, request.hour_slots, naver_rooms))
+    for room_type, crawler_func in CRAWLER_REGISTRY.items():
+        target_rooms = filter_rooms_by_type(request.rooms, room_type)
+        if target_rooms:
+            tasks.append(crawler_func(request.date, request.hour_slots, target_rooms))
 
     results_of_lists = await asyncio.gather(*tasks)
 
