@@ -3,92 +3,91 @@ import html
 import sys
 import asyncio
 from datetime import datetime
-from app.models.dto import RoomKey, RoomAvailability
-from app.utils.client_loader import load_client
 from typing import List, Union
 
+from app.models.dto import RoomKey, RoomAvailability
+from app.utils.client_loader import load_client
 from app.exception.crawler.dream_exception import DreamAvailabilityError
+
+from app.crawler.base import BaseCrawler, RoomResult
+from app.crawler.registry import registry
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-_URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Content-Type": "application/x-www-form-urlencoded"
-}
-
-DATE_LIMIT_DAYS = 121
-RoomResult = Union[RoomAvailability, Exception]
-
-async def _fetch_dream_availability_room(date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
-    data = {
-        'rm_ix': room.biz_item_id,
-        'sch_date': date
+class DreamCrawler(BaseCrawler):
+    _URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0",
+        "Content-Type": "application/x-www-form-urlencoded"
     }
+    DATE_LIMIT_DAYS = 121
 
-    response = await load_client(_URL, headers=HEADERS, data=data)
+    async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
+        today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
+        target_date = datetime.strptime(date, '%Y-%m-%d').date()
 
-    try:
-        response_data = response.json()
-    except Exception as e:
-       raise DreamAvailabilityError(f"[{room.name}] JSON 파싱 오류: {e}")
+        if (target_date - today).days >= self.DATE_LIMIT_DAYS:
+            return [
+                RoomAvailability(
+                    name=room.name,
+                    branch=room.branch,
+                    business_id=room.business_id,
+                    biz_item_id=room.biz_item_id,
+                    available="unknown",
+                    available_slots={hour_str: "unknown" for hour_str in hour_slots},
+                )
+                for room in rooms
+            ]
 
-    try:
-        items_html = html.unescape(response_data.get("items", ""))
-    except Exception as e:
-        raise DreamAvailabilityError(f"[{room.name}] 응답 아이템 읽기 오류: {e}")
+        async def safe_fetch(room: RoomKey) -> RoomResult:
+            try:
+                return await self._fetch_dream_availability_room(date, hour_slots, room)
+            except DreamAvailabilityError as e:
+                # 호출자에 의해 로깅될 예외를 반환
+                return e
 
-    available_slots = {}
-    for time in hour_slots:
-        target_time = time.split(":")[0] + "시00분"
-        pattern = fr'<label class="([^"]+)" title="{re.escape(target_time)}[^"]*">'
-        match = re.search(pattern, items_html, re.DOTALL)
+        return await asyncio.gather(*[safe_fetch(room) for room in rooms])
 
-        if match:
-            classes = match.group(1).split()
-            available_slots[time] = 'active' in classes
-        else:
-            available_slots[time] = False
+    async def _fetch_dream_availability_room(self, date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
+        data = {
+            'rm_ix': room.biz_item_id,
+            'sch_date': date
+        }
 
-    available = all(available_slots.values())
+        response = await load_client(self._URL, headers=self.HEADERS, data=data)
 
-    return RoomAvailability(
-        name=room.name,
-        branch=room.branch,
-        business_id=room.business_id,
-        biz_item_id=room.biz_item_id,
-        available=available,
-        available_slots=available_slots
-    )
-
-async def get_dream_availability(
-      date: str,
-      hour_slots: List[str],
-      dream_rooms: List[RoomKey]
-) -> List[RoomResult]:
-
-    today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
-    target_date = datetime.strptime(date, '%Y-%m-%d').date()
-
-    if (target_date - today).days >= DATE_LIMIT_DAYS:
-        return [
-            RoomAvailability(
-                name=room.name,
-                branch=room.branch,
-                business_id=room.business_id,
-                biz_item_id=room.biz_item_id,
-                available="unknown",
-                available_slots={hour_str: "unknown" for hour_str in hour_slots},
-            )
-            for room in dream_rooms
-        ]
-
-    async def safe_fetch(room: RoomKey) -> RoomResult:
-        # --- 제거됨: RoomKey 검증은 메인 라우터에서 처리됩니다 ---
         try:
-            return await _fetch_dream_availability_room(date, hour_slots, room)
-        except DreamAvailabilityError as e:
-            # 호출자에 의해 로깅될 예외를 반환
-            return e
+            response_data = response.json()
+        except Exception as e:
+           raise DreamAvailabilityError(f"[{room.name}] JSON 파싱 오류: {e}")
 
-    return await asyncio.gather(*[safe_fetch(room) for room in dream_rooms])
+        try:
+            items_html = html.unescape(response_data.get("items", ""))
+        except Exception as e:
+            raise DreamAvailabilityError(f"[{room.name}] 응답 아이템 읽기 오류: {e}")
+
+        available_slots = {}
+        for time in hour_slots:
+            target_time = time.split(":")[0] + "시00분"
+            pattern = fr'<label class="([^"]+)" title="{re.escape(target_time)}[^"]*">'
+            match = re.search(pattern, items_html, re.DOTALL)
+
+            if match:
+                classes = match.group(1).split()
+                available_slots[time] = 'active' in classes
+            else:
+                available_slots[time] = False
+
+        available = all(available_slots.values())
+
+        return RoomAvailability(
+            name=room.name,
+            branch=room.branch,
+            business_id=room.business_id,
+            biz_item_id=room.biz_item_id,
+            available=available,
+            available_slots=available_slots
+        )
+
+# Register the crawler
+registry.register("dream", DreamCrawler())
