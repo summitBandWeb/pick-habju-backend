@@ -8,5 +8,5 @@ CRAWLER_REGISTRY = {
     "groove": get_groove_availability,
     "naver": get_naver_availability, 
     # "hapjusil": get_hapjusil_availability,
-    # "kakao": get_kakao_availaiblity
+    # "kakao": get_kakao_availability
 }
