@@ -7,7 +7,6 @@ from app.exception.base_exception import BaseCustomException
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
-from app.exception.base_exception import BaseCustomException
 
 from app.crawler.registry import CRAWLER_REGISTRY
 
