@@ -11,29 +11,22 @@ permissions:
 
 jobs:
   claude-response:
-    if: contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
     environment: prod
     steps:
-      - name: Checkout repository (default)
-        if: ${{ !github.event.issue.pull_request }}
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  
-
-      - name: Checkout repository (PR head)
-        if: ${{ github.event.issue.pull_request }}
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: refs/pull/${{ github.event.issue.number }}/head
 
       - name: Run Claude Code Action
-        uses: anthropics/claude-code-action@v1.0.23
+        uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --model sonnet
-            --system-prompt "당신은 한국어 코드 리뷰어입니다. 반드시 한국어로만 응답해야 합니다. 이전 대화 내용에 기반하여 체계적으로 정리해 주세요."
-
+            --system-prompt "
+            당신은 한국어 코드 리뷰어입니다. 반드시 한국어로만 응답해야 합니다.
+                        이전 대화 내용에 기반하여 체계적으로 정리해 주세요.
+            "
