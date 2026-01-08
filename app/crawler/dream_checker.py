@@ -1,4 +1,4 @@
-import re
+from bs4 import BeautifulSoup
 import html
 import sys
 import asyncio
@@ -38,15 +38,21 @@ async def _fetch_dream_availability_room(date: str, hour_slots: List[str], room:
     except Exception as e:
         raise DreamAvailabilityError(f"[{room.name}] 응답 아이템 읽기 오류: {e}")
 
+    # BeautifulSoup으로 파싱
+    soup = BeautifulSoup(items_html, "html.parser")
     available_slots = {}
-    for time in hour_slots:
-        target_time = time.split(":")[0] + "시00분"
-        pattern = fr'<label class="([^"]+)" title="{re.escape(target_time)}[^"]*">'
-        match = re.search(pattern, items_html, re.DOTALL)
 
-        if match:
-            classes = match.group(1).split()
-            available_slots[time] = 'active' in classes
+    for time in hour_slots:
+        target_time = time.split(":")[0] + "시00분" # 예: "14:00" -> "14시00분"
+        
+        # title 속성에 target_time이 포함된 label 태그 찾기
+        # 예: title="2024-05-20 14시00분 (월)"
+        label = soup.find('label', title=lambda t: t and target_time in t)
+        
+        if label:
+            # class 속성에 'active'가 있으면 예약 가능
+            classes = label.get("class", [])
+            available_slots[time] = "active" in classes
         else:
             available_slots[time] = False
 
