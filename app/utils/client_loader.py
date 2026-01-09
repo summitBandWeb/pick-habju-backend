@@ -13,7 +13,11 @@ def set_global_client():
     global _shared_client
     with _client_lock:
         if _shared_client is None:
-            _shared_client = httpx.AsyncClient()
+            _shared_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=5.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                http2=True,
+            )
 
 async def close_global_client():
     """애플리케이션 종료 시 전역 클라이언트 리소스 해제"""
@@ -38,7 +42,9 @@ async def load_client(url: str, **kwargs):
     
     if client is None:
         # 안전장치: 전역 클라이언트가 설정되지 않았다면 임시로 생성
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(10.0, connect=5.0)
+        )
         should_close = True
 
     try:
