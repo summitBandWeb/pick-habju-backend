@@ -39,22 +39,7 @@ async def _fetch_dream_availability_room(date: str, hour_slots: List[str], room:
         raise DreamAvailabilityError(f"[{room.name}] 응답 아이템 읽기 오류: {e}")
 
     # BeautifulSoup으로 파싱
-    soup = BeautifulSoup(items_html, "html.parser")
-    available_slots = {}
-
-    for time in hour_slots:
-        target_time = time.split(":")[0] + "시00분" # 예: "14:00" -> "14시00분"
-        
-        # title 속성에 target_time이 포함된 label 태그 찾기
-        # 예: title="2024-05-20 14시00분 (월)"
-        label = soup.find('label', title=lambda t: t and target_time in t)
-        
-        if label:
-            # class 속성에 'active'가 있으면 예약 가능
-            classes = label.get("class", [])
-            available_slots[time] = "active" in classes
-        else:
-            available_slots[time] = False
+    available_slots = _parse_dream_html_content(items_html, hour_slots)
 
     available = all(available_slots.values())
 
@@ -66,6 +51,26 @@ async def _fetch_dream_availability_room(date: str, hour_slots: List[str], room:
         available=available,
         available_slots=available_slots
     )
+
+def _parse_dream_html_content(items_html: str, hour_slots: List[str]) -> dict:
+    soup = BeautifulSoup(items_html, "lxml")
+    available_slots = {}
+
+    for time in hour_slots:
+        target_time = time.split(":")[0] + "시00분" # 예: "14:00" -> "14시00분"
+        
+        # title 속성에 target_time이 포함된 label 태그 찾기
+        # 예: title="2024-05-20 14시00분 (월)"
+        label = soup.find('label', title=lambda t: t and isinstance(t, str) and target_time in t)
+        
+        if label:
+            # class 속성에 'active'가 있으면 예약 가능
+            classes = label.get("class", [])
+            available_slots[time] = "active" in classes
+        else:
+            available_slots[time] = False
+            
+    return available_slots
 
 async def get_dream_availability(
       date: str,
