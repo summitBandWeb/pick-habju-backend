@@ -1,20 +1,27 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from app.crawler.base import BaseCrawler
 
 class CrawlerRegistry:
+    _instance: Optional['CrawlerRegistry'] = None
     _crawlers: Dict[str, BaseCrawler] = {}
 
-    @classmethod
-    def register(cls, name: str, crawler: BaseCrawler):
-        cls._crawlers[name] = crawler
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
-    @classmethod
-    def get(cls, name: str) -> BaseCrawler:
-        return cls._crawlers.get(name)
+    def register(self, name: str, crawler: BaseCrawler):
+        self._crawlers[name] = crawler
 
-    @classmethod
-    def get_all(cls) -> List[BaseCrawler]:
-        return list(cls._crawlers.values())
+    def get(self, name: str) -> BaseCrawler:
+        return self._crawlers.get(name)
 
-# Global registry instance (optional, or just use class methods)
-registry = CrawlerRegistry
+    def get_all(self) -> List[BaseCrawler]:
+        return list(self._crawlers.values())
+    
+    def get_all_map(self) -> Dict[str, BaseCrawler]:
+        """Returns a copy of the registered crawlers map."""
+        return self._crawlers.copy()
+
+# Global singleton instance
+registry = CrawlerRegistry()
