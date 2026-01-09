@@ -2,7 +2,7 @@
 import pytest
 
 from datetime import datetime, timedelta
-from app.crawler.naver_checker import get_naver_availability
+from app.crawler.naver_checker import NaverCrawler
 from app.models.dto import RoomKey
 
 @pytest.mark.asyncio
@@ -16,7 +16,8 @@ async def test_get_naver_availability():
         RoomKey(name="R룸", branch="준사운드 사당점", business_id="1384809", biz_item_id="6649826"),
     ]
 
-    result = await get_naver_availability(date, hour_slots, naver_rooms)
+    crawler = NaverCrawler()
+    result = await crawler.check_availability(date, hour_slots, naver_rooms)
     print(result)  # 가공 없이 그대로 출력
 
     # (선택) 간단한 검증도 추가 가능
