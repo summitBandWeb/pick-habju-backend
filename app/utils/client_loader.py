@@ -1,23 +1,27 @@
 import httpx
 import asyncio
 import logging
+from threading import Lock
 from app.exception.api.client_loader_exception import RequestFailedError
 
 # 전역 클라이언트 변수
 _shared_client: httpx.AsyncClient = None
+_client_lock = Lock()
 
 def set_global_client():
     """애플리케이션 시작 시 전역 클라이언트 설정"""
     global _shared_client
-    if _shared_client is None:
-        _shared_client = httpx.AsyncClient()
+    with _client_lock:
+        if _shared_client is None:
+            _shared_client = httpx.AsyncClient()
 
 async def close_global_client():
     """애플리케이션 종료 시 전역 클라이언트 리소스 해제"""
     global _shared_client
-    if _shared_client:
-        await _shared_client.aclose()
-        _shared_client = None
+    with _client_lock:
+        if _shared_client:
+            await _shared_client.aclose()
+            _shared_client = None
 
 async def get_client() -> httpx.AsyncClient:
     """전역 클라이언트 반환 (없으면 생성 - 안전장치)"""
