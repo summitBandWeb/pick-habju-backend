@@ -20,7 +20,7 @@ from app.utils.client_loader import set_global_client, close_global_client
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 설정
-    set_global_client()
+    await set_global_client()
     yield
     # 종료 시 클라이언트 정리
     await close_global_client()

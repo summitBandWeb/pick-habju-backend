@@ -1,18 +1,25 @@
 import httpx
 import asyncio
 import logging
-from threading import Lock
 from datetime import datetime
 from app.exception.api.client_loader_exception import RequestFailedError
 
 # 전역 클라이언트 변수
 _shared_client: httpx.AsyncClient = None
-_client_lock = Lock()
+_client_lock = asyncio.Lock()
 
-def set_global_client():
-    """애플리케이션 시작 시 전역 클라이언트 설정"""
+async def set_global_client():
+    """애플리케이션 시작 시 전역 클라이언트 설정.
+    
+    비동기 Lock을 사용하여 여러 비동기 작업이 동시에 초기화를 시도해도
+    단일 인스턴스만 생성되도록 보장합니다.
+    
+    HTTP/2 지원 및 연결 풀 최적화 설정:
+    - Timeout: 전체 10초, 연결 5초
+    - 연결 풀: 최대 100개 연결, keepalive 20개
+    """
     global _shared_client
-    with _client_lock:
+    async with _client_lock:
         if _shared_client is None:
             _shared_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
@@ -21,17 +28,36 @@ def set_global_client():
             )
 
 async def close_global_client():
-    """애플리케이션 종료 시 전역 클라이언트 리소스 해제"""
+    """애플리케이션 종료 시 전역 클라이언트 리소스 해제.
+    
+    모든 연결을 정상적으로 종료하고 리소스를 정리합니다.
+    """
     global _shared_client
-    with _client_lock:
+    async with _client_lock:
         if _shared_client:
             await _shared_client.aclose()
             _shared_client = None
 
 async def _retry_request(client: httpx.AsyncClient, url: str, max_retries: int = 2, **kwargs):
-    """재시도 로직을 분리한 헬퍼 함수"""
+    """재시도 로직을 분리한 헬퍼 함수.
+    
+    네트워크 오류나 5xx 서버 에러 발생 시 지수 백오프로 재시도합니다.
+    
+    Args:
+        client: HTTP 클라이언트 인스턴스
+        url: 요청 URL
+        max_retries: 최대 재시도 횟수
+        **kwargs: POST 요청에 전달할 추가 파라미터
+        
+    Returns:
+        성공한 HTTP 응답 객체
+        
+    Raises:
+        Exception: 모든 재시도 실패 시 마지막 예외를 전파
+    """
     for attempt in range(max_retries):
         try:
+            # 지수 백오프: 0.2초, 0.4초, 0.6초...
             await asyncio.sleep(0.2 * (attempt + 1))
             response = await client.post(url, **kwargs)
             response.raise_for_status()
@@ -43,6 +69,27 @@ async def _retry_request(client: httpx.AsyncClient, url: str, max_retries: int =
     return None
 
 async def load_client(url: str, **kwargs):
+    """외부 API 호출을 위한 HTTP POST 요청 헬퍼.
+    
+    전역 클라이언트를 사용하여 연결 재사용을 최적화하며,
+    네트워크 오류나 5xx 에러 발생 시 자동으로 재시도합니다.
+    
+    Args:
+        url: 요청할 API 엔드포인트 URL
+        **kwargs: httpx.AsyncClient.post()에 전달할 추가 파라미터
+                 (headers, json, data 등)
+    
+    Returns:
+        httpx.Response: 성공한 HTTP 응답 객체
+        
+    Raises:
+        RequestFailedError: API 호출 실패 시 (4xx, 5xx, 네트워크 오류 등)
+        
+    Note:
+        - 전역 클라이언트가 없으면 임시 클라이언트 생성 (안전장치)
+        - 5xx, 네트워크 오류: 자동 재시도 (최대 2회)
+        - 4xx: 즉시 실패 (재시도 없음)
+    """
     logger = logging.getLogger("app")
     
     # 1. 사용할 클라이언트 결정 (전역 vs 임시)
