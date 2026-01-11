@@ -14,19 +14,17 @@ class AvailabilityService:
         self.crawlers_map = crawlers_map
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
-        # 1. Validation
+    async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
         validate_availability_request(request.date, request.hour_slots, request.rooms)
 
-        # 2. Prepare tasks for each crawler
+        # Prepare tasks for each crawler
         tasks = []
         for crawler_type, crawler in self.crawlers_map.items():
             target_rooms = filter_rooms_by_type(request.rooms, crawler_type)
             if target_rooms:
                 tasks.append(crawler.check_availability(request.date, request.hour_slots, target_rooms))
 
-        # 3. Execute concurrently
         if not tasks:
-            # No tasks to run (e.g. no rooms matched any crawler)
             return AvailabilityResponse(
                 date=request.date,
                 hour_slots=request.hour_slots,
@@ -35,14 +33,10 @@ class AvailabilityService:
             )
 
         results_of_lists = await asyncio.gather(*tasks)
-
-        # 4. Aggregate results
         all_results = [item for sublist in results_of_lists for item in sublist]
 
-        # 5. Handle errors (Logging)
         self._log_errors(all_results, request.date)
 
-        # 6. Filter successful results
         successful_results = [r for r in all_results if r is not None and not isinstance(r, Exception)]
 
         return AvailabilityResponse(
