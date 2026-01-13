@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from typing import Union, List
+from typing import Dict, List, Union
 import asyncio
 import logging
 from app.exception.base_exception import BaseCustomException
@@ -7,7 +7,6 @@ from app.exception.base_exception import BaseCustomException
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
-from app.exception.base_exception import BaseCustomException
 
 from app.crawler.base import BaseCrawler
 from app.api.dependencies import get_crawlers_map
@@ -19,7 +18,7 @@ logger = logging.getLogger("app")
 @router.post("", response_model=AvailabilityResponse)
 async def your_handler(
     request: AvailabilityRequest,
-    crawlers_map: dict = Depends(get_crawlers_map)
+    crawlers_map: Dict[str, BaseCrawler] = Depends(get_crawlers_map)
 ):
     # 1) 공통 입력 검증 - 커스텀 예외는 전역 핸들러가 처리
     validate_availability_request(request.date, request.hour_slots, request.rooms)
