@@ -1,17 +1,30 @@
-from typing import Callable, List, Awaitable, Union
-from app.models.dto import RoomKey, RoomAvailability
-from app.utils.room_router import RoomType
-from app.crawler.dream_checker import get_dream_availability
-from app.crawler.groove_checker import get_groove_availability
-from app.crawler.naver_checker import get_naver_availability
+from typing import Dict, List, Optional
+from threading import Lock
+from app.crawler.base import BaseCrawler
 
-RoomResult = Union[RoomAvailability, Exception]
+class CrawlerRegistry:
+    _instance: Optional["CrawlerRegistry"] = None
+    _lock: Lock = Lock()
 
-CRAWLER_REGISTRY: dict[RoomType, Callable[[str, List[str], List[RoomKey]], Awaitable[List[RoomResult]]]] = {
-    # "합주실 타입": 크롤러함수
-    "dream": get_dream_availability,
-    "groove": get_groove_availability,
-    "naver": get_naver_availability, 
-    # "hapjusil": get_hapjusil_availability,
-    # "kakao": get_kakao_availability
-}
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._crawlers = {}
+        return cls._instance
+
+    def register(self, name: str, crawler: BaseCrawler):
+        self._crawlers[name] = crawler
+
+    def get(self, name: str) -> BaseCrawler:
+        return self._crawlers.get(name)
+
+    def get_all(self) -> List[BaseCrawler]:
+        return list(self._crawlers.values())
+
+    def get_all_as_dict(self) -> Dict[str, BaseCrawler]:
+        return self._crawlers.copy()
+
+# Global registry instance
+registry = CrawlerRegistry()

@@ -1,0 +1,27 @@
+name: Nightly Test
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # KST 3시 (한국 새벽 3시)
+
+jobs:
+  nightly-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest
+
+      - name: Discord 알림 # 테스트 실패시만
+        if: failure()
+        uses: Ilshidur/action-discord@master
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          message: |
+            🚨 **Nightly Test 실패**
+            워크플로우: ${{ github.workflow }}
+            브랜치: ${{ github.ref }}
+            커밋: ${{ github.sha }}
+            자세한 내용은: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

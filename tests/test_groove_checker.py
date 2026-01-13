@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 from app.exception.crawler.groove_exception import GrooveLoginError, GrooveCredentialError
 from app.models.dto import RoomKey
-from app.crawler.groove_checker import get_groove_availability
+from app.crawler.groove_checker import GrooveCrawler
 from app.utils.room_loader import load_rooms
 
 @pytest.fixture(scope="module")
@@ -29,37 +29,46 @@ def sample_groove_rooms():
 # --- 1. 예외 및 기본 오류 상황 테스트 ---
 @pytest.mark.asyncio
 async def test_groove_login_error_simulation(sample_groove_rooms):
-    """GrooveLoginError 예외가 올바르게 처리되는지 테스트"""
+    """GrooveLoginError 예외가 리스트로 반환되는지 테스트"""
     future_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    with pytest.raises(GrooveLoginError) as exc_info:
-        with patch('app.crawler.groove_checker.login_and_fetch_html', side_effect=GrooveLoginError):
-            await get_groove_availability(future_date, ["20:00"], sample_groove_rooms)
+    crawler = GrooveCrawler()
 
-    assert exc_info.value.error_code == "Groove-002"
-    assert exc_info.value.status_code == 500
+    # 클래스 내부의 private 메서드를 모킹합니다.
+    with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveLoginError):
+        results = await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
+
+    # 예외가 리스트에 담겨 반환되는지 확인
+    assert len(results) == len(sample_groove_rooms)
+    assert isinstance(results[0], GrooveLoginError)
+    assert results[0].error_code == "Groove-002"
+    assert results[0].status_code == 500
 
 
 @pytest.mark.asyncio
 async def test_groove_credential_error_simulation(sample_groove_rooms):
-    """GrooveCredentialError 예외가 올바르게 처리되는지 테스트"""
+    """GrooveCredentialError 예외가 리스트로 반환되는지 테스트"""
     future_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    with pytest.raises(GrooveCredentialError) as exc_info:
-        with patch('app.crawler.groove_checker.login_and_fetch_html', side_effect=GrooveCredentialError):
-            await get_groove_availability(future_date, ["20:00"], sample_groove_rooms)
+    crawler = GrooveCrawler()
 
-    assert exc_info.value.error_code == "Groove-001"
-    assert exc_info.value.status_code == 401
+    with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveCredentialError):
+        results = await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
+
+    # 예외가 리스트에 담겨 반환되는지 확인
+    assert len(results) == len(sample_groove_rooms)
+    assert isinstance(results[0], GrooveCredentialError)
+    assert results[0].error_code == "Groove-001"
+    assert results[0].status_code == 401
 
 # --- 2. 경계값 분석 테스트 ---
 
 @pytest.mark.asyncio
-@patch('app.crawler.groove_checker.login_and_fetch_html')
-async def test_availability_within_84_days_boundary(mock_fetch_html: MagicMock, sample_groove_rooms):
+async def test_availability_within_84_days_boundary(sample_groove_rooms):
     """
     [경계값] 83일 후: 예약 가능/불가능 상태가 정상적으로 True/False로 반환되는지 테스트합니다.
     """
     # 사용된 biz_item_id를 fixture에서 가져옵니다.
     biz_item_id = sample_groove_rooms[0].biz_item_id
+    crawler = GrooveCrawler()
 
     mock_html = f"""
     <div id="reserve_section_{biz_item_id}">
@@ -67,13 +76,14 @@ async def test_availability_within_84_days_boundary(mock_fetch_html: MagicMock, 
         <td class="ok"></td>
     </div>
     """
-    mock_fetch_html.return_value = mock_html
 
     # 경계값인 83일 후 날짜를 설정
     target_date = (datetime.now() + timedelta(days=83)).strftime("%Y-%m-%d")
     hour_slots = ["20:00", "21:00"]
 
-    results = await get_groove_availability(target_date, hour_slots, sample_groove_rooms)
+    with patch.object(GrooveCrawler, '_login_and_fetch_html', return_value=mock_html):
+        results = await crawler.check_availability(target_date, hour_slots, sample_groove_rooms)
+
     print(results)
     # 검증
     # check_hour_slot은 '#reserve_time_..._21.reserve_time_off'를 찾지 못하므로 False를 반환함
@@ -90,8 +100,9 @@ async def test_availability_at_and_after_84_days_boundary(sample_groove_rooms):
     """
     target_date = (datetime.now() + timedelta(days=84)).strftime("%Y-%m-%d")
     hour_slots = ["20:00", "21:00"]
+    crawler = GrooveCrawler()
 
-    results = await get_groove_availability(target_date, hour_slots, sample_groove_rooms)
+    results = await crawler.check_availability(target_date, hour_slots, sample_groove_rooms)
     print(results)
     # 검증
     result = results[0]
