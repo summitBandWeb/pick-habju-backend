@@ -13,13 +13,15 @@ from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
 
 class GrooveCrawler(BaseCrawler):
+    RESERVATION_LIMIT_DAYS = 84  # Reservation window limit per Groove policy.
+
     async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
         # 1. 오늘 날짜와 목표 날짜를 date 객체로 변환
         today = datetime.now().date()
         target_date = datetime.strptime(date, '%Y-%m-%d').date()
 
         # 2. 오늘로부터 84일 이후인지 확인
-        if (target_date - today).days >= 84:
+        if (target_date - today).days >= self.RESERVATION_LIMIT_DAYS:
             # 즉시 'unknown' 결과를 반환
             unknown_results = []
             for room in rooms:
@@ -46,7 +48,7 @@ class GrooveCrawler(BaseCrawler):
             # 로그인 실패 전체 에러 핸들링을 원한다면 여기서 처리 가능하지만, 
             # 개별 room 에러가 아니라 전체 에러이므로 리스트로 변환해서 리턴하거나 
             # 상위로 예외를 던질 수 있음. 여기서는 예외 전파.
-            raise e
+            return [e] * len(rooms)
 
     # --- 개별 슬롯(off/on) 체크 함수 ---
     def _check_hour_slot(self, soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> bool:

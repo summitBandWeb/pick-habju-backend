@@ -1,9 +1,9 @@
-import re
+from bs4 import BeautifulSoup
 import html
 import sys
 import asyncio
 from datetime import datetime
-from typing import List, Union
+from typing import List
 
 from app.models.dto import RoomKey, RoomAvailability
 from app.utils.client_loader import load_client
@@ -20,7 +20,7 @@ class DreamCrawler(BaseCrawler):
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    DATE_LIMIT_DAYS = 121
+    DATE_LIMIT_DAYS = 121  # Reservation window limit per Dream policy.
 
     async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
         today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
@@ -43,7 +43,6 @@ class DreamCrawler(BaseCrawler):
             try:
                 return await self._fetch_dream_availability_room(date, hour_slots, room)
             except DreamAvailabilityError as e:
-                # 호출자에 의해 로깅될 예외를 반환
                 return e
 
         return await asyncio.gather(*[safe_fetch(room) for room in rooms])
@@ -59,25 +58,15 @@ class DreamCrawler(BaseCrawler):
         try:
             response_data = response.json()
         except Exception as e:
-           raise DreamAvailabilityError(f"[{room.name}] JSON 파싱 오류: {e}")
+            raise DreamAvailabilityError(f"[{room.name}] JSON 파싱 오류: {e}")
 
         try:
             items_html = html.unescape(response_data.get("items", ""))
         except Exception as e:
             raise DreamAvailabilityError(f"[{room.name}] 응답 아이템 읽기 오류: {e}")
 
-        available_slots = {}
-        for time in hour_slots:
-            target_time = time.split(":")[0] + "시00분"
-            pattern = fr'<label class="([^"]+)" title="{re.escape(target_time)}[^"]*">'
-            match = re.search(pattern, items_html, re.DOTALL)
-
-            if match:
-                classes = match.group(1).split()
-                available_slots[time] = 'active' in classes
-            else:
-                available_slots[time] = False
-
+        # BeautifulSoup으로 파싱
+        available_slots = self._parse_html_content(items_html, hour_slots)
         available = all(available_slots.values())
 
         return RoomAvailability(
@@ -88,6 +77,27 @@ class DreamCrawler(BaseCrawler):
             available=available,
             available_slots=available_slots
         )
+
+    def _parse_html_content(self, items_html: str, hour_slots: List[str]) -> dict:
+        """BeautifulSoup을 사용하여 HTML에서 시간대별 예약 가능 여부를 파싱합니다."""
+        soup = BeautifulSoup(items_html, "lxml")
+        available_slots = {}
+
+        for time in hour_slots:
+            target_time = time.split(":")[0] + "시00분"  # 예: "14:00" -> "14시00분"
+
+            # title 속성에 target_time이 포함된 label 태그 찾기
+            # 예: title="2024-05-20 14시00분 (월)"
+            label = soup.find('label', title=lambda t: t and isinstance(t, str) and target_time in t)
+
+            if label:
+                # class 속성에 'active'가 있으면 예약 가능
+                classes = label.get("class", [])
+                available_slots[time] = "active" in classes
+            else:
+                available_slots[time] = False
+
+        return available_slots
 
 # Register the crawler
 registry.register("dream", DreamCrawler())

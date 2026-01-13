@@ -15,7 +15,18 @@ ALLOWED_ORIGINS_SET = {
     # 필요시 추가
 }
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+from app.utils.client_loader import set_global_client, close_global_client
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 시작 시 클라이언트 설정
+    set_global_client()
+    yield
+    # 종료 시 클라이언트 정리
+    await close_global_client()
+
+app = FastAPI(lifespan=lifespan)
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.

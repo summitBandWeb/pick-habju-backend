@@ -1,24 +1,30 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
+from threading import Lock
 from app.crawler.base import BaseCrawler
 
 class CrawlerRegistry:
-    _crawlers: Dict[str, BaseCrawler] = {}
+    _instance: Optional["CrawlerRegistry"] = None
+    _lock: Lock = Lock()
 
-    @classmethod
-    def register(cls, name: str, crawler: BaseCrawler):
-        cls._crawlers[name] = crawler
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._crawlers = {}
+        return cls._instance
 
-    @classmethod
-    def get(cls, name: str) -> BaseCrawler:
-        return cls._crawlers.get(name)
+    def register(self, name: str, crawler: BaseCrawler):
+        self._crawlers[name] = crawler
 
-    @classmethod
-    def get_all(cls) -> List[BaseCrawler]:
-        return list(cls._crawlers.values())
+    def get(self, name: str) -> BaseCrawler:
+        return self._crawlers.get(name)
 
-    @classmethod
-    def get_all_as_dict(cls) -> Dict[str, BaseCrawler]:
-        return cls._crawlers.copy()
+    def get_all(self) -> List[BaseCrawler]:
+        return list(self._crawlers.values())
 
-# Global registry instance (optional, or just use class methods)
-registry = CrawlerRegistry
+    def get_all_as_dict(self) -> Dict[str, BaseCrawler]:
+        return self._crawlers.copy()
+
+# Global registry instance
+registry = CrawlerRegistry()

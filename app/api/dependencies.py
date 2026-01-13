@@ -12,5 +12,4 @@ def get_crawlers_map() -> Dict[str, BaseCrawler]:
     """
     Returns a dictionary of registered crawlers with their names as keys.
     """
-    # Accessing protected member for now, or add a public method to registry
     return registry.get_all_as_dict()

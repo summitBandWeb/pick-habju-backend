@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends
-from typing import Dict, List, Union
+from typing import Dict
 import asyncio
 import logging
 from app.exception.base_exception import BaseCustomException
 
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
-from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
+from app.models.dto import AvailabilityRequest, AvailabilityResponse
 
 from app.crawler.base import BaseCrawler
 from app.api.dependencies import get_crawlers_map
@@ -16,21 +16,21 @@ logger = logging.getLogger("app")
 
 @router.post("/", response_model=AvailabilityResponse)
 @router.post("", response_model=AvailabilityResponse)
-async def your_handler(
+async def check_room_availability(
     request: AvailabilityRequest,
     crawlers_map: Dict[str, BaseCrawler] = Depends(get_crawlers_map)
-):
+) -> AvailabilityResponse:
     # 1) 공통 입력 검증 - 커스텀 예외는 전역 핸들러가 처리
     validate_availability_request(request.date, request.hour_slots, request.rooms)
 
     # 2 & 3. 각 크롤러별로 room 필터링 및 조회를 동시에 실행
     tasks = []
-    
+
     # Injected check: iterate over the injected map directly
     for crawler_type, crawler in crawlers_map.items():
         # 1. 해당 타입의 룸만 필터링
         target_rooms = filter_rooms_by_type(request.rooms, crawler_type)
-        
+
         # 2. 해당 타입의 룸이 있다면 태스크 추가
         if target_rooms:
             # BaseCrawler의 check_availability 호출
