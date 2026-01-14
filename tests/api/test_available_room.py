@@ -116,3 +116,74 @@ def test_preflight_request():
     assert "access-control-allow-headers" in response.headers
     assert "content-type" in response.headers["access-control-allow-headers"].lower()
     assert "authorization" in response.headers["access-control-allow-headers"].lower()
+
+
+def test_post_availability_api_with_crawler_error():
+    """크롤러에서 예외가 발생해도 API가 정상 응답하는지 검증 (리뷰 피드백 3.1)"""
+    
+    # 1. 예외를 발생시키는 Mock Crawler 정의
+    class ErrorCrawler(BaseCrawler):
+        async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
+            # 예외를 반환하는 크롤러
+            from app.exception.crawler.naver_exception import NaverAvailabilityError
+            return [NaverAvailabilityError("Test error")]
+
+    # 2. 정상 동작하는 Mock Crawler (기존 MockCrawler 재사용)
+    normal_crawler = MockCrawler("normal")
+
+    # 3. Dependency Override (실제 키 "naver", "dream" 사용)
+    def override_with_error():
+        # "naver" -> ErrorCrawler
+        # "dream" -> NormalCrawler
+        return {
+            "naver": ErrorCrawler(),
+            "dream": normal_crawler
+        }
+    
+    original_override = app.dependency_overrides.get(get_crawlers_map)
+    app.dependency_overrides[get_crawlers_map] = override_with_error
+    
+    try:
+        url = "/api/rooms/availability"
+        target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+        payload = {
+            "date": target_date,
+            "hour_slots": ["18:00"],
+            "rooms": [
+                # 1. Naver Room (ErrorCrawler) - business_id != "dream_sadang" and != "sadang"
+                {
+                    "name": "Naver Room",
+                    "branch": "Branch 1",
+                    "business_id": "123456", 
+                    "biz_item_id": "111"
+                },
+                # 2. Dream Room (NormalCrawler) - business_id == "dream_sadang"
+                {
+                    "name": "Dream Room",
+                    "branch": "Dream Branch",
+                    "business_id": "dream_sadang",
+                    "biz_item_id": "222"
+                }
+            ]
+        }
+        # Validation Bypass
+        from unittest.mock import patch
+        with patch("app.validate.request_validator.validate_room_key_list") as mock_validator:
+            response = client.post(url, json=payload)
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Naver(Error) 결과는 제외되고, Dream(Normal) 결과만 있어야 함
+        # NormalCrawler가 반환한 결과 1개 (room 1개)
+        
+        assert len(data["results"]) == 1
+        assert data["results"][0]["business_id"] == "dream_sadang"
+        assert data["results"][0]["available"] is True
+
+    finally:
+        # 복원
+        if original_override:
+            app.dependency_overrides[get_crawlers_map] = original_override
+        else:
+            del app.dependency_overrides[get_crawlers_map]
