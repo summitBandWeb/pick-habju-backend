@@ -1,19 +1,10 @@
 from fastapi import APIRouter, Depends
-from typing import Dict
-import logging
-from app.api.dependencies import get_crawlers_map
-from app.crawler.base import BaseCrawler
+from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.services.availability_service import AvailabilityService
 
 router = APIRouter(prefix="/api/rooms/availability")
-logger = logging.getLogger("app")
 
-# Dependency for Service
-def get_availability_service(
-    crawlers_map: Dict[str, BaseCrawler] = Depends(get_crawlers_map)
-) -> AvailabilityService:
-    return AvailabilityService(crawlers_map)
 
 @router.post("/", response_model=AvailabilityResponse)
 @router.post("", response_model=AvailabilityResponse)

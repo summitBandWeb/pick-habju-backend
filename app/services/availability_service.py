@@ -19,7 +19,7 @@
 최초 작성: 2026-01-09
 """
 
-from typing import List, Dict, Union
+from __future__ import annotations
 import asyncio
 import logging
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability, RoomKey
@@ -55,8 +55,8 @@ class AvailabilityService:
     Attributes:
         crawlers_map: 크롤러 타입을 키로, BaseCrawler 인스턴스를 값으로 하는 딕셔너리
     """
-    
-    def __init__(self, crawlers_map: Dict[str, BaseCrawler]):
+
+    def __init__(self, crawlers_map: dict[str, BaseCrawler]):
         """서비스 초기화.
         
         Args:
@@ -126,7 +126,7 @@ class AvailabilityService:
         self._log_errors(all_results, request.date)
 
         # Exception을 제외하고 성공한 결과만 필터링
-        successful_results = [r for r in all_results if r is not None and not isinstance(r, Exception)]
+        successful_results = [r for r in all_results if not isinstance(r, Exception)]
 
         return AvailabilityResponse(
             date=request.date,
@@ -135,7 +135,7 @@ class AvailabilityService:
             available_biz_item_ids=[r.biz_item_id for r in successful_results if r.available is True]
         )
 
-    def _log_errors(self, results: List[Union[RoomAvailability, Exception]], date_context: str):
+    def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
         """크롤링 결과에서 에러를 추출하여 로깅.
         
         크롤러별 에러를 탐지하고 적절한 로그 레벨로 기록합니다.

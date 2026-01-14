@@ -7,6 +7,7 @@ from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler, global_exception_handler
+import app.crawler  # Trigger crawler registration on startup.
 
 ALLOWED_ORIGINS_SET = {
     "https://www.pickhabju.com",

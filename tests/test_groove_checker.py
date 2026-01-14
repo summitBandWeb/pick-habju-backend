@@ -29,31 +29,35 @@ def sample_groove_rooms():
 # --- 1. 예외 및 기본 오류 상황 테스트 ---
 @pytest.mark.asyncio
 async def test_groove_login_error_simulation(sample_groove_rooms):
-    """GrooveLoginError 예외가 올바르게 처리되는지 테스트"""
+    """GrooveLoginError 예외가 리스트로 반환되는지 테스트"""
     future_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     crawler = GrooveCrawler()
-    
-    with pytest.raises(GrooveLoginError) as exc_info:
-        # 클래스 내부의 private 메서드를 모킹합니다.
-        with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveLoginError):
-            await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
 
-    assert exc_info.value.error_code == "Groove-002"
-    assert exc_info.value.status_code == 500
+    # 클래스 내부의 private 메서드를 모킹합니다.
+    with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveLoginError):
+        results = await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
+
+    # 예외가 리스트에 담겨 반환되는지 확인
+    assert len(results) == len(sample_groove_rooms)
+    assert isinstance(results[0], GrooveLoginError)
+    assert results[0].error_code == "Groove-002"
+    assert results[0].status_code == 500
 
 
 @pytest.mark.asyncio
 async def test_groove_credential_error_simulation(sample_groove_rooms):
-    """GrooveCredentialError 예외가 올바르게 처리되는지 테스트"""
+    """GrooveCredentialError 예외가 리스트로 반환되는지 테스트"""
     future_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     crawler = GrooveCrawler()
 
-    with pytest.raises(GrooveCredentialError) as exc_info:
-        with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveCredentialError):
-            await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
+    with patch.object(GrooveCrawler, '_login_and_fetch_html', side_effect=GrooveCredentialError):
+        results = await crawler.check_availability(future_date, ["20:00"], sample_groove_rooms)
 
-    assert exc_info.value.error_code == "Groove-001"
-    assert exc_info.value.status_code == 401
+    # 예외가 리스트에 담겨 반환되는지 확인
+    assert len(results) == len(sample_groove_rooms)
+    assert isinstance(results[0], GrooveCredentialError)
+    assert results[0].error_code == "Groove-001"
+    assert results[0].status_code == 401
 
 # --- 2. 경계값 분석 테스트 ---
 
@@ -76,7 +80,7 @@ async def test_availability_within_84_days_boundary(sample_groove_rooms):
     # 경계값인 83일 후 날짜를 설정
     target_date = (datetime.now() + timedelta(days=83)).strftime("%Y-%m-%d")
     hour_slots = ["20:00", "21:00"]
-    
+
     with patch.object(GrooveCrawler, '_login_and_fetch_html', return_value=mock_html):
         results = await crawler.check_availability(target_date, hour_slots, sample_groove_rooms)
 
