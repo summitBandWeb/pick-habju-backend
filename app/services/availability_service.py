@@ -66,48 +66,16 @@ class AvailabilityService:
         self.crawlers_map = crawlers_map
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
-        """요청된 방들의 예약 가능 여부를 확인.
-        
-        각 크롤러 타입에 맞는 방들을 필터링하고, 병렬로 크롤링을 수행한 후
-        결과를 통합하여 반환합니다. 에러가 발생한 크롤러는 로깅만 하고
-        성공한 결과만 반환합니다.
-        
-        실행 흐름:
-        1. 요청 데이터 검증 (날짜, 시간대, 방 목록)
-        2. 크롤러별로 담당할 방 목록을 필터링하여 비동기 태스크 생성
-        3. 모든 크롤러를 병렬 실행 (asyncio.gather)
-        4. 결과 병합 및 에러 로깅
-        5. 성공한 결과만 필터링하여 응답 생성
-        
-        Args:
-            request: 날짜, 시간대, 조회할 방 목록을 포함한 요청 객체
-                    - date: 조회 날짜 (YYYY-MM-DD)
-                    - hour_slots: 시간대 리스트 (예: ["18:00", "19:00"])
-                    - rooms: 방 정보 리스트 (business_id, item_id)
-            
-        Returns:
-            예약 가능 여부 정보를 담은 응답 객체
-            - date, hour_slots: 요청한 날짜 및 시간대 (에코)
-            - results: 각 방의 예약 가능 여부 리스트 (성공한 크롤링 결과만)
-            - available_biz_item_ids: 예약 가능한 방의 biz_item_id 목록
-            
-        Note:
-            일부 크롤러가 실패해도 전체 요청은 성공으로 처리됩니다.
-            실패한 크롤러는 로그에만 기록되며, 가용한 결과만 반환합니다.
-            모든 크롤러가 실패하거나 요청된 방이 없으면 빈 결과를 반환합니다.
-        """
-        # 요청 데이터 검증 (날짜 형식, 시간대 범위, 방 목록 유효성)
+        """Check room availability across all registered crawlers."""
         validate_availability_request(request.date, request.hour_slots, request.rooms)
 
-        # 각 크롤러 타입별로 담당할 방을 필터링하여 병렬 실행 준비
-        # 예: Dream 크롤러는 dream_sadang, hongdae_dream 방만 처리
+        # Prepare tasks for each crawler
         tasks = []
         for crawler_type, crawler in self.crawlers_map.items():
             target_rooms = filter_rooms_by_type(request.rooms, crawler_type)
             if target_rooms:
                 tasks.append(crawler.check_availability(request.date, request.hour_slots, target_rooms))
 
-        # 요청된 방이 없거나 모든 크롤러가 할당되지 않은 경우 빈 응답 반환
         if not tasks:
             return AvailabilityResponse(
                 date=request.date,
@@ -116,16 +84,12 @@ class AvailabilityService:
                 available_biz_item_ids=[]
             )
 
-        # 모든 크롤러를 병렬 실행 (일부 실패해도 계속 진행)
         results_of_lists = await asyncio.gather(*tasks)
-        
-        # 중첩 리스트를 평탄화: [[R1, R2], [R3]] -> [R1, R2, R3]
         all_results = [item for sublist in results_of_lists for item in sublist]
 
-        # 실패한 크롤러 에러 로깅 (Warning 또는 Error 레벨)
         self._log_errors(all_results, request.date)
 
-        # Exception을 제외하고 성공한 결과만 필터링
+        # Filter out exceptions (None check unnecessary per RoomResult type)
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
 
         return AvailabilityResponse(
