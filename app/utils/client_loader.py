@@ -118,7 +118,7 @@ async def load_client(url: str, **kwargs):
             logger.error({
                 "timestamp": datetime.now().isoformat(),
                 "status": status if status else 500,
-                "errorCode": "API-001",
+                "errorCode": RequestFailedError.error_code,
                 "message": "외부 API 호출에 실패했습니다 (HTTPStatusError).",
                 "url": url,
                 "error_detail": str(e),
@@ -135,7 +135,7 @@ async def load_client(url: str, **kwargs):
             logger.error({
                 "timestamp": datetime.now().isoformat(),
                 "status": 503,
-                "errorCode": "API-001",
+                "errorCode": RequestFailedError.error_code,
                 "message": "외부 API 호출에 실패했습니다.",
                 "url": url,
                 "error_detail": str(e),

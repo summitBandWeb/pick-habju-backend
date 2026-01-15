@@ -26,7 +26,7 @@ from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvaila
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
-from app.exception.base_exception import BaseCustomException
+from app.exception.base_exception import BaseCustomException, ErrorCode
 
 logger = logging.getLogger("app")
 
@@ -132,6 +132,6 @@ class AvailabilityService:
                 logger.error({
                     "timestamp": date_context,
                     "status": 500,
-                    "errorCode": "Common-001",
+                    "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
                     "message": str(err),
                 })
