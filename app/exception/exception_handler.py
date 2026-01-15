@@ -1,8 +1,9 @@
-from app.exception.base_exception import BaseCustomException
+from app.exception.base_exception import BaseCustomException, ErrorCode
 from fastapi.responses import JSONResponse
 from fastapi import Request
 from datetime import datetime
 import logging
+import traceback
 
 logger = logging.getLogger("app")
 
@@ -29,7 +30,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.exception({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "status": 500,
-        "errorCode": "Common-001",
+        "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
         "message": "서버 내부 오류가 발생했습니다.",
     })
     return JSONResponse(
@@ -37,7 +38,8 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "status": 500,
-            "errorCode": "Common-001",
-            "message": "서버 내부 오류가 발생했습니다."
+            "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
+            "message": "서버 내부 오류가 발생했습니다.",
+            "stack_trace": traceback.format_exc(),
         }
     )
