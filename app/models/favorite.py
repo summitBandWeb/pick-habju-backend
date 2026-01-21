@@ -28,7 +28,7 @@ class Favorite(Base):
     
     # Rationale: UUID(36) 및 외부 ID 길이를 고려하여 255자로 제한 (타 DB 마이그레이션 대비)
     user_id = Column(String(255), nullable=False, index=True) 
-    biz_item_id = Column(String(255), nullable=False)
+    biz_item_id = Column(String(255), nullable=False, index=True)
     
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
