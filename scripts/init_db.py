@@ -15,9 +15,13 @@ def init_db():
     try:
         # NOTE: bind=engine을 명시하여 해당 엔진에 연결된 DB에 테이블을 생성함
         Base.metadata.create_all(bind=engine)
-        print("Tables created successfully.")
+        
+        # 생성된 테이블 목록 출력
+        table_names = Base.metadata.tables.keys()
+        print(f"Tables created/verified successfully: {', '.join(table_names)}")
     except Exception as e:
         print(f"Error creating tables: {e}")
+        raise
 
 if __name__ == "__main__":
     # NOTE: 루트 디렉토리에서 'python -m scripts.init_db' 명령어로 실행해야 함
