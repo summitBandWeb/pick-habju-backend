@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, UniqueConstraint
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, UniqueConstraint, DateTime
 from app.core.database import Base
 
 class Favorite(Base):
@@ -8,6 +9,8 @@ class Favorite(Base):
         id (int): 레코드 고유 ID (PK, Auto Increment).
         user_id (str): 사용자 식별값. 프론트엔드 Header(X-Device-Id)에서 전달받은 UUID.
         biz_item_id (str): 외부 크롤링 소스(Naver/Dream/Groove)의 고유 합주실 ID.
+        created_at (datetime): 즐겨찾기 최초 생성 일시.
+        updated_at (datetime): 즐겨찾기 정보 수정 일시.
 
     Rationale:
         별도의 회원가입 절차 없이 기기 고유 ID(UUID)를 기준으로 즐겨찾기를 관리합니다.
@@ -22,5 +25,10 @@ class Favorite(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(String, nullable=False, index=True) 
-    biz_item_id = Column(String, nullable=False)
+    
+    # Rationale: UUID(36) 및 외부 ID 길이를 고려하여 255자로 제한 (타 DB 마이그레이션 대비)
+    user_id = Column(String(255), nullable=False, index=True) 
+    biz_item_id = Column(String(255), nullable=False)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
