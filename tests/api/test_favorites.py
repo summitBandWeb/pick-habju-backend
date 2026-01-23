@@ -70,27 +70,18 @@ def test_delete_favorite_success(client, api_endpoint, headers):
     
     # Verify actual deletion in Mock Repository
 
-def test_delete_actually_removes_data(client, valid_uuid):
-    """삭제 후 데이터가 실제로 삭제되었는지 확인"""
-    # 유효한 UUID 사용
-    headers = {"X-Device-Id": valid_uuid} 
-    target_biz_id = "biz-verify"
-    endpoint = f"/api/favorites/{target_biz_id}"
-
+def test_delete_actually_removes_data(client, headers, api_endpoint, target_biz_id):
+    """삭제 후 데이터가 실제로 조회되지 않는지 확인"""
     # 1. 추가
-    client.put(endpoint, headers=headers)
+    client.put(api_endpoint, headers=headers)
     
     # 2. 삭제
-    client.delete(endpoint, headers=headers)
+    client.delete(api_endpoint, headers=headers)
     
-    # 3. 다시 추가
-    response = client.put(endpoint, headers=headers)
-    
-    # 수정 포인트: 
-    # 1. 헤더가 유효하므로 400 에러가 사라짐
-    # 2. 다른 성공 케이스(test_add_favorite_success)와 일관되게 200으로 확인 (서버가 201을 반환하도록 설계된 게 아니라면)
-    assert response.status_code == 200  
-    assert response.json() == {"success": True}
+    # 3. 조회 (GET) 하여 리스트에 없는지 확인
+    response = client.get("/api/favorites", headers=headers)
+    assert response.status_code == 200
+    assert target_biz_id not in response.json()["biz_item_ids"]
 
 def test_delete_favorite_idempotency(client, api_endpoint, headers):
     """존재하지 않는 즐겨찾기를 삭제해도 에러 없이 200 OK를 반환해야 한다."""
