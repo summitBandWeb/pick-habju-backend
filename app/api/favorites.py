@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, status, Response
+from typing import Dict, Any
 import uuid
 from app.repositories.base import IFavoriteRepository
 from app.api.dependencies import get_favorite_repository
@@ -20,7 +21,7 @@ def add_favorite(
     biz_item_id: str,
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
-):
+) -> Dict[str, Any]:
     """
     즐겨찾기 추가
     
@@ -44,7 +45,7 @@ def delete_favorite(
     biz_item_id: str,
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
-):
+) -> Dict[str, Any]:
     """
     즐겨찾기 삭제
     
