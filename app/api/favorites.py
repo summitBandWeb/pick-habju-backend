@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Response
 from app.repositories.base import IFavoriteRepository
 from app.api.dependencies import get_favorite_repository
 
@@ -32,7 +32,6 @@ def add_favorite(
     if not is_created:
         # 이미 존재하면 200 OK 반환 (FastAPI는 기본적으로 반환값이 없으면 200/201 등 설정된 status_code를 따라감)
         # 멱등성을 위해 200으로 명시적 응답
-        from fastapi import Response
         return Response(status_code=status.HTTP_200_OK)
     
     return {"status": "created", "biz_item_id": biz_item_id}
