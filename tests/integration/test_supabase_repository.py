@@ -1,6 +1,7 @@
 import os
 import uuid
 import pytest
+import logging
 from app.repositories.supabase import SupabaseFavoriteRepository
 # config.py에서 변수를 직접 가져오거나, repository 내부 동작에 의존
 # 일반적으로 config가 로드되어야 repository가 동작함
@@ -26,13 +27,23 @@ class TestSupabaseIntegration:
         return SupabaseFavoriteRepository()
 
     @pytest.fixture
-    def test_identifiers(self):
-        """테스트에 사용할 고유한 사용자 ID와 아이템 ID 생성"""
-        # 충돌 방지를 위해 UUID 사용
-        return {
+    def test_identifiers(self, repo):
+        """테스트 데이터 생성 및 정리 (Teardown guaranteed)"""
+        ids = {
             "user_id": f"test_user_{uuid.uuid4()}",
             "biz_item_id": f"test_biz_{uuid.uuid4()}"
         }
+        
+        yield ids
+        
+        # Teardown: 테스트 종료 후(성공/실패 무관) 데이터 정리 시도
+        try:
+            repo.delete(ids["user_id"], ids["biz_item_id"])
+            # 추가된 파생 데이터(multiple favorites 등)도 필요한 경우 여기서 정리 가능하지만,
+            # 개별 테스트 메서드에서 생성한 unique ID들이라 해당 메서드 로직에 의존적일 수 있음.
+            # 기본적인 id 세트는 여기서 정리 보장.
+        except Exception as e:
+            print(f"Teardown failed: {e}")
 
     def test_favorite_lifecycle(self, repo, test_identifiers):
         """
@@ -79,3 +90,72 @@ class TestSupabaseIntegration:
         
         favorites_after_delete = repo.get_all(user_id)
         assert biz_id not in favorites_after_delete, "삭제 후 목록 조회 결과에 아이템이 없어야 합니다."
+
+    def test_get_all_multiple_favorites(self, repo, test_identifiers):
+        """한 사용자가 여러 즐겨찾기를 갖는 경우"""
+        user_id = test_identifiers["user_id"]
+        biz_ids = [f"{test_identifiers['biz_item_id']}_{i}" for i in range(3)]
+
+        print(f"\n[Test] Multiple Favorites for User: {user_id}")
+        
+        # 1. Add Multiple
+        for biz_id in biz_ids:
+            repo.add(user_id, biz_id)
+        
+        # 2. Get All
+        favorites = repo.get_all(user_id)
+        
+        # 3. Verify
+        assert len(favorites) >= 3, "최소 3개 이상의 즐겨찾기가 조회되어야 합니다."
+        for biz_id in biz_ids:
+            assert biz_id in favorites, f"추가한 아이템({biz_id})이 목록에 포함되어야 합니다."
+
+        # Cleanup
+        for biz_id in biz_ids:
+            repo.delete(user_id, biz_id)
+
+    def test_concurrent_add_operations(self, repo, test_identifiers):
+        """동시 추가 요청 처리 (race condition / idempotency 테스트)"""
+        import concurrent.futures
+
+        user_id = test_identifiers["user_id"]
+        biz_id = test_identifiers["biz_item_id"]
+        
+        print(f"\n[Test] Concurrent Add for User: {user_id}")
+
+        def add_task():
+            return repo.add(user_id, biz_id)
+
+        # 동시에 5번 추가 요청
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(add_task) for _ in range(5)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # 모두 True(성공)여야 함 (Upsert 덕분에 에러 없이 처리됨)
+        assert all(results) is True, "동시 요청 시에도 모두 True를 반환해야 합니다 (Upsert)."
+        
+        # 실제 데이터는 1개만 존재해야 함 (논리적 확인) - Exists로 체크
+        assert repo.exists(user_id, biz_id) is True
+        
+        # Duplicate check - count logic depends on implementation, 
+        # but here we ensure no errors occurred and data exists.
+
+        # Cleanup
+        repo.delete(user_id, biz_id)
+
+    def test_error_handling_invalid_data(self, repo):
+        """잘못된 데이터 입력 시 에러 처리"""
+        # 아주 긴 문자열이나 None 등 (Supabase-py Client 레벨에서 걸러질 수 있음)
+        # 여기서는 Client 객체를 Mocking해서 강제로 에러를 발생시켜
+        # Repository가 예외를 잘 잡아서 로깅하고 re-raise 하는지 확인해도 됨.
+        # 하지만 Integration Test이므로 실제 DB 제약조건 위반 등을 시도.
+        
+        # 예: user_id가 None인 경우 (타입 힌트상 str이지만 런타임에 None 전달)
+        # Supabase Client가 400 Bad Request 등을 뱉을 수 있음.
+        
+        print(f"\n[Test] Error Handling with Invalid Data")
+
+        with pytest.raises(Exception):
+            # user_id에 None을 전달하여 강제 예러 유발 시도
+            # (만약 클라이언트가 미리 막는다면 다른 방식 고려)
+            repo.add(None, "invalid_biz_id")
