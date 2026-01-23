@@ -2,7 +2,7 @@ import httpx
 from typing import List, Dict, Union
 import asyncio
 
-from app.models.dto import RoomKey, RoomAvailability
+from app.models.dto import RoomDetail, RoomAvailability
 from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverRequestError
 from app.exception.api.client_loader_exception import RequestFailedError
 from app.utils.client_loader import load_client
@@ -11,16 +11,16 @@ from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
 
 class NaverCrawler(BaseCrawler):
-    async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
-        async def safe_fetch(room: RoomKey) -> RoomResult:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
+        async def safe_fetch(room: RoomDetail) -> RoomResult:
             try:
                 return await self._fetch_naver_availability_room(date, hour_slots, room)
             except NaverAvailabilityError as e:
                 return e
 
-        return await asyncio.gather(*[safe_fetch(room) for room in rooms])
+        return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
-    async def _fetch_naver_availability_room(self, date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
+    async def _fetch_naver_availability_room(self, date: str, hour_slots: List[str], room: RoomDetail) -> RoomAvailability:
         url = "https://booking.naver.com/graphql?opName=schedule"
         start_dt = f"{date}T00:00:00"
         end_dt = f"{date}T23:59:59"
@@ -80,10 +80,7 @@ class NaverCrawler(BaseCrawler):
         available = all(val for hour, val in available_slots.items() if hour in hour_slots)
 
         return RoomAvailability(
-            name=room.name,
-            branch=room.branch,
-            business_id=room.business_id,
-            biz_item_id=room.biz_item_id,
+            room_detail=room,
             available=available,
             available_slots=available_slots
         )

@@ -22,6 +22,8 @@ DREAM_COOKIES = {
     'PHPSESSID': 'your_dream_php_session_id',
     'e1192aefb64683cc97abb83c71057733': 'your_dream_cookie_value'
 }
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:

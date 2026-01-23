@@ -1,26 +1,34 @@
-from pydantic import BaseModel
-from typing import List, Dict, Union, Literal
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Dict, Union
+
+# 합주실 정보 DTO
+class RoomDetail(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    # alias="DB에서_오는_키_이름"
+    name: str = Field(alias="room_name")          # room_name -> name
+    branch: str = Field(alias="branch_name")      # branch_name -> branch
+    business_id: str = Field(alias="branch_id")   # branch_id -> business_id
+    biz_item_id: str = Field(alias="room_id")     # room_id -> biz_item_id
+    
+    imageUrls: List[str] = Field(alias="image_urls") # image_urls -> imageUrls
+    maxCapacity: int = Field(alias="max_capacity")
+    recommendCapacity: int = Field(alias="recommend_capacity")
+    pricePerHour: int = Field(alias="price_per_hour")
+    canReserveOneHour: bool = Field(alias="can_reserve_one_hour")
+    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday")
 
 # 요청 DTO
-class RoomKey(BaseModel):
-    name: str # 합주실 룸 이름(블랙룸)
-    branch: str # 합주실 지점 이름(비쥬 합주실 1호점)
-    business_id: str # 합주실 지점 id
-    biz_item_id: str # 합주실 룸 id
-
 class AvailabilityRequest(BaseModel):
     date: str # 예약 날짜 (2025-07-03)
-    hour_slots: List[str] # 확인할 시간 슬롯들 (15~17시면 ["15:00", "16:00"])
-    rooms: List[RoomKey] # 합주실 룸 정보들
+    capacity: int 
+    start_hour: str
+    end_hour: str
 
 # 응답 DTO (단일 방 기준 상세 정보)
 class RoomAvailability(BaseModel):
-    name: str # 합주실 룸 이름(블랙룸)
-    branch: str # 합주실 지점 이름(비쥬 합주실 1호점)
-    business_id: str # 합주실 지점 id
-    biz_item_id: str # 합주실 룸 id
-    available: Union[bool, Literal["unknown"]] # 합주실 최종 예약 가능 여부
-    available_slots: Dict[str, Union[bool, Literal["unknown"]]] # 합주실 예약 가능한 시간슬롯들("16:00": true,"17:00": false)
+    room_detail: RoomDetail
+    available: Union[bool, str] # 합주실 최종 예약 가능 여부
+    available_slots: Dict[str, Union[bool, str]] # 합주실 예약 가능한 시간슬롯들("16:00": true,"17:00": false)
 
 # 응답 전체 DTO (요약 필드 포함)
 class AvailabilityResponse(BaseModel):

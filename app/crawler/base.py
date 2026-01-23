@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Union
-from app.models.dto import RoomKey, RoomAvailability
+from app.models.dto import RoomDetail, RoomAvailability
 
 RoomResult = Union[RoomAvailability, Exception]
 
@@ -22,14 +22,14 @@ class BaseCrawler(ABC):
         registry.register("new", NewCrawler())
     """
     @abstractmethod
-    async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         """
         주어진 날짜와 시간대에 대한 방 예약 가능 여부를 확인.
         
         Args:
             date: 조회할 날짜 (YYYY-MM-DD 형식)
             hour_slots: 조회할 시간대 리스트 (예: ["18:00", "19:00"])
-            rooms: 조회할 방 정보 리스트
+            target_rooms: 조회할 방 정보 리스트
             
         Returns:
             RoomAvailability 또는 Exception 리스트
