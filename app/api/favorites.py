@@ -60,8 +60,6 @@ def delete_favorite(
     
     validate_uuid(x_device_id)
          
-    validate_uuid(x_device_id)
-         
     repo.delete(user_id=x_device_id, biz_item_id=biz_item_id)
     return {"success": True}
 
