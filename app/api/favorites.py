@@ -30,8 +30,8 @@ def add_favorite(
     Returns:
         200 OK: 성공 (신규 추가 또는 이미 존재)
     """
-    if not x_device_id:
-         raise HTTPException(status_code=400, detail="X-Device-Id header missing")
+    if not x_device_id or not x_device_id.strip():
+         raise HTTPException(status_code=400, detail="X-Device-Id header is required and cannot be empty")
     
     validate_uuid(x_device_id)
 
@@ -54,8 +54,8 @@ def delete_favorite(
     Returns:
         200 OK: 삭제 성공 또는 이미 없음 (멱등성 보장)
     """
-    if not x_device_id:
-         raise HTTPException(status_code=400, detail="X-Device-Id header missing")
+    if not x_device_id or not x_device_id.strip():
+         raise HTTPException(status_code=400, detail="X-Device-Id header is required and cannot be empty")
     
     validate_uuid(x_device_id)
          
