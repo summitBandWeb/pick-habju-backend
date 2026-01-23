@@ -1,16 +1,16 @@
 # te/test_room_router.py
 
 from app.utils.room_router import filter_rooms_by_type
-from app.models.dto import RoomKey
+from app.models.dto import RoomDetail
 
 def test_filter_rooms_by_type_print():
     rooms = [
-        RoomKey(name="D룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="29"),
-        RoomKey(name="C룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="28"),
-        RoomKey(name="B룸", branch="그루브 사당점", business_id="sadang", biz_item_id="groove-B"),
-        RoomKey(name="C룸", branch="그루브 사당점", business_id="sadang", biz_item_id="groove-C"),
-        RoomKey(name="Classic", branch="비쥬합주실 3호점", business_id="917236", biz_item_id="5098039"),
-        RoomKey(name="R룸", branch="준사운드 사당점", business_id="1384809", biz_item_id="6649826"),
+        RoomDetail(name="D룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="29", imageUrls=["img1.jpg"], maxCapacity=10, recommendCapacity=5, pricePerHour=15000, canReserveOneHour=True, requiresCallOnSameDay=False),
+        RoomDetail(name="C룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="28", imageUrls=["img2.jpg"], maxCapacity=8, recommendCapacity=4, pricePerHour=12000, canReserveOneHour=True, requiresCallOnSameDay=False),
+        RoomDetail(name="B룸", branch="그루브 사당점", business_id="sadang", biz_item_id="groove-B", imageUrls=["img3.jpg"], maxCapacity=6, recommendCapacity=3, pricePerHour=10000, canReserveOneHour=True, requiresCallOnSameDay=False),
+        RoomDetail(name="C룸", branch="그루브 사당점", business_id="sadang", biz_item_id="groove-C", imageUrls=["img4.jpg"], maxCapacity=4, recommendCapacity=2, pricePerHour=8000, canReserveOneHour=True, requiresCallOnSameDay=False),
+        RoomDetail(name="Classic", branch="비쥬합주실 3호점", business_id="917236", biz_item_id="5098039", imageUrls=["img5.jpg"], maxCapacity=12, recommendCapacity=6, pricePerHour=20000, canReserveOneHour=True, requiresCallOnSameDay=False),
+        RoomDetail(name="R룸", branch="준사운드 사당점", business_id="1384809", biz_item_id="6649826", imageUrls=["img6.jpg"], maxCapacity=10, recommendCapacity=5, pricePerHour=15000, canReserveOneHour=True, requiresCallOnSameDay=False),
     ]
     dream_rooms = filter_rooms_by_type(rooms, "dream")
     groove_rooms = filter_rooms_by_type(rooms, "groove")
