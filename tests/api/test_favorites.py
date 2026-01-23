@@ -78,8 +78,9 @@ def test_delete_favorite_idempotency(client, api_endpoint, headers):
     assert response.json() == {"success": True}
 
 @pytest.mark.parametrize("invalid_headers, expected_detail", [
-    ({}, "X-Device-Id header missing"),                      # 헤더 누락
-    ({"X-Device-Id": ""}, "X-Device-Id header missing"),     # 빈 헤더
+    ({}, "X-Device-Id header is required and cannot be empty"),                      # 헤더 누락
+    ({"X-Device-Id": ""}, "X-Device-Id header is required and cannot be empty"),     # 빈 헤더
+    ({"X-Device-Id": "   "}, "X-Device-Id header is required and cannot be empty"),  # 공백 헤더
     ({"X-Device-Id": "not-a-uuid"}, "Invalid X-Device-Id format"), # 잘못된 형식
 ])
 def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_detail):
