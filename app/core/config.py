@@ -9,6 +9,9 @@ LOGIN_PW = os.getenv("LOGIN_PW")
 GROOVE_BASE_URL = os.getenv("GROOVE_BASE_URL")
 DREAM_BASE_URL = os.getenv("DREAM_BASE_URL")
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp"
 GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp"
 GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp"
