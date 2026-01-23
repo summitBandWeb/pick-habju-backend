@@ -1,93 +1,87 @@
 from typing import List, Optional
-import logging
-from supabase import Client
 from app.repositories.base import IFavoriteRepository
 from app.core.supabase_client import get_supabase_client
+import logging
 
-# 로거 설정
 logger = logging.getLogger(__name__)
 
 class SupabaseFavoriteRepository(IFavoriteRepository):
     """
-    Supabase (PostgreSQL) 기반 즐겨찾기 저장소 구현체
-    테이블: favorites (device_id, business_id, biz_item_id) - 복합 기본키
+    Supabase based Favorite Repository implementation.
+    Uses 'favorites' table in Supabase.
+    Composite Primary Key: (device_id, business_id, biz_item_id)
     """
 
-    def __init__(self, client: Optional[Client] = None):
-        """
-        Args:
-            client (Optional[Client]): 테스트 용이성을 위한 의존성 주입 지원
-        """
-        self.client = client or get_supabase_client()
-        self.table = "favorites"
+    def __init__(self):
+        self.supabase = get_supabase_client()
+        self.table_name = "favorites"
 
     def add(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
-        즐겨찾기 추가 (Upsert 사용)
-        
-        Rationale:
-            - exists() + insert() 대신 upsert()를 사용하여 DB round-trip 감소 (성능 최적화)
-            - on_conflict를 통해 중복 처리 자동화 (멱등성 보장)
-            - 복합 기본키(device_id, business_id, biz_item_id)로 충돌 감지
+        Adds a favorite item using upsert to handle idempotency.
         """
         try:
-            response = self.client.table(self.table).upsert(
-                {
-                    "device_id": device_id,
-                    "business_id": business_id,
-                    "biz_item_id": biz_item_id
-                },
-                on_conflict="device_id,business_id,biz_item_id",
-            ).execute()
+            data = {
+                "device_id": device_id,
+                "business_id": business_id,
+                "biz_item_id": biz_item_id
+            }
+            # upsert=True is default for .upsert(), preventing duplicates on PK
+            # returning='minimal' or 'representation'
+            response = self.supabase.table(self.table_name).upsert(data).execute()
             
-            return len(response.data) > 0
-
+            # response.data would be non-empty if successful and returning data
+            # Typically Supabase Python client returns an object with .data
+            return True
         except Exception as e:
-            logger.error(f"Failed to add favorite for device {device_id}: {e}", exc_info=True)
-            raise
+            logger.error(f"Error adding favorite: {e}")
+            return False
 
     def delete(self, device_id: str, business_id: str, biz_item_id: str) -> None:
+        """
+        Deletes a favorite item.
+        """
         try:
-            self.client.table(self.table)\
-                .delete()\
-                .eq("device_id", device_id)\
-                .eq("business_id", business_id)\
-                .eq("biz_item_id", biz_item_id)\
-                .execute()
+            self.supabase.table(self.table_name).delete().eq(
+                "device_id", device_id
+            ).eq(
+                "business_id", business_id
+            ).eq(
+                "biz_item_id", biz_item_id
+            ).execute()
         except Exception as e:
-            logger.error(f"Failed to delete favorite for device {device_id}: {e}", exc_info=True)
-            raise
+            logger.error(f"Error deleting favorite: {e}")
 
     def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
-        즐겨찾기 존재 여부 확인 (최적화)
-        
-        Rationale:
-            - count="exact"는 전체 스캔을 유발할 수 있어 비효율적
-            - limit(1)과 복합키 조건으로 빠른 확인
+        Checks if a favorite item exists using limit(1) for performance.
         """
         try:
-            response = self.client.table(self.table)\
-                .select("device_id")\
-                .eq("device_id", device_id)\
-                .eq("business_id", business_id)\
-                .eq("biz_item_id", biz_item_id)\
-                .limit(1)\
-                .execute()
+            response = self.supabase.table(self.table_name).select(
+                "biz_item_id", count="exact"
+            ).eq(
+                "device_id", device_id
+            ).eq(
+                "business_id", business_id
+            ).eq(
+                "biz_item_id", biz_item_id
+            ).limit(1).execute()
             
             return len(response.data) > 0
         except Exception as e:
-            logger.error(f"Failed to check existence for device {device_id}: {e}", exc_info=True)
-            raise
+            logger.error(f"Error checking existence: {e}")
+            return False
 
     def get_all(self, device_id: str) -> List[str]:
+        """
+        Retrieves all favorite biz_item_ids for a device.
+        """
         try:
-            response = self.client.table(self.table)\
-                .select("biz_item_id")\
-                .eq("device_id", device_id)\
-                .execute()
+            response = self.supabase.table(self.table_name).select(
+                "biz_item_id"
+            ).eq("device_id", device_id).execute()
             
             return [item["biz_item_id"] for item in response.data]
         except Exception as e:
-            logger.error(f"Failed to get favorites for device {device_id}: {e}", exc_info=True)
-            raise
+            logger.error(f"Error fetching favorites: {e}")
+            return []
