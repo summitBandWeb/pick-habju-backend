@@ -1,4 +1,4 @@
-from typing import Set, Tuple
+from typing import Set, Tuple, List
 from app.repositories.base import IFavoriteRepository
 
 class MockFavoriteRepository(IFavoriteRepository):
@@ -27,3 +27,6 @@ class MockFavoriteRepository(IFavoriteRepository):
 
     def exists(self, user_id: str, biz_item_id: str) -> bool:
         return (user_id, biz_item_id) in self._data
+
+    def get_all(self, user_id: str) -> List[str]:
+        return [biz_id for uid, biz_id in self._data if uid == user_id]

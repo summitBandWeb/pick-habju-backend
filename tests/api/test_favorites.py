@@ -115,3 +115,59 @@ def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_de
     # Assert
     assert response.status_code == 400
     assert response.json()["detail"] == expected_detail
+
+
+# --------------------------------------------------------------------------
+# GET Method Tests
+# --------------------------------------------------------------------------
+
+def test_get_favorites_empty(client, headers):
+    """즐겨찾기 목록이 없을 때 빈 리스트를 반환해야 한다."""
+    response = client.get("/api/favorites", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"biz_item_ids": []}
+
+def test_get_favorites_success(client, headers):
+    """추가된 즐겨찾기 목록을 정확히 반환해야 한다."""
+    # Arrange: 2개 추가
+    items = ["biz-101", "biz-102"]
+    for item in items:
+        client.put(f"/api/favorites/{item}", headers=headers)
+
+    # Act
+    response = client.get("/api/favorites", headers=headers)
+
+    # Assert
+    assert response.status_code == 200
+    data = response.json()
+    assert "biz_item_ids" in data
+    assert sorted(data["biz_item_ids"]) == sorted(items)
+
+def test_get_favorites_isolation(client, headers):
+    """다른 사용자의 즐겨찾기는 조회되지 않아야 한다."""
+    # Arrange: Target User (headers)에 data adding
+    my_item = "my-biz-001"
+    client.put(f"/api/favorites/{my_item}", headers=headers)
+
+    # Arrange: Other User adding data
+    # 다른 사용자용 유효한 UUID
+    other_uuid = "99999999-9999-9999-9999-999999999999"
+    other_headers = {"X-Device-Id": other_uuid}
+    other_item = "other-biz-999"
+    client.put(f"/api/favorites/{other_item}", headers=other_headers)
+
+    # Act: Target User gets list
+    response = client.get("/api/favorites", headers=headers)
+
+    # Assert
+    data = response.json()
+    assert my_item in data["biz_item_ids"]
+    assert other_item not in data["biz_item_ids"]
+    assert len(data["biz_item_ids"]) == 1
+
+def test_get_favorites_error_cases(client):
+    """GET 요청 시에도 잘못된 헤더에 대해 400 에러를 반환해야 한다."""
+    # 헤더 누락
+    response = client.get("/api/favorites", headers={})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "X-Device-Id header is required and cannot be empty"
