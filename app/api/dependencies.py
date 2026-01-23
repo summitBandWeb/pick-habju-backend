@@ -29,11 +29,14 @@ def get_availability_service(
 # Mock Repo Singleton Removed/Commented Out
 # _mock_fav_repo = MockFavoriteRepository() 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
 def get_favorite_repository() -> IFavoriteRepository:
     """
-    Favorite Repository 의존성 주입
+    Favorite Repository 의존성 주입 (Singleton via lru_cache)
     
     Returns:
-        IFavoriteRepository: Supabase Repository 반환
+        IFavoriteRepository: Supabase Repository 반환 (캐싱된 인스턴스)
     """
     return SupabaseFavoriteRepository()
