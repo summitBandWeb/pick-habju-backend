@@ -1,35 +1,23 @@
-import json
-import logging
-from app.core.path import pkg_data_path
+from app.core.database import supabase
+from typing import List, Dict, Any
+from app.exception.api.room_loader_exception import RoomLoaderFailedError
+from app.models.dto import RoomDetail
 
-logger = logging.getLogger("app")
-
-def load_rooms():
-    rooms_file = pkg_data_path("rooms.json")
+def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
+    """
+    Supabase에서 capacity 이상인 룸만 조회합니다.
+    """
     try:
-        with rooms_file.open(encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.error(
-            "rooms.json not found",
-            extra={"status": 500, "errorCode": "Common-002"}
+        response = (
+            supabase.table("v_full_info")  # 테이블 이름 확인 필요!
+            .select("*")
+            .gte("max_capacity", capacity)  # gte: greater than or equal (>=)
+            .execute()
         )
-        raise
-    except json.JSONDecodeError:
-        logger.error(
-            "rooms.json decode error",
-            extra={"status": 500, "errorCode": "Common-002"}
-        )
-        raise
-    except PermissionError:
-        logger.error(
-            "rooms.json permission denied",
-            extra={"status": 500, "errorCode": "Common-002"}
-        )
-        raise
-    except OSError:
-        logger.error(
-            "rooms.json IO error",
-            extra={"status": 500, "errorCode": "Common-002"}
-        )
-        raise
+        
+        target_rooms = [RoomDetail.model_validate(row) for row in response.data]
+        return target_rooms
+
+    except Exception as e:
+        raise RoomLoaderFailedError(f"룸 데이터 조회 실패: {str(e)}")
+    
