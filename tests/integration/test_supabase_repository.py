@@ -30,9 +30,7 @@ def test_supabase_crud(repo, test_data):
     # 2. Add
     assert repo.add(device_id, business_id, biz_item_id) is True
     
-    # 3. Add Duplicate (Idempotency) -> Should return False (or True if logic changed to upsert success?)
-    # Upsert logic returns True if successful (created or updated). 
-    # Current implementation returns len(data) > 0.
+    # 3. Add Duplicate (Idempotency) -> Should return True (upsert success)
     assert repo.add(device_id, business_id, biz_item_id) is True 
     
     # 4. Exists
