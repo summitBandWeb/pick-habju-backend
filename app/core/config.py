@@ -24,6 +24,10 @@ DREAM_COOKIES = {
 }
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:

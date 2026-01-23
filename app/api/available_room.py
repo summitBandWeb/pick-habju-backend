@@ -18,8 +18,19 @@ async def check_room_availability(
     service: AvailabilityService = Depends(get_availability_service)
 ):
     """
-    GET 요청을 받아 내부적으로 필요한 데이터 형식으로 변환 후 
-    Service 레이어에 비즈니스 로직을 위임합니다.
+    GET 요청을 받아 합주실 예약 가능 여부를 조회합니다.
+
+    Args:
+        date: 예약 날짜 (YYYY-MM-DD 형식)
+        capacity: 사용 인원 수 (1 이상의 정수)
+        start_hour: 시작 시간 (HH:MM 형식, 예: 14:00)
+        end_hour: 종료 시간 (HH:MM 형식, 예: 16:00)
+
+    Returns:
+        AvailabilityResponse: 예약 가능 여부 및 상세 정보
+
+    Raises:
+        HTTPException: 유효하지 않은 파라미터 시 400 에러
     """
     
     svc_request = AvailabilityRequest(

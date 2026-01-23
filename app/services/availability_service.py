@@ -83,7 +83,7 @@ class AvailabilityService:
         slots = []
         current_time = start_time
         # 종료 시간 전까지만 슬롯 생성 (예: 14~16시면 14, 15, 16시 타임 예약 필요)
-        while current_time < end_time:
+        while current_time <= end_time:
             slots.append(current_time.strftime("%H:%M"))
             current_time += timedelta(hours=1)
             
@@ -99,9 +99,7 @@ class AvailabilityService:
             hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
         except ValueError as e:
             logger.error(f"Time slot generation error: {e}")
-            return AvailabilityResponse(
-                date=request.date, hour_slots=hour_slots, results=[], available_biz_item_ids=[]
-            )
+            raise HTTPException(status_code=400, detail=str(e))
         
         # 2. 인원수에 맞는 룸 필터링 (DB 데이터 활용)
         target_rooms = get_rooms_by_capacity(request.capacity)

@@ -1,7 +1,10 @@
 from app.core.database import supabase
+from app.core.config import SUPABASE_TABLE
 from typing import List, Dict, Any
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
 from app.models.dto import RoomDetail
+from postgrest.exceptions import APIError
+from pydantic import ValidationError
 
 def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
     """
@@ -9,7 +12,7 @@ def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
     """
     try:
         response = (
-            supabase.table("v_full_info")  # 테이블 이름 확인 필요!
+            supabase.table(SUPABASE_TABLE)
             .select("*")
             .gte("max_capacity", capacity)  # gte: greater than or equal (>=)
             .execute()
@@ -18,6 +21,12 @@ def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
         target_rooms = [RoomDetail.model_validate(row) for row in response.data]
         return target_rooms
 
+    except APIError as e:
+        # Supabase API 오류 (쿼리, 권한 등)
+        raise RoomLoaderFailedError(f"데이터베이스 쿼리 실패: {str(e)}")
+    except ValidationError as e:
+        # Pydantic validation 오류
+        raise RoomLoaderFailedError(f"데이터 형식 오류: {str(e)}")
     except Exception as e:
-        raise RoomLoaderFailedError(f"룸 데이터 조회 실패: {str(e)}")
-    
+        # 예상치 못한 오류
+        raise RoomLoaderFailedError(f"알 수 없는 오류: {str(e)}")

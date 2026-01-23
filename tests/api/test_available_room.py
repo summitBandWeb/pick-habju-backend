@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from typing import List, Dict
 from unittest.mock import MagicMock, patch
+import pytest
 from app.main import app
 from app.crawler.base import BaseCrawler, RoomResult
 from app.models.dto import RoomAvailability, RoomDetail
@@ -213,3 +214,51 @@ def test_get_availability_api_with_crawler_error():
             app.dependency_overrides[get_crawlers_map] = original_override
         else:
             del app.dependency_overrides[get_crawlers_map]
+            
+def test_get_availability_with_real_db():
+    """
+    실제 Supabase와 연동하여 데이터 로드 검증 (Integration Test)
+    - Mock을 사용하지 않고 실제 endpoint를 호출
+    - DB 연결 및 쿼리가 정상적으로 수행되는지 확인
+    """
+    # 1. 현재 설정된 Mock Override 제거 (실제 서비스/크롤러 사용)
+    # 기존 override 백업
+    original_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides.clear()
+    
+    try:
+        url = "/api/rooms/availability"
+        # 충분히 미래 날짜로 설정
+        target_date = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d")
+        
+        # 실제 DB에 데이터가 존재할 것으로 예상되는 조건 (capacity=1)
+        response = client.get(
+            f"{url}?date={target_date}&capacity=1&start_hour=18:00&end_hour=19:00"
+        )
+        
+        # 2. 응답 검증
+        assert response.status_code == 200
+        data = response.json()
+        
+        # 기본 응답 구조 확인
+        assert data.get("date") == target_date
+        assert "results" in data
+        assert isinstance(data["results"], list)
+        
+        # 실제 데이터가 조회되었는지 확인
+        if len(data["results"]) > 0:
+            first_room = data["results"][0]
+            assert "room_detail" in first_room
+            assert "available" in first_room
+            
+            # Alias 적용 확인 (business_id -> branch_id)
+            assert "branch_id" in first_room["room_detail"]
+            assert "room_name" in first_room["room_detail"]
+            
+            print(f"✅ Real DB Test Success: Found {len(data['results'])} rooms")
+        else:
+            print("⚠️ Real DB Test Warning: No rooms found (check DB data)")
+
+    finally:
+        # Override 복구
+        app.dependency_overrides = original_overrides
