@@ -28,7 +28,8 @@ class NaverMapCrawler:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=self.headless)
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                extra_http_headers={"Referer": "https://map.naver.com/"}
             )
             page = await context.new_page()
             
@@ -38,10 +39,17 @@ class NaverMapCrawler:
                 logger.info(f"Searching: {query} -> {url}")
                 await page.goto(url)
                 await page.wait_for_load_state("networkidle")
+                await page.wait_for_timeout(3000) # Wait for JS initialization
                 
                 # 2. 첫 페이지 데이터 추출
                 initial_data = await self._extract_apollo_state(page)
-                self._merge_results(results, initial_data)
+                
+                # Debug Check
+                if initial_data and isinstance(initial_data[0], str):
+                    logger.warning(f"Crawler Debug: {initial_data}")
+                    results = {} # Clear results
+                else:
+                    self._merge_results(results, initial_data)
                 
                 # 3. 페이지네이션 처리
                 # 네이버 지도는 하단에 1, 2, 3.. 페이지 버튼이 있음
@@ -80,11 +88,15 @@ class NaverMapCrawler:
         return await page.evaluate("""
             () => {
                 const state = window.__APOLLO_STATE__;
-                if (!state) return [];
+                // Debug: Return useful message if state is missing
+                if (!state) {
+                     return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY:" + document.body.innerHTML.substring(0, 500)];
+                }
                 
                 const places = [];
-                for (const key in state) {
-                    // key format: "PlaceSummary:123456"
+                const keys = Object.keys(state);
+                
+                for (const key of keys) {
                     if (key.startsWith('PlaceSummary:')) {
                         const place = state[key];
                         places.push({
@@ -98,6 +110,12 @@ class NaverMapCrawler:
                         });
                     }
                 }
+                
+                // If no places found, return some keys to help debugging
+                if (places.length === 0) {
+                    return keys.slice(0, 10).map(k => "DEBUG_KEY:" + k);
+                }
+                
                 return places;
             }
         """)
@@ -105,6 +123,9 @@ class NaverMapCrawler:
     def _merge_results(self, target: Dict, source: List[Dict]):
         """중복 제거하며 결과 병합"""
         for item in source:
+            if not isinstance(item, dict):
+                logger.warning(f"Skipping non-dict item: {item}")
+                continue
             if item["id"] not in target:
                 target[item["id"]] = item
 

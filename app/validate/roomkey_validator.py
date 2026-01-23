@@ -19,10 +19,10 @@ def validate_room_key_exists(room: RoomKey):
     """단일 RoomKey가 rooms.json에 존재하는지 검증"""
     all_rooms = load_rooms()
     is_found = any(
-        r["name"] == room.name and
-        r["branch"] == room.branch and
-        str(r["business_id"]) == str(room.business_id) and
-        str(r["biz_item_id"]) == str(room.biz_item_id)
+        r.name == room.name and
+        r.branch == room.branch and
+        str(r.business_id) == str(room.business_id) and
+        str(r.biz_item_id) == str(room.biz_item_id)
         for r in all_rooms
     )
     if not is_found:

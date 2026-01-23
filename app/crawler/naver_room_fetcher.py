@@ -37,7 +37,7 @@ class NaverRoomFetcher:
                 
                 # 3. 지하철 정보 (NearSubway) - 좌표가 있는 경우만
                 subway = None
-                coord = business_info.get("coordination")
+                coord = business_info.get("coordinates")
                 if coord:
                     subway = await self._fetch_near_subway(
                         client, 
@@ -59,17 +59,12 @@ class NaverRoomFetcher:
     async def _fetch_business(self, client: httpx.AsyncClient, business_id: str) -> Optional[Dict]:
         query = """
         query business($businessId: String!) {
-            business(businessId: $businessId) {
+            business(input: {businessId: $businessId}) {
                 id
                 businessId
                 name
                 businessDisplayName
-                address
-                phone
-                coordination {
-                    longitude
-                    latitude
-                }
+                coordinates
                 placeId
             }
         }
@@ -79,11 +74,24 @@ class NaverRoomFetcher:
             "variables": {"businessId": business_id},
             "query": query
         }
-        
+
         resp = await client.post(self.GRAPHQL_URL, json=payload, headers=self.HEADERS, timeout=10.0)
+        if resp.status_code != 200:
+            logger.error(f"Business Error: {resp.status_code}, Body: {resp.text}")
         resp.raise_for_status()
         data = resp.json()
-        return data.get("data", {}).get("business")
+        business = data.get("data", {}).get("business")
+
+        # coordinates는 [longitude, latitude] 배열로 반환됨 -> 객체로 변환
+        if business and business.get("coordinates"):
+            coords = business["coordinates"]
+            if isinstance(coords, list) and len(coords) >= 2:
+                business["coordinates"] = {
+                    "longitude": coords[0],
+                    "latitude": coords[1]
+                }
+
+        return business
 
     async def _fetch_biz_items(self, client: httpx.AsyncClient, business_id: str) -> List[Dict]:
         query = """
@@ -101,7 +109,6 @@ class NaverRoomFetcher:
             }
             bookingTimeUnitCode
             minBookingTime
-            bookingPrecautionJson
           }
         }
         """
@@ -118,6 +125,8 @@ class NaverRoomFetcher:
         }
         
         resp = await client.post(self.GRAPHQL_URL, json=payload, headers=self.HEADERS, timeout=10.0)
+        if resp.status_code != 200:
+            logger.error(f"BizItems Error: {resp.status_code}, Body: {resp.text}")
         resp.raise_for_status()
         data = resp.json()
         return data.get("data", {}).get("bizItems") or []
