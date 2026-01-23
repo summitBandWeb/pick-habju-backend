@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, List
 
 class IFavoriteRepository(Protocol):
     """즐겨찾기 저장소 인터페이스 (Repository Pattern Protocol)"""
@@ -36,5 +36,17 @@ class IFavoriteRepository(Protocol):
             
         Returns:
             bool: 존재하면 True, 없으면 False
+        """
+        ...
+    
+    def get_all(self, user_id: str) -> List[str]:
+        """
+        사용자의 즐겨찾기 목록 조회
+        
+        Args:
+            user_id (str): 사용자(기기) 식별 ID
+            
+        Returns:
+            List[str]: 즐겨찾기된 합주실 ID 목록
         """
         ...
