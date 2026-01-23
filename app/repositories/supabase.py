@@ -1,6 +1,11 @@
-from typing import List, Any
+from typing import List, Optional
+import logging
+from supabase import Client
 from app.repositories.base import IFavoriteRepository
 from app.core.supabase import get_supabase_client
+
+# 로거 설정
+logger = logging.getLogger(__name__)
 
 class SupabaseFavoriteRepository(IFavoriteRepository):
     """
@@ -8,29 +13,37 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
     테이블: favorites (user_id, biz_item_id)
     """
 
-    def __init__(self):
-        self.client = get_supabase_client()
+    def __init__(self, client: Optional[Client] = None):
+        """
+        Args:
+            client (Optional[Client]): 테스트 용이성을 위한 의존성 주입 지원
+        """
+        self.client = client or get_supabase_client()
         self.table = "favorites"
 
     def add(self, user_id: str, biz_item_id: str) -> bool:
-        # 이미 존재하는지 확인 (Unique Violation 방지)
-        # 만약 DB 레벨에서 upsert를 지원하면 upsert를 써도 되지만, 
-        # 인터페이스 명세(bool 반환)를 맞추기 위해 체크 후 삽입 방식을 사용합니다.
+        """
+        즐겨찾기 추가 (Upsert 사용)
         
-        if self.exists(user_id, biz_item_id):
-            return False
-            
+        Rationale:
+            - exists() + insert() 대신 upsert()를 사용하여 DB round-trip 감소 (성능 최적화)
+            - on_conflict를 통해 중복 처리 자동화 (멱등성 보장)
+        """
         try:
-            self.client.table(self.table).insert({
-                "user_id": user_id,
-                "biz_item_id": biz_item_id
-            }).execute()
-            return True
+            # on_conflict를 사용한 upsert (Supabase v2 지원)
+            # ignore_duplicates=False로 설정하여 업데이트(덮어쓰기) 동작 -> 결과 리턴됨
+            response = self.client.table(self.table).upsert(
+                {"user_id": user_id, "biz_item_id": biz_item_id},
+                on_conflict="user_id,biz_item_id",
+            ).execute()
+            
+            # 데이터가 성공적으로 처리되었으면 True 반환
+            return len(response.data) > 0
+
         except Exception as e:
-            # 중복 에러 등 발생 시 로그를 남기거나 False 처리
-            # (실제 운영 시에는 구체적인 에러 핸들링 필요)
-            print(f"Error adding favorite: {e}")
-            return False
+            # 에러 로깅 후 상위 호출자에게 전파 (Fail Fast)
+            logger.error(f"Failed to add favorite for user {user_id}: {e}", exc_info=True)
+            raise
 
     def delete(self, user_id: str, biz_item_id: str) -> None:
         try:
@@ -40,20 +53,29 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
                 .eq("biz_item_id", biz_item_id)\
                 .execute()
         except Exception as e:
-            print(f"Error deleting favorite: {e}")
+            logger.error(f"Failed to delete favorite for user {user_id}: {e}", exc_info=True)
+            raise
 
     def exists(self, user_id: str, biz_item_id: str) -> bool:
+        """
+        즐겨찾기 존재 여부 확인 (최적화)
+        
+        Rationale:
+            - count="exact"는 전체 스캔을 유발할 수 있어 비효율적
+            - limit(1)과 select("id")만 사용하여 확인
+        """
         try:
             response = self.client.table(self.table)\
-                .select("id", count="exact")\
+                .select("id")\
                 .eq("user_id", user_id)\
                 .eq("biz_item_id", biz_item_id)\
+                .limit(1)\
                 .execute()
             
-            return response.count > 0
+            return len(response.data) > 0
         except Exception as e:
-            print(f"Error checking existence: {e}")
-            return False
+            logger.error(f"Failed to check existence for user {user_id}: {e}", exc_info=True)
+            raise
 
     def get_all(self, user_id: str) -> List[str]:
         try:
@@ -64,5 +86,5 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             
             return [item["biz_item_id"] for item in response.data]
         except Exception as e:
-            print(f"Error getting favorites: {e}")
-            return []
+            logger.error(f"Failed to get favorites for user {user_id}: {e}", exc_info=True)
+            raise

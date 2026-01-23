@@ -66,9 +66,9 @@ class TestSupabaseIntegration:
         favorites = repo.get_all(user_id)
         assert biz_id in favorites, "전체 목록 조회 결과에 추가한 아이템이 있어야 합니다."
 
-        # 5. Duplicate Add Check
+        # 5. Duplicate Add Check (Upsert -> Idempotency)
         duplicate_added = repo.add(user_id, biz_id)
-        assert duplicate_added is False, "이미 존재하는 데이터를 추가하면 False를 반환해야 합니다."
+        assert duplicate_added is True, "이미 존재하더라도 멱등성에 의해 True(성공)를 반환해야 합니다."
 
         # 6. Delete
         repo.delete(user_id, biz_id)
