@@ -3,23 +3,29 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
 from app.exception.crawler.groove_exception import GrooveLoginError, GrooveCredentialError
-from app.models.dto import RoomKey
+from app.models.dto import RoomDetail
 from app.crawler.groove_checker import GrooveCrawler
-from app.utils.room_loader import load_rooms
+from app.utils.room_loader import get_rooms_by_capacity
 
 @pytest.fixture(scope="module")
 def sample_groove_rooms():
-    """테스트를 위한 그루브 연습실 RoomKey 객체 샘플 목록을 제공합니다."""
+    """테스트를 위한 그루브 연습실 RoomDetail 객체 샘플 목록을 제공합니다."""
     rooms = []
-    for item in load_rooms():
-        if item.get("branch") == "그루브 사당점":
+    for item in get_rooms_by_capacity(1):
+        if item.branch == "그루브 사당점":
             # 테스트의 일관성과 명확성을 위해 biz_item_id를 '13'으로 고정합니다.
-            item['biz_item_id'] = '13'
-            room = RoomKey(
-                name=item["name"],
-                branch=item["branch"],
-                business_id=item["business_id"],
-                biz_item_id=item["biz_item_id"]
+            item.biz_item_id = '13'
+            room = RoomDetail(
+                name=item.name,
+                branch=item.branch,
+                business_id=item.business_id,
+                biz_item_id=item.biz_item_id,
+                imageUrls=item.imageUrls,
+                maxCapacity=item.maxCapacity,
+                recommendCapacity=item.recommendCapacity,
+                pricePerHour=item.pricePerHour,
+                canReserveOneHour=item.canReserveOneHour,
+                requiresCallOnSameDay=item.requiresCallOnSameDay
             )
             rooms.append(room)
     # 하나의 샘플만 사용해 테스트를 단순화합니다.
