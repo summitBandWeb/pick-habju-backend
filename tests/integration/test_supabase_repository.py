@@ -1,8 +1,9 @@
-import os
 import uuid
 import pytest
-import logging
+import time
 from app.repositories.supabase import SupabaseFavoriteRepository
+from unittest.mock import MagicMock, patch
+import concurrent.futures
 # config.py에서 변수를 직접 가져오거나, repository 내부 동작에 의존
 # 일반적으로 config가 로드되어야 repository가 동작함
 
@@ -110,14 +111,8 @@ class TestSupabaseIntegration:
         for biz_id in biz_ids:
             assert biz_id in favorites, f"추가한 아이템({biz_id})이 목록에 포함되어야 합니다."
 
-        # Cleanup
-        for biz_id in biz_ids:
-            repo.delete(user_id, biz_id)
-
     def test_concurrent_add_operations(self, repo, test_identifiers):
         """동시 추가 요청 처리 (race condition / idempotency 테스트)"""
-        import concurrent.futures
-
         user_id = test_identifiers["user_id"]
         biz_id = test_identifiers["biz_item_id"]
         
@@ -153,9 +148,76 @@ class TestSupabaseIntegration:
         # 예: user_id가 None인 경우 (타입 힌트상 str이지만 런타임에 None 전달)
         # Supabase Client가 400 Bad Request 등을 뱉을 수 있음.
         
-        print(f"\n[Test] Error Handling with Invalid Data")
+    def test_database_connection_failure(self):
+        """DB 연결 실패 테스트 (Mocking)"""
+        # Repository 인스턴스를 생성하되, 내부 client를 Mock으로 교체
+        repo = SupabaseFavoriteRepository()
+        
+        # 특정 메서드 호출 시 예외 발생하도록 설정
+        # Supabase client의 table().upsert().execute() 체인을 Mocking
+        mock_client = MagicMock()
+        mock_client.table.return_value.upsert.return_value.execute.side_effect = Exception("Connection Refused")
+        
+        # Mock Client 주입
+        repo.client = mock_client
+        
+        print(f"\n[Test] Database Connection Failure Simulation")
 
-        with pytest.raises(Exception):
-            # user_id에 None을 전달하여 강제 예러 유발 시도
-            # (만약 클라이언트가 미리 막는다면 다른 방식 고려)
-            repo.add(None, "invalid_biz_id")
+        with pytest.raises(Exception) as excinfo:
+            repo.add("test_user_error", "test_item_error")
+        
+        assert "Connection Refused" in str(excinfo.value)
+
+    def test_performance_large_data(self, repo, test_identifiers):
+        """대량 데이터 조회 성능 테스트 (50개)"""
+        user_id = test_identifiers["user_id"]
+        # 테스트용 데이터 50개 생성
+        items = [f"perf_item_{i}" for i in range(50)]
+        
+        print(f"\n[Test] Performance Test with 50 items")
+        
+        # 1. Bulk Insert (Upsert로 하나씩 넣는 시간 측정)
+        start_time = time.time()
+        for item in items:
+            repo.add(user_id, item)
+        duration_add = time.time() - start_time
+        print(f"  - Add 50 items: {duration_add:.4f} sec")
+        
+        # 2. Get All Performance
+        start_time = time.time()
+        favorites = repo.get_all(user_id)
+        duration_get = time.time() - start_time
+        print(f"  - Get 50 items: {duration_get:.4f} sec")
+        
+        assert len(favorites) == 50
+        assert duration_get < 1.0, "50개 조회는 1초 이내여야 합니다." # 기준은 환경에 따라 조절
+
+        # Cleanup
+        for item in items:
+            repo.delete(user_id, item)
+
+    def test_concurrent_delete_operations(self, repo, test_identifiers):
+        """동시 삭제 요청 처리 (Race Condition 테스트)"""
+        user_id = test_identifiers["user_id"]
+        biz_id = test_identifiers["biz_item_id"]
+        
+        # 먼저 데이터 추가
+        repo.add(user_id, biz_id)
+        assert repo.exists(user_id, biz_id) is True
+        
+        print(f"\n[Test] Concurrent Delete for User: {user_id}")
+
+        def delete_task():
+            # 삭제는 리턴이 None이지만 에러가 안나야 함
+            repo.delete(user_id, biz_id)
+            return True
+
+        # 동시에 5번 삭제 요청
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(delete_task) for _ in range(5)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+            
+        assert all(results), "동시 삭제 요청 시 에러가 없어야 합니다."
+        
+        # 최종적으로 데이터가 없어야 함
+        assert repo.exists(user_id, biz_id) is False
