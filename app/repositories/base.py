@@ -3,12 +3,13 @@ from typing import Protocol, List
 class IFavoriteRepository(Protocol):
     """즐겨찾기 저장소 인터페이스 (Repository Pattern Protocol)"""
     
-    def add(self, user_id: str, biz_item_id: str) -> bool:
+    def add(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
         즐겨찾기 추가
         
         Args:
-            user_id (str): 사용자(기기) 식별 ID
+            device_id (str): 사용자(기기) 식별 ID (UUID)
+            business_id (str): 비즈니스(업체) 고유 ID
             biz_item_id (str): 합주실 고유 ID
             
         Returns:
@@ -16,22 +17,24 @@ class IFavoriteRepository(Protocol):
         """
         ...
 
-    def delete(self, user_id: str, biz_item_id: str) -> None:
+    def delete(self, device_id: str, business_id: str, biz_item_id: str) -> None:
         """
         즐겨찾기 삭제
         
         Args:
-            user_id (str): 사용자(기기) 식별 ID
+            device_id (str): 사용자(기기) 식별 ID (UUID)
+            business_id (str): 비즈니스(업체) 고유 ID
             biz_item_id (str): 합주실 고유 ID
         """
         ...
         
-    def exists(self, user_id: str, biz_item_id: str) -> bool:
+    def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
         즐겨찾기 존재 여부 확인
         
         Args:
-            user_id (str): 사용자(기기) 식별 ID
+            device_id (str): 사용자(기기) 식별 ID (UUID)
+            business_id (str): 비즈니스(업체) 고유 ID
             biz_item_id (str): 합주실 고유 ID
             
         Returns:
@@ -39,12 +42,12 @@ class IFavoriteRepository(Protocol):
         """
         ...
     
-    def get_all(self, user_id: str) -> List[str]:
+    def get_all(self, device_id: str) -> List[str]:
         """
         사용자의 즐겨찾기 목록 조회
         
         Args:
-            user_id (str): 사용자(기기) 식별 ID
+            device_id (str): 사용자(기기) 식별 ID (UUID)
             
         Returns:
             List[str]: 즐겨찾기된 합주실 ID 목록

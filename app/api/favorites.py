@@ -19,13 +19,15 @@ def validate_uuid(value: str):
 @router.put("/{biz_item_id}", status_code=status.HTTP_200_OK)
 def add_favorite(
     biz_item_id: str,
+    business_id: str,
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> Dict[str, Any]:
     """
     즐겨찾기 추가
     
-    - **biz_item_id**: 합주실 고유 ID
+    - **biz_item_id**: 합주실 고유 ID (Path)
+    - **business_id**: 비즈니스(업체) 고유 ID (Query)
     - **Header(X-Device-Id)**: 사용자 기기 식별 ID (UUID 형식 필수)
     
     Returns:
@@ -36,20 +38,22 @@ def add_favorite(
     
     validate_uuid(x_device_id)
 
-    repo.add(user_id=x_device_id, biz_item_id=biz_item_id)
+    repo.add(device_id=x_device_id, business_id=business_id, biz_item_id=biz_item_id)
     
     return {"success": True}
 
 @router.delete("/{biz_item_id}", status_code=status.HTTP_200_OK)
 def delete_favorite(
     biz_item_id: str,
+    business_id: str,
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> Dict[str, Any]:
     """
     즐겨찾기 삭제
     
-    - **biz_item_id**: 합주실 고유 ID
+    - **biz_item_id**: 합주실 고유 ID (Path)
+    - **business_id**: 비즈니스(업체) 고유 ID (Query)
     - **Header(X-Device-Id)**: 사용자 기기 식별 ID (UUID 형식 필수)
     
     Returns:
@@ -60,7 +64,7 @@ def delete_favorite(
     
     validate_uuid(x_device_id)
          
-    repo.delete(user_id=x_device_id, biz_item_id=biz_item_id)
+    repo.delete(device_id=x_device_id, business_id=business_id, biz_item_id=biz_item_id)
     return {"success": True}
 
 @router.get("", status_code=status.HTTP_200_OK)
@@ -81,5 +85,5 @@ def get_favorites(
     
     validate_uuid(x_device_id)
     
-    items = repo.get_all(user_id=x_device_id)
+    items = repo.get_all(device_id=x_device_id)
     return {"biz_item_ids": items}
