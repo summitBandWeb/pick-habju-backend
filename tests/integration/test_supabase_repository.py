@@ -5,6 +5,11 @@ from app.repositories.supabase import SupabaseFavoriteRepository
 from unittest.mock import MagicMock, patch
 import concurrent.futures
 from app.core.supabase import get_supabase_client
+
+# TODO: 장기적으로 Supabase Local Development로 전환 권장
+# - 현재는 실제 DB 사용 (안전장치: UUID 격리, READ-ONLY room, Teardown)
+# - 향후 개선: .env.test + Supabase CLI (supabase start)
+
 # config.py에서 변수를 직접 가져오거나, repository 내부 동작에 의존
 # 일반적으로 config가 로드되어야 repository가 동작함
 
@@ -190,8 +195,6 @@ class TestSupabaseIntegration:
 
     def test_performance_large_data(self, repo, test_identifiers):
         """대량 데이터 조회 성능 테스트"""
-        from app.core.supabase import get_supabase_client
-        
         device_id = test_identifiers["device_id"]
         
         # 실제 존재하는 room 데이터 최대 50개 가져오기
