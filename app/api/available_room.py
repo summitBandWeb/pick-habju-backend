@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.services.availability_service import AvailabilityService
 
+
+# 사용자의 IP 주소를 기준으로 제한
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter(prefix="/api/rooms/availability")
 
@@ -10,7 +15,9 @@ router = APIRouter(prefix="/api/rooms/availability")
 
 @router.get("/", response_model=AvailabilityResponse)
 @router.get("", response_model=AvailabilityResponse)
+@limiter.limit("5/minute") # 이 API는 1분에 5번만 호출 가능!
 async def check_room_availability(
+    request: Request,
     date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
     capacity: int = Query(..., description="사용 인원 수"),
     start_hour: str = Query(..., description="시작 시간 (HH:MM)"),
