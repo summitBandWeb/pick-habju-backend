@@ -1,4 +1,5 @@
 import uvicorn
+import os
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -69,7 +70,13 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
+<<<<<<< HEAD
 app.include_router(favorites_router)
+=======
+
+if os.getenv("ENV") != "prod":
+    app.include_router(test_router)
+>>>>>>> 3b7a353 ([#110]; refactor: 테스트 코드 보안 강화(운영 환경이 아닐 때만 테스트 라우터 등록))
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
 app.add_exception_handler(HTTPException, http_exception_handler)
