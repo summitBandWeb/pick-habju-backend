@@ -180,6 +180,4 @@ cython_debug/
 .DS_Store
 
 logs/
-
-# Local Database
 *.db
