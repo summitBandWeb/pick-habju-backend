@@ -1,4 +1,5 @@
 import uvicorn
+import os
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -69,7 +70,9 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
-app.include_router(test_router)  # Issue #110: Test Endpoints for Envelope Pattern
+
+if os.getenv("ENV") != "prod":
+    app.include_router(test_router)
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
 app.add_exception_handler(HTTPException, http_exception_handler)
