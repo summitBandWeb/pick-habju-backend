@@ -7,6 +7,11 @@ from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler, global_exception_handler
+
+from app.exception.exception_handler import rate_limit_exception_handler
+from slowapi.errors import RateLimitExceeded
+from app.api.available_room import limiter
+
 import app.crawler  # Trigger crawler registration on startup.
 
 ALLOWED_ORIGINS_SET = {
@@ -18,6 +23,8 @@ ALLOWED_ORIGINS_SET = {
 from contextlib import asynccontextmanager
 from app.utils.client_loader import set_global_client, close_global_client
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 설정
@@ -27,6 +34,8 @@ async def lifespan(app: FastAPI):
     await close_global_client()
 
 app = FastAPI(lifespan=lifespan)
+
+app.state.limiter = limiter
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
@@ -57,9 +66,10 @@ def ping():
 # API 라우터 포함
 app.include_router(available_router)
 
-# 커스텀 예외 핸들러는 라우터 포함 이후에 추가
+# 예외 핸들러
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
 
 # 로깅 설정(콘솔 + 일자별 파일 로테이션, JSON 포맷)
 setup_logging()
