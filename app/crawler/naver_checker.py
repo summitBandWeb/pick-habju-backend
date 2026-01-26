@@ -15,7 +15,7 @@ class NaverCrawler(BaseCrawler):
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             try:
                 return await self._fetch_naver_availability_room(date, hour_slots, room)
-            except NaverAvailabilityError as e:
+            except Exception as e:
                 return e
 
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])

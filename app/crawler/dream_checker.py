@@ -39,7 +39,7 @@ class DreamCrawler(BaseCrawler):
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             try:
                 return await self._fetch_dream_availability_room(date, hour_slots, room)
-            except DreamAvailabilityError as e:
+            except Exception as e:
                 return e
 
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
