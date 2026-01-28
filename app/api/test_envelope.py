@@ -47,7 +47,7 @@ def test_success():
         message="테스트 성공입니다."
     )
 
-@router.get("/error", response_model=ApiResponse)
+@router.get("/error", response_model=ApiResponse[None])
 def test_error(status_code: int = Query(400, description="에러 코드 (400, 404, 500 등)")):
     """
     에러 응답 테스트 (HTTPException 발생 -> Global Handler 변환)
@@ -60,7 +60,7 @@ def test_error(status_code: int = Query(400, description="에러 코드 (400, 40
     """
     raise HTTPException(status_code=status_code, detail=f"테스트용 {status_code} 에러입니다.")
 
-@router.get("/server-error", response_model=ApiResponse)
+@router.get("/server-error", response_model=ApiResponse[None])
 def test_server_error():
     """
     서버 에러 테스트 (500 Internal Server Error)
