@@ -57,7 +57,15 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         예상치 못한 서버 에러가 발생해도 프론트엔드는 항상
         isSuccess: false 형태의 JSON을 받게 됩니다.
     """
-    logger.error(f"Unhandled Exception: {exc}", exc_info=True)
+    logger.error(
+        "Unhandled Exception",
+        exc_info=True,
+        extra={
+            "path": request.url.path,
+            "method": request.method,
+            "client": request.client.host if request.client else None
+        }
+    )
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
