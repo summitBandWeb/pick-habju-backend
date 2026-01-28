@@ -5,6 +5,7 @@ httpx[http2]~=0.27
 beautifulsoup4~=4.12
 pydantic~=2.7
 supabase~=2.4        # Supabase Python 클라이언트
+sqlalchemy~=2.0
 
 # ==== 테스트(서버에 설치 원치 않으면 requirements-dev.txt로 분리 가능) ====
 pytest~=8.2
