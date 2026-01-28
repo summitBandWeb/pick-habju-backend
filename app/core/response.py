@@ -1,5 +1,6 @@
 from typing import TypeVar, Generic, Optional
 from pydantic import BaseModel, ConfigDict
+from app.core.error_codes import ErrorCode
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -49,7 +50,7 @@ class ApiResponse(BaseModel, Generic[T]):
     )
 
 
-def success_response(result: T, message: str = "성공입니다.", code: str = "COMMON200") -> ApiResponse[T]:
+def success_response(result: T, message: str = "성공입니다.", code: str = ErrorCode.COMMON_SUCCESS) -> ApiResponse[T]:
     """
     성공 응답 생성 팩토리 함수
     
