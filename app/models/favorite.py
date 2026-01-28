@@ -27,6 +27,9 @@ class Favorite(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     
     # Rationale: UUID(36) 및 외부 ID 길이를 고려하여 255자로 제한 (타 DB 마이그레이션 대비)
+    # Rationale (Index):
+    # 1. user_id: '내 즐겨찾기 목록 조회' API에서 WHERE 조건으로 빈번하게 사용됨.
+    # 2. biz_item_id: 특정 합주실 상세 조회 시 '즐겨찾기 여부' 체크를 위해 복합 조회 또는 단일 조회가 일어남.
     user_id = Column(String(255), nullable=False, index=True) 
     biz_item_id = Column(String(255), nullable=False, index=True)
     
