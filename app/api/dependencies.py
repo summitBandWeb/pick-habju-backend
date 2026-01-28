@@ -4,6 +4,10 @@ from app.crawler.base import BaseCrawler
 from app.crawler.registry import registry
 from app.services.availability_service import AvailabilityService
 
+# --- Favorites API Dependencies ---
+from app.repositories.base import IFavoriteRepository
+from app.repositories.memory import MockFavoriteRepository
+
 
 def get_crawlers() -> list[BaseCrawler]:
     """등록된 모든 크롤러 인스턴스 리스트 반환."""
@@ -20,3 +24,15 @@ def get_availability_service(
 ) -> AvailabilityService:
     """AvailabilityService 인스턴스 반환 (DI용)."""
     return AvailabilityService(crawlers_map)
+
+# Singleton instance for Mock Repository (to persist data in memory)
+_mock_fav_repo = MockFavoriteRepository()
+
+def get_favorite_repository() -> IFavoriteRepository:
+    """
+    Favorite Repository 의존성 주입
+    
+    Returns:
+        IFavoriteRepository: 현재는 Mock Repository를 반환 (Memory Persisted)
+    """
+    return _mock_fav_repo
