@@ -43,7 +43,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=error_response(
             message="입력값을 확인해주세요.",
-            code="VALIDATION-ERROR",
+            code="VALIDATION_ERROR",
             result=errors
         ).model_dump()
     )
@@ -63,6 +63,6 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
             message="서버 내부 오류가 발생했습니다.",
-            code="Common-001"
+            code="COMMON_001"
         ).model_dump()
     )
