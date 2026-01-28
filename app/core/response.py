@@ -1,7 +1,7 @@
 from typing import TypeVar, Generic, Optional
 from pydantic import BaseModel, ConfigDict
 
-T = TypeVar('T')
+T = TypeVar('T', bound=BaseModel)
 
 class ApiResponse(BaseModel, Generic[T]):
     """
