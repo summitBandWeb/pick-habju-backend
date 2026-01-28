@@ -31,8 +31,12 @@ def target_biz_id():
     return "biz-12345"
 
 @pytest.fixture
-def api_endpoint(target_biz_id):
-    return f"/api/favorites/{target_biz_id}"
+def business_id():
+    return "business-001"
+
+@pytest.fixture
+def api_endpoint(target_biz_id, business_id):
+    return f"/api/favorites/{target_biz_id}?business_id={business_id}"
 
 
 def test_add_favorite_success(client, api_endpoint, headers):
@@ -70,13 +74,14 @@ def test_delete_favorite_success(client, api_endpoint, headers):
     
     # Verify actual deletion in Mock Repository
 
-def test_delete_actually_removes_data(client, headers, api_endpoint, target_biz_id):
+def test_delete_actually_removes_data(client, headers, target_biz_id, business_id):
     """삭제 후 데이터가 실제로 조회되지 않는지 확인"""
     # 1. 추가
-    client.put(api_endpoint, headers=headers)
+    api_url = f"/api/favorites/{target_biz_id}?business_id={business_id}"
+    client.put(api_url, headers=headers)
     
     # 2. 삭제
-    client.delete(api_endpoint, headers=headers)
+    client.delete(api_url, headers=headers)
     
     # 3. 조회 (GET) 하여 리스트에 없는지 확인
     response = client.get("/api/favorites", headers=headers)
@@ -118,12 +123,12 @@ def test_get_favorites_empty(client, headers):
     assert response.status_code == 200
     assert response.json() == {"biz_item_ids": []}
 
-def test_get_favorites_success(client, headers):
+def test_get_favorites_success(client, headers, business_id):
     """추가된 즐겨찾기 목록을 정확히 반환해야 한다."""
     # Arrange: 2개 추가
     items = ["biz-101", "biz-102"]
     for item in items:
-        client.put(f"/api/favorites/{item}", headers=headers)
+        client.put(f"/api/favorites/{item}?business_id={business_id}", headers=headers)
 
     # Act
     response = client.get("/api/favorites", headers=headers)
@@ -134,18 +139,18 @@ def test_get_favorites_success(client, headers):
     assert "biz_item_ids" in data
     assert sorted(data["biz_item_ids"]) == sorted(items)
 
-def test_get_favorites_isolation(client, headers):
+def test_get_favorites_isolation(client, headers, business_id):
     """다른 사용자의 즐겨찾기는 조회되지 않아야 한다."""
     # Arrange: Target User (headers)에 data adding
     my_item = "my-biz-001"
-    client.put(f"/api/favorites/{my_item}", headers=headers)
+    client.put(f"/api/favorites/{my_item}?business_id={business_id}", headers=headers)
 
     # Arrange: Other User adding data
     # 다른 사용자용 유효한 UUID
     other_uuid = "99999999-9999-9999-9999-999999999999"
     other_headers = {"X-Device-Id": other_uuid}
     other_item = "other-biz-999"
-    client.put(f"/api/favorites/{other_item}", headers=other_headers)
+    client.put(f"/api/favorites/{other_item}?business_id={business_id}", headers=other_headers)
 
     # Act: Target User gets list
     response = client.get("/api/favorites", headers=headers)
