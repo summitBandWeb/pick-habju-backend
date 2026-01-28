@@ -50,14 +50,14 @@ class ApiResponse(BaseModel, Generic[T]):
     )
 
 
-def success_response(result: T, message: str = "성공입니다.", code: str = ErrorCode.COMMON_SUCCESS) -> ApiResponse[T]:
+def success_response(result: T, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> ApiResponse[T]:
     """
     성공 응답 생성 팩토리 함수
     
     Args:
         result: 실제 응답 데이터
+        code: 응답 코드 (기본값: ErrorCode.COMMON_SUCCESS)
         message: 성공 메시지 (기본값: "성공입니다.")
-        code: 응답 코드 (기본값: "COMMON200")
         
     Returns:
         ApiResponse: 표준 성공 응답 객체
