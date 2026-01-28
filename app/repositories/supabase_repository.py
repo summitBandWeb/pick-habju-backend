@@ -2,7 +2,7 @@ from typing import List, Optional
 import logging
 from supabase import Client
 from app.repositories.base import IFavoriteRepository
-from app.core.supabase import get_supabase_client
+from app.core.supabase_client import get_supabase_client
 
 # 로거 설정
 logger = logging.getLogger(__name__)

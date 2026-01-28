@@ -6,7 +6,7 @@ from app.services.availability_service import AvailabilityService
 
 # --- Favorites API Dependencies ---
 from app.repositories.base import IFavoriteRepository
-from app.repositories.supabase import SupabaseFavoriteRepository
+from app.repositories.supabase_repository import SupabaseFavoriteRepository
 # from app.repositories.memory import MockFavoriteRepository
 
 
