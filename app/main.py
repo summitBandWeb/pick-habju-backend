@@ -75,14 +75,20 @@ if os.getenv("ENV") != "prod":
     app.include_router(test_router)
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
-app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.add_exception_handler(Exception, global_exception_handler_envelope)
+# 우선순위: 구체적인 예외 -> 일반적인 예외(Exception) 순서로 등록
 
-# 기존 커스텀 예외 핸들러
+# 1. 커스텀 예외 (비즈니스 로직) - 가장 구체적
 # TODO: [Issue #111] 기존 API 리팩토링 시, 이 핸들러도 Envelope Pattern(ApiResponse)을 반환하도록 수정해야 함
-# 현재는 레거시 프론트엔드 연동 유지를 위해 기존 방식(JSONResponse)을 유지 중
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
+
+# 2. 검증 예외
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+# 3. HTTP 예외
+app.add_exception_handler(HTTPException, http_exception_handler)
+
+# 4. 그 외 모든 예외 (서버 에러) - 가장 일반적
+app.add_exception_handler(Exception, global_exception_handler_envelope)
 
 # 로깅 설정(콘솔 + 일자별 파일 로테이션, JSON 포맷)
 setup_logging()
