@@ -6,7 +6,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
+<<<<<<< HEAD
 from app.api.favorites import router as favorites_router
+=======
+from app.api.envelope_demo import router as test_router  # Issue #110: Envelope Pattern Demo Endpoint
+>>>>>>> efccef2 ([#110]; refactor: 테스트 코드와의 혼동 방지(파일명 수정))
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
