@@ -17,7 +17,7 @@ on:
     branches:
       - main
       - dev
-      - feature/cloud-run-migration  # 테스트용 - 검증 후 제거
+      - config/100-gcp-architecture-setup  # 테스트용 - 검증 후 제거
 
 env:
   # -------------------------------------------------------------------------
