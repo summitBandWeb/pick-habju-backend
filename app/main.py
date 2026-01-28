@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
-from app.api.test_envelope import router as test_router  # Issue #110: Envelope Pattern Test
+from app.api.envelope_demo import router as test_router  # Issue #110: Envelope Pattern Demo Endpoint
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
