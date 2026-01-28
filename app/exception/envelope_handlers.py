@@ -3,8 +3,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import logging
-
 from app.core.response import error_response
+from app.core.error_codes import ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         status_code=exc.status_code,
         content=error_response(
             message=exc.detail,
-            code=f"HTTP_{exc.status_code}"
+            code=ErrorCode.http_error(exc.status_code)
         ).model_dump()
     )
 
@@ -47,7 +47,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=error_response(
             message="입력값을 확인해주세요.",
-            code="VALIDATION_ERROR",
+            code=ErrorCode.VALIDATION_ERROR,
             result=errors
         ).model_dump()
     )
@@ -75,6 +75,6 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
             message="서버 내부 오류가 발생했습니다.",
-            code="COMMON_001"
+            code=ErrorCode.INTERNAL_ERROR
         ).model_dump()
     )
