@@ -3,13 +3,14 @@ from typing import Protocol, List
 class IFavoriteRepository(Protocol):
     """즐겨찾기 저장소 인터페이스 (Repository Pattern Protocol)"""
     
-    def add(self, device_id: str, biz_item_id: str) -> bool:
+    def add(self, device_id: str, biz_item_id: str, business_id: str) -> bool:
         """
         즐겨찾기 추가
         
         Args:
             device_id (str): 사용자(기기) 식별 ID
-            biz_item_id (str): 합주실 고유 ID
+            biz_item_id (str): 합주실 룸 구별 ID
+            business_id (str): 합주실 지점 구별 ID
             
         Returns:
             bool: 생성 성공 시 True, 이미 존재하면 False

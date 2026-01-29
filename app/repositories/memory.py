@@ -14,7 +14,7 @@ class MockFavoriteRepository(IFavoriteRepository):
         # Data Structure: {(device_id, biz_item_id), ...}
         self._data: Set[Tuple[str, str]] = set()
 
-    def add(self, device_id: str, biz_item_id: str) -> bool:
+    def add(self, device_id: str, biz_item_id: str, business_id: str) -> bool:
         if self.exists(device_id, biz_item_id):
             return False
         
