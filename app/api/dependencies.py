@@ -1,5 +1,6 @@
 from __future__ import annotations
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException
+import uuid
 from app.crawler.base import BaseCrawler
 from app.crawler.registry import registry
 from app.services.availability_service import AvailabilityService
@@ -36,3 +37,26 @@ def get_favorite_repository() -> IFavoriteRepository:
         IFavoriteRepository: 현재는 Mock Repository를 반환 (Memory Persisted)
     """
     return _mock_fav_repo
+
+
+def validate_device_id(
+    x_device_id: str | None = Header(default=None, alias="X-Device-Id")
+) -> str:
+    """
+    X-Device-Id 헤더 검증 및 반환 Dependency
+    
+    Raises:
+        HTTPException(400): 헤더가 없거나 비어있는 경우, 또는 UUID 형식이 아닌 경우
+    """
+    if not x_device_id or not x_device_id.strip():
+        raise HTTPException(
+            status_code=400, 
+            detail="X-Device-Id header is required and cannot be empty"
+        )
+    
+    try:
+        uuid.UUID(x_device_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid X-Device-Id format")
+    
+    return x_device_id
