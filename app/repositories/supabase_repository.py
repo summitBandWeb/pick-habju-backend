@@ -58,7 +58,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
         """
         try:
             response = self.supabase.table(self.table_name).select(
-                "biz_item_id", count="exact"
+                "biz_item_id"
             ).eq(
                 "device_id", device_id
             ).eq(
