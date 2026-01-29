@@ -24,7 +24,7 @@ env:
   # GCP 프로젝트 설정
   # -------------------------------------------------------------------------
   PROJECT_ID: project-6f6602b3-6e99-4dd6-b98
-  REGION: asia-northeast3
+  REGION: asia-northeast1  # 도쿄 - 도메인 매핑 지원
   GAR_REPOSITORY: pickhabju-repo
   IMAGE_NAME: pickhabju-backend
   
