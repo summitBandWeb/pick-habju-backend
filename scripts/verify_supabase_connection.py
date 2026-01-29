@@ -4,7 +4,7 @@ import os
 # 현재 스크립트의 상위 디렉터리(프로젝트 루트)를 path에 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.core.supabase import get_supabase_client
+from app.core.supabase_client import get_supabase_client
 
 def verify():
     """
