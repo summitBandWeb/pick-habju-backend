@@ -66,7 +66,7 @@ def test_delete_favorite_success(client, api_endpoint, headers, target_business_
     client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Act
-    response = client.delete(api_endpoint, headers=headers)
+    response = client.delete(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Assert
     assert response.status_code == 200
@@ -80,17 +80,17 @@ def test_delete_actually_removes_data(client, headers, api_endpoint, target_biz_
     client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
     
     # 2. 삭제
-    client.delete(api_endpoint, headers=headers)
+    client.delete(api_endpoint, headers=headers, params={"business_id": target_business_id})
     
     # 3. 조회 (GET) 하여 리스트에 없는지 확인
     response = client.get("/api/favorites", headers=headers)
     assert response.status_code == 200
     assert target_biz_id not in response.json()["biz_item_ids"]
 
-def test_delete_favorite_idempotency(client, api_endpoint, headers):
+def test_delete_favorite_idempotency(client, api_endpoint, headers, target_business_id):
     """존재하지 않는 즐겨찾기를 삭제해도 에러 없이 200 OK를 반환해야 한다."""
     # Act: 없는 데이터 삭제 시도
-    response = client.delete(api_endpoint, headers=headers)
+    response = client.delete(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Assert
     assert response.status_code == 200
