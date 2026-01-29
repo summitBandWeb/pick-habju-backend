@@ -1,4 +1,4 @@
-from app.core.database import supabase
+from app.core.supabase_client import supabase
 from app.core.config import SUPABASE_TABLE
 from typing import List, Dict, Any
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
