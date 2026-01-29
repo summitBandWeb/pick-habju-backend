@@ -1,10 +1,10 @@
 import uuid
 import pytest
 import time
-from app.repositories.supabase import SupabaseFavoriteRepository
+from app.repositories.supabase_repository import SupabaseFavoriteRepository
 from unittest.mock import MagicMock, patch
 import concurrent.futures
-from app.core.supabase import get_supabase_client
+from app.core.supabase_client import get_supabase_client
 
 # TODO: 장기적으로 Supabase Local Development로 전환 권장
 # - 현재는 실제 DB 사용 (안전장치: UUID 격리, READ-ONLY room, Teardown)
