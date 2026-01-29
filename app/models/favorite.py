@@ -6,8 +6,8 @@ class Favorite(BaseModel):
 
     Args:
         device_id (str): 사용자 기기 식별값 (UUID). Supabase DB 컬럼명과 일치.
-        business_id (str): 합주실 업체 고유 ID (예: 'dream_sadang').
-        biz_item_id (str): 외부 크롤링 소스(Naver/Dream/Groove)의 고유 합주실 ID.
+        business_id (str): 합주실 지점 구별 ID (예: 'dream_sadang').
+        biz_item_id (str): 합주실 룸 구별 ID (외부 크롤링 소스의 고유 ID).
         created_at (datetime | None): 즐겨찾기 최초 생성 일시. (DB 자동 생성 시 None 가능)
 
     Rationale:
@@ -22,10 +22,10 @@ class Favorite(BaseModel):
     device_id: str = Field(..., description="사용자 기기 식별값 (UUID)")
     
     # FK or Grouping key
-    business_id: str = Field(..., description="합주실 업체 고유 ID")
+    business_id: str = Field(..., description="합주실 지점 구별 ID")
     
     # Unique Item ID
-    biz_item_id: str = Field(..., description="합주실 룸/아이템 고유 ID")
+    biz_item_id: str = Field(..., description="합주실 룸 구별 ID")
     
     created_at: datetime | None = Field(default=None, description="생성 일시")
 
