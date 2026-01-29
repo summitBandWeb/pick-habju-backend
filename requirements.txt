@@ -16,4 +16,3 @@ pytest-asyncio~=0.23
 # redis~=5.0                 # redis 캐시/레이트리밋 사용시
 # fastapi-limiter~=0.1       # redis 기반 레이트리밋 사용시
 lxml~=5.2                  # BeautifulSoup에서 'lxml' 파서 지정 시
-supabase~=2.1

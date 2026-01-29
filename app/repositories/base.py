@@ -9,8 +9,8 @@ class IFavoriteRepository(Protocol):
         
         Args:
             device_id (str): 사용자(기기) 식별 ID (UUID)
-            business_id (str): 비즈니스(업체) 고유 ID
-            biz_item_id (str): 합주실 고유 ID
+            business_id (str): 합주실 지점 구별 ID
+            biz_item_id (str): 합주실 룸 구별 ID
             
         Returns:
             bool: 생성 성공 시 True, 이미 존재하면 False
@@ -23,8 +23,8 @@ class IFavoriteRepository(Protocol):
         
         Args:
             device_id (str): 사용자(기기) 식별 ID (UUID)
-            business_id (str): 비즈니스(업체) 고유 ID
-            biz_item_id (str): 합주실 고유 ID
+            business_id (str): 합주실 지점 구별 ID
+            biz_item_id (str): 합주실 룸 구별 ID
         """
         ...
         
@@ -34,8 +34,8 @@ class IFavoriteRepository(Protocol):
         
         Args:
             device_id (str): 사용자(기기) 식별 ID (UUID)
-            business_id (str): 비즈니스(업체) 고유 ID
-            biz_item_id (str): 합주실 고유 ID
+            business_id (str): 합주실 지점 구별 ID
+            biz_item_id (str): 합주실 룸 구별 ID
             
         Returns:
             bool: 존재하면 True, 없으면 False

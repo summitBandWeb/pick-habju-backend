@@ -26,8 +26,8 @@ def add_favorite(
     """
     즐겨찾기 추가
     
-    - **biz_item_id**: 합주실 고유 ID (Path)
-    - **business_id**: 비즈니스(업체) 고유 ID (Query)
+    - **biz_item_id**: 합주실 룸 구별 ID (Path Parameter)
+    - **business_id**: 합주실 지점 구별 ID (Query Parameter)
     - **Header(X-Device-Id)**: 사용자 기기 식별 ID (UUID 형식 필수)
     
     Returns:
@@ -52,8 +52,8 @@ def delete_favorite(
     """
     즐겨찾기 삭제
     
-    - **biz_item_id**: 합주실 고유 ID (Path)
-    - **business_id**: 비즈니스(업체) 고유 ID (Query)
+    - **biz_item_id**: 합주실 룸 구별 ID (Path Parameter)
+    - **business_id**: 합주실 지점 구별 ID (Query Parameter)
     - **Header(X-Device-Id)**: 사용자 기기 식별 ID (UUID 형식 필수)
     
     Returns:
