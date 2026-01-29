@@ -36,7 +36,7 @@ def add_favorite(
     
     validate_uuid(x_device_id)
 
-    repo.add(user_id=x_device_id, biz_item_id=biz_item_id)
+    repo.add(device_id=x_device_id, biz_item_id=biz_item_id)
     
     return {"success": True}
 
@@ -60,7 +60,7 @@ def delete_favorite(
     
     validate_uuid(x_device_id)
          
-    repo.delete(user_id=x_device_id, biz_item_id=biz_item_id)
+    repo.delete(device_id=x_device_id, biz_item_id=biz_item_id)
     return {"success": True}
 
 @router.get("", status_code=status.HTTP_200_OK)
@@ -81,5 +81,5 @@ def get_favorites(
     
     validate_uuid(x_device_id)
     
-    items = repo.get_all(user_id=x_device_id)
+    items = repo.get_all(device_id=x_device_id)
     return {"biz_item_ids": items}
