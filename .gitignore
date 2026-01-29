@@ -180,4 +180,8 @@ cython_debug/
 .DS_Store
 
 logs/
+<<<<<<< HEAD
 *.db
+=======
+*.db
+>>>>>>> a391457 ([#102]; config: gitignore에 *.db 추가)

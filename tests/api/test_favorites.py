@@ -160,3 +160,10 @@ def test_get_favorites_isolation(client, headers, target_business_id):
     assert my_item in data["biz_item_ids"]
     assert other_item not in data["biz_item_ids"]
     assert len(data["biz_item_ids"]) == 1
+
+def test_get_favorites_error_cases(client):
+    """GET 요청 시에도 잘못된 헤더에 대해 400 에러를 반환해야 한다."""
+    # 헤더 누락
+    response = client.get("/api/favorites", headers={})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "X-Device-Id header is required and cannot be empty"

@@ -29,4 +29,8 @@ class MockFavoriteRepository(IFavoriteRepository):
         return (device_id, business_id, biz_item_id) in self._data
 
     def get_all(self, device_id: str) -> List[str]:
+<<<<<<< HEAD
         return [biz_id for dev_id, bus_id, biz_id in self._data if dev_id == device_id]
+=======
+        return [biz_id for dev_id, _, biz_id in self._data if dev_id == device_id]
+>>>>>>> feat/104-favorites-api-mock

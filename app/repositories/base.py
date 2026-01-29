@@ -8,7 +8,7 @@ class IFavoriteRepository(Protocol):
         즐겨찾기 추가
         
         Args:
-            device_id (str): 사용자(기기) 식별 ID (UUID)
+            device_id (str): 사용자(기기) 식별 ID
             business_id (str): 합주실 지점 구별 ID
             biz_item_id (str): 합주실 룸 구별 ID
             
@@ -22,7 +22,7 @@ class IFavoriteRepository(Protocol):
         즐겨찾기 삭제
         
         Args:
-            device_id (str): 사용자(기기) 식별 ID (UUID)
+            device_id (str): 사용자(기기) 식별 ID
             business_id (str): 합주실 지점 구별 ID
             biz_item_id (str): 합주실 룸 구별 ID
         """
@@ -33,7 +33,7 @@ class IFavoriteRepository(Protocol):
         즐겨찾기 존재 여부 확인
         
         Args:
-            device_id (str): 사용자(기기) 식별 ID (UUID)
+            device_id (str): 사용자(기기) 식별 ID
             business_id (str): 합주실 지점 구별 ID
             biz_item_id (str): 합주실 룸 구별 ID
             
@@ -47,7 +47,7 @@ class IFavoriteRepository(Protocol):
         사용자의 즐겨찾기 목록 조회
         
         Args:
-            device_id (str): 사용자(기기) 식별 ID (UUID)
+            device_id (str): 사용자(기기) 식별 ID
             
         Returns:
             List[str]: 즐겨찾기된 합주실 ID 목록
