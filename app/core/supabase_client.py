@@ -26,3 +26,6 @@ def get_supabase_client() -> Client:
     )
     
     return create_client(SUPABASE_URL, SUPABASE_KEY, options=options)
+
+# Backward compatibility alias
+supabase = get_supabase_client()
