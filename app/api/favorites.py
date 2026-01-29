@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Response, Query
 from typing import Dict, Any, List
 import uuid
 from app.repositories.base import IFavoriteRepository
@@ -19,7 +19,7 @@ def validate_uuid(value: str):
 @router.put("/{biz_item_id}", status_code=status.HTTP_200_OK)
 def add_favorite(
     biz_item_id: str,
-    business_id: str,
+    business_id: str = Query(..., description="합주실 지점 구별 ID"),
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> Dict[str, Any]:
@@ -45,7 +45,7 @@ def add_favorite(
 @router.delete("/{biz_item_id}", status_code=status.HTTP_200_OK)
 def delete_favorite(
     biz_item_id: str,
-    business_id: str,
+    business_id: str = Query(..., description="합주실 지점 구별 ID"),
     x_device_id: str | None = Header(default=None, alias="X-Device-Id"),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> Dict[str, Any]:
