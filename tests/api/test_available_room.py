@@ -218,6 +218,12 @@ def test_get_availability_api_with_crawler_error():
         else:
             del app.dependency_overrides[get_crawlers_map]
             
+import os
+
+@pytest.mark.skipif(
+    os.getenv("CI") == "true" or not os.getenv("SUPABASE_URL"),
+    reason="Requires real Supabase connection (skipped in CI or without env vars)"
+)
 def test_get_availability_with_real_db():
     """
     실제 Supabase와 연동하여 데이터 로드 검증 (Integration Test)
