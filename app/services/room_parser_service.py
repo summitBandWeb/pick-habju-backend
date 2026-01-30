@@ -12,24 +12,16 @@ logger = logging.getLogger(__name__)
 GEMINI_RATE_LIMIT_SECONDS = 4
 
 class RoomParserService:
-    """LLM을 사용하여 비정형 룸 정보를 구조화된 데이터로 변환합니다."""
+    """LLM(Gemini)을 사용하여 비정형 룸 정보를 구조화된 데이터로 변환합니다."""
     
     def __init__(self, api_key: Optional[str] = None):
-        self.provider = os.getenv("LLM_PROVIDER", "gemini").lower()
-        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1")
-        
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
 
-        if self.provider == "gemini":
-            if not self.api_key:
-                logger.warning("GEMINI_API_KEY is not set. LLM parsing will fail.")
-            else:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-2.0-flash')
-        elif self.provider == "ollama":
-            logger.info(f"Using Ollama Provider: {self.ollama_model} at {self.ollama_base_url}")
-            # httpx Client는 비동기 호출 시점에 생성 (또는 여기서 생성 후 재사용)
+        if not self.api_key:
+            logger.warning("GEMINI_API_KEY is not set. LLM parsing will fail.")
+        else:
+            genai.configure(api_key=self.api_key)
+            self.model = genai.GenerativeModel('gemini-2.0-flash')
 
 
     async def parse_room_desc(self, name: str, desc: str) -> Dict[str, Any]:
@@ -215,11 +207,6 @@ class RoomParserService:
         }}
         """
         
-        # Provider 분기 처리
-        if self.provider == "ollama":
-            return await self._parse_batch_with_ollama(items, prompt)
-            
-        # Default: Gemini
         try:
             loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(None, self.model.generate_content, prompt)
@@ -231,32 +218,7 @@ class RoomParserService:
             return self._process_llm_response(text, items)
 
         except Exception as e:
-            logger.warning(f"Batch LLM parsing failed (Gemini): {e}. Falling back to Regex.")
-            return {item["id"]: self._parse_with_regex(item["name"], item["desc"]) for item in items}
-
-    async def _parse_batch_with_ollama(self, items: List[Dict], prompt_text: str) -> Dict[str, Dict]:
-        """Ollama API를 사용한 배치 파싱"""
-        import httpx
-        
-        url = f"{self.ollama_base_url}/api/generate"
-        payload = {
-            "model": self.ollama_model,
-            "prompt": prompt_text,
-            "format": "json",
-            "stream": False
-        }
-        
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                result = response.json()
-                text = result.get("response", "")
-                
-            return self._process_llm_response(text, items)
-            
-        except Exception as e:
-            logger.warning(f"Batch LLM parsing failed (Ollama): {e}. Falling back to Regex.")
+            logger.warning(f"Batch LLM parsing failed: {e}. Falling back to Regex.")
             return {item["id"]: self._parse_with_regex(item["name"], item["desc"]) for item in items}
 
     def _process_llm_response(self, text: str, items: List[Dict]) -> Dict[str, Dict]:
@@ -279,4 +241,3 @@ class RoomParserService:
                 final_results[rid] = data
         
         return final_results
-
