@@ -22,11 +22,15 @@
 from __future__ import annotations
 import asyncio
 import logging
-from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability, RoomKey
+from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
+from typing import List
+from datetime import datetime, timedelta
+from app.utils.room_loader import get_rooms_by_capacity
+from fastapi import HTTPException
 
 logger = logging.getLogger("app")
 
@@ -65,21 +69,55 @@ class AvailabilityService:
         """
         self.crawlers_map = crawlers_map
 
+    # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
+    def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
+        """
+        start_hour와 end_hour 사이의 1시간 단위 슬롯 리스트를 생성합니다.
+        예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        """
+        start_time = datetime.strptime(start_str, "%H:%M")
+        end_time = datetime.strptime(end_str, "%H:%M")
+        
+        if start_time > end_time:
+            raise ValueError("시작 시간이 종료 시간보다 같거나 늦을 수 없습니다.")
+
+        slots = []
+        current_time = start_time
+        # 종료 시간 전까지만 슬롯 생성 (예: 14~16시면 14, 15, 16시 타임 예약 필요)
+        while current_time <= end_time:
+            slots.append(current_time.strftime("%H:%M"))
+            current_time += timedelta(hours=1)
+            
+        return slots
+        
+
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
         """Check room availability across all registered crawlers."""
-        validate_availability_request(request.date, request.hour_slots, request.rooms)
+
+        # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
+        # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        try:
+            hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
+        except ValueError as e:
+            logger.error(f"Time slot generation error: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # 2. 인원수에 맞는 룸 필터링 (DB 데이터 활용)
+        target_rooms = get_rooms_by_capacity(request.capacity)
+
+        validate_availability_request(request.date, hour_slots, target_rooms)
 
         # Prepare tasks for each crawler
         tasks = []
         for crawler_type, crawler in self.crawlers_map.items():
-            target_rooms = filter_rooms_by_type(request.rooms, crawler_type)
-            if target_rooms:
-                tasks.append(crawler.check_availability(request.date, request.hour_slots, target_rooms))
+            filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
+            if filtered_rooms:
+                tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
 
         if not tasks:
             return AvailabilityResponse(
                 date=request.date,
-                hour_slots=request.hour_slots,
+                hour_slots=hour_slots,
                 results=[],
                 available_biz_item_ids=[]
             )
@@ -94,9 +132,9 @@ class AvailabilityService:
 
         return AvailabilityResponse(
             date=request.date,
-            hour_slots=request.hour_slots,
+            hour_slots=hour_slots,
             results=successful_results,
-            available_biz_item_ids=[r.biz_item_id for r in successful_results if r.available is True]
+            available_biz_item_ids=[r.room_detail.biz_item_id for r in successful_results if r.available is True]
         )
 
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):

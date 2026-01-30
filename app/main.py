@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.available_room import router as available_router
+from app.api.favorites import router as favorites_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.exception.base_exception import BaseCustomException
@@ -26,7 +27,24 @@ async def lifespan(app: FastAPI):
     # 종료 시 클라이언트 정리
     await close_global_client()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Pick 합주 API",
+    description="""
+## 합주실 예약 가능 여부 확인 서비스
+
+### 주요 기능
+- 합주실 룸별 예약 가능 여부 조회
+- 네이버 예약 시스템 연동
+
+### 데이터 출처
+- 네이버 예약 GraphQL API (booking.naver.com)
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
+)
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
@@ -56,6 +74,7 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
+app.include_router(favorites_router)
 
 # 커스텀 예외 핸들러는 라우터 포함 이후에 추가
 app.add_exception_handler(BaseCustomException, custom_exception_handler)

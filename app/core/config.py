@@ -9,6 +9,9 @@ LOGIN_PW = os.getenv("LOGIN_PW")
 GROOVE_BASE_URL = os.getenv("GROOVE_BASE_URL")
 DREAM_BASE_URL = os.getenv("DREAM_BASE_URL")
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp"
 GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp"
 GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp"
@@ -22,6 +25,11 @@ DREAM_COOKIES = {
     'PHPSESSID': 'your_dream_php_session_id',
     'e1192aefb64683cc97abb83c71057733': 'your_dream_cookie_value'
 }
+
+SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:

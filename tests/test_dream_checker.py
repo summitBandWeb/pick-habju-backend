@@ -1,19 +1,29 @@
 import pytest
 from datetime import datetime, timedelta
-from app.models.dto import RoomKey
+from app.models.dto import RoomDetail
 from app.models.dto import RoomAvailability
 from app.crawler.dream_checker import DreamCrawler
+from app.utils.room_loader import get_rooms_by_capacity
 
 @pytest.mark.asyncio
 async def test_get_dream_availability():
     date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    rooms = [
-            RoomKey(name="D룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="29"),
-            RoomKey(name="C룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="28"),
-            RoomKey(name="Q룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="27"),
-            RoomKey(name="S룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="26"),
-            RoomKey(name="V룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="25"),
-        ]
+    rooms = []
+    for item in get_rooms_by_capacity(1):
+        if item.branch == "드림합주실 사당점":
+            room = RoomDetail(
+                name=item.name,
+                branch=item.branch,
+                business_id=item.business_id,
+                biz_item_id=item.biz_item_id,
+                imageUrls=item.imageUrls,
+                maxCapacity=item.maxCapacity,
+                recommendCapacity=item.recommendCapacity,
+                pricePerHour=item.pricePerHour,
+                canReserveOneHour=item.canReserveOneHour,
+                requiresCallOnSameDay=item.requiresCallOnSameDay
+            )
+            rooms.append(room)
     hour_slots = ["13:00", "14:00"]
     crawler = DreamCrawler()
     result = await crawler.check_availability(date, hour_slots, rooms)
