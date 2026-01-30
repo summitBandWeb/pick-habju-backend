@@ -91,7 +91,7 @@ def test_get_availability_api():
         assert response.status_code == 200
         data = response.json()
         assert data.get("date") == target_date
-        assert data.get("hour_slots") == ["18:00", "19:00", "20:00"]
+        assert data.get("hour_slots") == ["18:00", "19:00", "20:00", "21:00"]
         assert "available_biz_item_ids" in data
         # MockCrawler는 항상 True를 반환하므로 결과가 있어야 함
         assert len(data["results"]) == 2

@@ -6,7 +6,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
+<<<<<<< HEAD
 from app.api.test_envelope import router as test_router  # Issue #110: Envelope Pattern Test
+=======
+from app.api.favorites import router as favorites_router
+>>>>>>> origin/dev
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
@@ -70,6 +74,7 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
+app.include_router(favorites_router)
 
 if os.getenv("ENV") != "prod":
     app.include_router(test_router)
