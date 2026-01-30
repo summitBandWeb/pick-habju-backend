@@ -153,6 +153,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
 # pytype static type analyzer
 .pytype/
 
@@ -179,4 +180,6 @@ cython_debug/
 .DS_Store
 
 logs/
+
+CONVENTION.md
 *.db

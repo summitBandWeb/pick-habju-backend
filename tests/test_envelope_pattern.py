@@ -120,7 +120,7 @@ def test_error_code_http_error():
     assert ErrorCode.http_error(500) == "HTTP_500"
 
 def test_api_response_model_direct():
-    """에피에레스폰스 모델을 직접 생성"""
+    """ApiResponse 모델을 직접 생성"""
     test_data = DataModel(data="value")
     response = ApiResponse(
         isSuccess=True,
@@ -134,7 +134,7 @@ def test_api_response_model_direct():
     assert response.result.data == "value"
 
 def test_api_response_json_serialization():
-    """제이슨 직렬화 테스트"""
+    """JSON 직렬화 테스트"""
     test_data = IdModel(id=123)
     response = success_response(result=test_data)
     
@@ -147,7 +147,7 @@ def test_api_response_json_serialization():
     assert dumped["result"]["id"] == 123
 
 def test_api_response_field_order():
-    """제이슨 직렬화 시 필드 순서 확인 (isSuccess → code → message → result)"""
+    """JSON 직렬화 시 필드 순서 확인 (isSuccess → code → message → result)"""
     test_data = DataModel(data="test")
     response = success_response(result=test_data)
     

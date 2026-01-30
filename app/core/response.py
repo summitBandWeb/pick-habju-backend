@@ -45,49 +45,60 @@ class ApiResponse(BaseModel, Generic[T]):
                     "code": "VALIDATION_ERROR",
                     "message": "입력값을 확인해주세요.",
                     "result": {
-                        "field": "에러 상세 정보"
+                        "field_name": {
+                            "message": "에러 메시지",
+                            "type": "error_type",
+                            "input": "provided_input"
+                        }
                     }
                 }
             ]
         }
     )
 
+    @classmethod
+    def success(cls, result: Any = None, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> "ApiResponse[Any]":
+        """
+        성공 응답 생성을 위한 클래스 메서드 (하위 호환성 유지용)
+        """
+        return cls(
+            isSuccess=True,
+            code=code,
+            message=message,
+            result=result
+        )
+
+    @classmethod
+    def error(cls, code: str = "ERROR", message: str = "에러가 발생했습니다.", result: Any = None) -> "ApiResponse[Any]":
+        """
+        실패 응답 생성을 위한 클래스 메서드 (하위 호환성 유지용)
+        """
+        return cls(
+            isSuccess=False,
+            code=code,
+            message=message,
+            result=result
+        )
+
+
+class ValidationErrorDetail(BaseModel):
+    """
+    Validation 에러의 상세 정보를 담는 모델
+    """
+    message: str
+    type: str
+    input: Any | None = None
+
 
 def success_response(result: T, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> ApiResponse[T]:
     """
-    성공 응답 생성 팩토리 함수
-    
-    Args:
-        result: 실제 응답 데이터
-        code: 응답 코드 (기본값: ErrorCode.COMMON_SUCCESS)
-        message: 성공 메시지 (기본값: "성공입니다.")
-        
-    Returns:
-        ApiResponse: 표준 성공 응답 객체
+    성공 응답 생성 팩토리 함수 (신규 표준)
     """
-    return ApiResponse(
-        isSuccess=True,
-        code=code,
-        message=message,
-        result=result
-    )
+    return ApiResponse.success(result=result, code=code, message=message)
 
 
 def error_response(message: str, code: str = "ERROR", result: Optional[Any] = None) -> ApiResponse[Any]:
     """
-    실패 응답 생성 팩토리 함수
-    
-    Args:
-        message: 에러 메시지
-        code: 에러 코드 (기본값: "ERROR")
-        result: 에러 상세 정보 (선택사항)
-        
-    Returns:
-        ApiResponse: 표준 실패 응답 객체
+    실패 응답 생성 팩토리 함수 (신규 표준)
     """
-    return ApiResponse(
-        isSuccess=False,
-        code=code,
-        message=message,
-        result=result
-    )
+    return ApiResponse.error(code=code, message=message, result=result)

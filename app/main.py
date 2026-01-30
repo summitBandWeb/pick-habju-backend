@@ -7,12 +7,11 @@ from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
 from app.api.favorites import router as favorites_router
-from app.api.debug_envelope import router as test_router
+from app.api._dev.debug_envelope import router as demo_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
 from app.exception.base_exception import BaseCustomException
-
 import app.crawler  # Trigger crawler registration on startup.
 
 from contextlib import asynccontextmanager
@@ -41,7 +40,22 @@ async def lifespan(app: FastAPI):
     await close_global_client()
 
 app = FastAPI(
-    lifespan=lifespan
+    title="Pick 합주 API",
+    description="""
+## 합주실 예약 가능 여부 확인 서비스
+
+### 주요 기능
+- 합주실 룸별 예약 가능 여부 조회
+- 네이버 예약 시스템 연동
+
+### 데이터 출처
+- 네이버 예약 GraphQL API (booking.naver.com)
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # CORS 설정 (환경변수 기반)
@@ -75,13 +89,14 @@ app.include_router(available_router)
 app.include_router(favorites_router)
 
 if os.getenv("ENV") != "prod":
-    app.include_router(test_router)
+    app.include_router(demo_router)
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
-# 우선순위: 구체적인 예외 -> 일반적인 예외(Exception) 순서로 등록
+# FastAPI는 예외 타입의 구체성(specificity)을 기반으로 매칭하므로
+# 등록 순서와 관계없이 더 구체적인 예외 핸들러가 우선 적용됩니다.
+# 아래는 가독성을 위해 구체적 → 일반적 순서로 나열했습니다.
 
 # 1. 커스텀 예외 (비즈니스 로직) - 가장 구체적
-# TODO: [Issue #115] 기존 API 리팩토링 시, 이 핸들러도 Envelope Pattern(ApiResponse)을 반환하도록 수정해야 함
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
 
 # 2. 검증 예외
