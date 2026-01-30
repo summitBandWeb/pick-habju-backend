@@ -14,6 +14,10 @@ class RoomCollectionService:
     # Tunable parameters for concurrency
     BATCH_SIZE = 5           # Number of rooms per LLM batch call
     MAX_CONCURRENT_BATCHES = 3  # Number of parallel LLM calls
+    
+    # Capacity value indicating LLM parsing failure - flags for manual review
+    # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 항목으로 식별 가능
+    MANUAL_REVIEW_FLAG = 100
 
     def __init__(self):
         self.map_crawler = NaverMapCrawler()
@@ -96,10 +100,6 @@ class RoomCollectionService:
             logger.warning(f"No rooms found for business {business_id}")
             return
 
-        # [TEST MODE] API 절약을 위해 첫 번째 룸만 처리하고 즉시 종료
-        # logger.info("[TEST MODE] Processing only 1 room to save API quota.")
-        # rooms = rooms[:1]
-
         # 2. LLM Parsing (Batch with Concurrency)
         parse_items = []
         for room in rooms:
@@ -171,9 +171,9 @@ class RoomCollectionService:
             images = room.get("bizItemResources", [])
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
-            # New Values (100 = Flag for manual review if parsing fails)
-            new_max_cap = parsed.get("max_capacity") or 100
-            new_rec_cap = parsed.get("recommend_capacity") or 100
+            # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
+            new_max_cap = parsed.get("max_capacity") or self.MANUAL_REVIEW_FLAG
+            new_rec_cap = parsed.get("recommend_capacity") or self.MANUAL_REVIEW_FLAG
             new_price = self._extract_price(room)
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)

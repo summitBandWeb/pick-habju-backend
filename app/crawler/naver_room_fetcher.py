@@ -1,3 +1,4 @@
+import os
 import httpx
 import logging
 from typing import Dict, List, Optional
@@ -12,6 +13,9 @@ class NaverRoomFetcher:
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
+    
+    # Configurable timeout via environment variable
+    REQUEST_TIMEOUT = float(os.getenv("FETCHER_TIMEOUT", "10.0"))
     
     async def fetch_full_info(self, business_id: str) -> Optional[Dict]:
         """

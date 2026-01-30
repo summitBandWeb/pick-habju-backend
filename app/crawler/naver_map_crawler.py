@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 from typing import List, Dict, Optional
@@ -10,6 +11,11 @@ class NaverMapCrawler:
     """네이버 지도에서 합주실을 검색하고 Business ID를 수집합니다."""
     
     BASE_URL = "https://pcmap.place.naver.com/place/list"
+    
+    # Configurable timeouts via environment variables
+    PAGE_WAIT_MS = int(os.getenv("CRAWLER_PAGE_WAIT_MS", "3000"))
+    SCROLL_WAIT_MS = int(os.getenv("CRAWLER_SCROLL_WAIT_MS", "1500"))
+    MAX_PAGES = int(os.getenv("CRAWLER_MAX_PAGES", "5"))
     
     def __init__(self, headless: bool = True):
         self.headless = headless
@@ -53,20 +59,14 @@ class NaverMapCrawler:
                 logger.info(f"Searching: {query} -> {url}")
                 page.goto(url)
                 page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(3000)  # Wait for JS initialization
+                page.wait_for_timeout(self.PAGE_WAIT_MS)  # Wait for JS initialization
                 
                 # 2. 첫 페이지 데이터 추출
                 initial_data = self._extract_apollo_state_sync(page)
+                self._merge_results(results, initial_data)
                 
-                # Debug Check
-                if initial_data and isinstance(initial_data[0], str):
-                    logger.warning(f"Crawler Debug: {initial_data}")
-                    results = {}  # Clear results
-                else:
-                    self._merge_results(results, initial_data)
-                
-                # 3. 페이지네이션 처리 (최대 5페이지)
-                for i in range(2, 6):
+                # 3. 페이지네이션 처리 (최대 MAX_PAGES 페이지)
+                for i in range(2, self.MAX_PAGES + 1):
                     next_btn = page.get_by_role("link", name=str(i), exact=True)
                     
                     if next_btn.is_visible():
@@ -160,9 +160,6 @@ class NaverMapCrawler:
         logger.info(f"Starting sequential crawl for {len(all_queries)} regions...")
         
         all_results = {}
-        
-        # [DEBUG] Test with small subset
-        # all_queries = ["강남구 합주실", "마포구 합주실", "부산 합주실"]
 
         for idx, query in enumerate(all_queries):
             logger.info(f"[{idx+1}/{len(all_queries)}] Searching: {query}")
