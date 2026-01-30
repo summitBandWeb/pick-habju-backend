@@ -46,7 +46,8 @@ def test_add_favorite_success(client, api_endpoint, headers, target_business_id)
 
     # Assert
     assert response.status_code == 200
-    assert response.json() == {"success": True}
+    # Envelope Pattern: Result is wrapped
+    assert response.json()["result"] == {"success": True}
 
 def test_add_favorite_idempotency(client, api_endpoint, headers, target_business_id):
     """이미 존재하는 즐겨찾기를 다시 추가해도 에러 없이 200 OK를 반환해야 한다 (멱등성)."""
@@ -58,7 +59,7 @@ def test_add_favorite_idempotency(client, api_endpoint, headers, target_business
 
     # Assert
     assert response.status_code == 200
-    assert response.json() == {"success": True}
+    assert response.json()["result"] == {"success": True}
 
 def test_delete_favorite_success(client, api_endpoint, headers, target_business_id):
     """즐겨찾기 삭제 성공 시 200 OK를 반환해야 한다."""
@@ -70,7 +71,7 @@ def test_delete_favorite_success(client, api_endpoint, headers, target_business_
 
     # Assert
     assert response.status_code == 200
-    assert response.json() == {"success": True}
+    assert response.json()["result"] == {"success": True}
     
     # Verify actual deletion in Mock Repository
 
@@ -85,7 +86,7 @@ def test_delete_actually_removes_data(client, headers, api_endpoint, target_biz_
     # 3. 조회 (GET) 하여 리스트에 없는지 확인
     response = client.get("/api/favorites", headers=headers)
     assert response.status_code == 200
-    assert target_biz_id not in response.json()["biz_item_ids"]
+    assert target_biz_id not in response.json()["result"]["biz_item_ids"]
 
 def test_delete_favorite_idempotency(client, api_endpoint, headers, target_business_id):
     """존재하지 않는 즐겨찾기를 삭제해도 에러 없이 200 OK를 반환해야 한다."""
@@ -94,7 +95,7 @@ def test_delete_favorite_idempotency(client, api_endpoint, headers, target_busin
 
     # Assert
     assert response.status_code == 200
-    assert response.json() == {"success": True}
+    assert response.json()["result"] == {"success": True}
 
 @pytest.mark.parametrize("invalid_headers, expected_detail", [
     ({}, "X-Device-Id header is required and cannot be empty"),                      # 헤더 누락
@@ -110,7 +111,8 @@ def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_de
 
     # Assert
     assert response.status_code == 400
-    assert response.json()["detail"] == expected_detail
+    # Envelope Pattern: Error message is in "message" field
+    assert response.json()["message"] == expected_detail
 
 
 # --------------------------------------------------------------------------
@@ -121,7 +123,7 @@ def test_get_favorites_empty(client, headers):
     """즐겨찾기 목록이 없을 때 빈 리스트를 반환해야 한다."""
     response = client.get("/api/favorites", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"biz_item_ids": []}
+    assert response.json()["result"] == {"biz_item_ids": []}
 
 def test_get_favorites_success(client, headers, target_business_id):
     """추가된 즐겨찾기 목록을 정확히 반환해야 한다."""
@@ -135,7 +137,7 @@ def test_get_favorites_success(client, headers, target_business_id):
 
     # Assert
     assert response.status_code == 200
-    data = response.json()
+    data = response.json()["result"]
     assert "biz_item_ids" in data
     assert sorted(data["biz_item_ids"]) == sorted(items)
 
@@ -156,7 +158,7 @@ def test_get_favorites_isolation(client, headers, target_business_id):
     response = client.get("/api/favorites", headers=headers)
 
     # Assert
-    data = response.json()
+    data = response.json()["result"]
     assert my_item in data["biz_item_ids"]
     assert other_item not in data["biz_item_ids"]
     assert len(data["biz_item_ids"]) == 1
@@ -166,4 +168,4 @@ def test_get_favorites_error_cases(client):
     # 헤더 누락
     response = client.get("/api/favorites", headers={})
     assert response.status_code == 400
-    assert response.json()["detail"] == "X-Device-Id header is required and cannot be empty"
+    assert response.json()["message"] == "X-Device-Id header is required and cannot be empty"
