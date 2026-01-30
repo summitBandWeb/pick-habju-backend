@@ -3,13 +3,16 @@ from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.services.availability_service import AvailabilityService
 
-
-router = APIRouter(prefix="/api/rooms/availability")
-
+router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부"])
 
 
-@router.get("/", response_model=AvailabilityResponse)
-@router.get("", response_model=AvailabilityResponse)
+@router.get(
+    "/",
+    response_model=AvailabilityResponse,
+    summary="합주실 예약 가능 여부 조회",
+    description="지정된 날짜와 시간대에 대해 인원수에 맞는 합주실 룸들의 예약 가능 여부를 확인합니다.",
+)
+@router.get("", response_model=AvailabilityResponse, include_in_schema=False)
 async def check_room_availability(
     date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
     capacity: int = Query(..., description="사용 인원 수"),
