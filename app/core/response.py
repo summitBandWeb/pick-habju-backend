@@ -2,6 +2,9 @@ from typing import TypeVar, Generic, Optional, Any
 from pydantic import BaseModel, ConfigDict
 from app.core.error_codes import ErrorCode
 
+# Rationale:
+# ApiResponse의 result 필드에 Pydantic 모델뿐만 아니라 Dict[str, bool] 등의 일반 Python 타입을 
+# 유연하게 허용하기 위해 bound=BaseModel 제약을 제거했습니다.
 T = TypeVar('T')
 
 class ApiResponse(BaseModel, Generic[T]):
@@ -18,7 +21,7 @@ class ApiResponse(BaseModel, Generic[T]):
         
     Rationale:
         - 프론트엔드에서 일관된 방식으로 응답을 처리할 수 있도록 Envelope Pattern 적용
-        - Generic을 사용하여 타입 안전성 보장
+        - Pydantic 모델뿐만 아니라 Dict, List 등 일반 타입을 유연하게 지원하기 위해 Generic[T]의 제약(bound=BaseModel)을 제거함
         - Swagger UI에서 자동으로 타입 정보와 예시가 표시되도록 model_config 설정
     """
     isSuccess: bool
@@ -70,7 +73,7 @@ def success_response(result: T, code: str = ErrorCode.COMMON_SUCCESS, message: s
     )
 
 
-def error_response(message: str, code: str = "ERROR", result: Optional[T] = None) -> ApiResponse[T]:
+def error_response(message: str, code: str = "ERROR", result: Optional[Any] = None) -> ApiResponse[Any]:
     """
     실패 응답 생성 팩토리 함수
     

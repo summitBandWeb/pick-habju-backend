@@ -3,10 +3,35 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import logging
+from datetime import datetime
 from app.core.response import error_response
 from app.core.error_codes import ErrorCode
+from app.exception.base_exception import BaseCustomException
 
 logger = logging.getLogger(__name__)
+
+
+async def custom_exception_handler(request: Request, exc: BaseCustomException):
+    """
+    비즈니스 로직 예외(BaseCustomException)를 ApiResponse 포맷으로 변환
+    
+    Rationale:
+        도메인 로직에서 발생한 예외를 표준 에러 응답으로 변환합니다.
+        4xx 에러이므로 경고 수준으로 로깅합니다.
+    """
+    logger.warning({
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "status": exc.status_code,
+        "errorCode": exc.error_code,
+        "message": exc.message,
+    })
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_response(
+            message=exc.message,
+            code=exc.error_code
+        ).model_dump()
+    )
 
 
 async def http_exception_handler(request: Request, exc: HTTPException):

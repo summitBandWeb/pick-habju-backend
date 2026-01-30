@@ -217,7 +217,7 @@ def test_get_availability_api_with_crawler_error():
         else:
             del app.dependency_overrides[get_crawlers_map]
             
-@pytest.mark.skip(reason="View 'v_full_info' is temporarily missing in DB (WIP)")
+@pytest.mark.skip(reason="[#115] View 'v_full_info' is temporarily missing in DB (WIP)")
 def test_get_availability_with_real_db():
     """
     실제 Supabase와 연동하여 데이터 로드 검증 (Integration Test)
