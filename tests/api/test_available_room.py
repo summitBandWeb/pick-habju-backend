@@ -90,11 +90,13 @@ def test_get_availability_api():
 
         assert response.status_code == 200
         data = response.json()
-        assert data.get("date") == target_date
-        assert data.get("hour_slots") == ["18:00", "19:00", "20:00", "21:00"]
-        assert "available_biz_item_ids" in data
+        assert data.get("isSuccess") is True
+        result = data.get("result")
+        assert result.get("date") == target_date
+        assert result.get("hour_slots") == ["18:00", "19:00", "20:00", "21:00"]
+        assert "available_biz_item_ids" in result
         # MockCrawler는 항상 True를 반환하므로 결과가 있어야 함
-        assert len(data["results"]) == 2
+        assert len(result["results"]) == 2
 
 
 def test_preflight_request():
@@ -200,13 +202,14 @@ def test_get_availability_api_with_crawler_error():
         
         assert response.status_code == 200
         data = response.json()
+        result = data.get("result")
         
         # Naver(Error) 결과는 제외되고, Dream(Normal) 결과만 있어야 함
         # NormalCrawler가 반환한 결과 1개 (room 1개)
         
-        assert len(data["results"]) == 1
-        assert data["results"][0]["room_detail"]["branch_id"] == "dream_sadang"  # FastAPI uses alias (branch_id) in response
-        assert data["results"][0]["available"] is True
+        assert len(result["results"]) == 1
+        assert result["results"][0]["room_detail"]["branch_id"] == "dream_sadang"  # FastAPI uses alias (branch_id) in response
+        assert result["results"][0]["available"] is True
 
     finally:
         # 복원
@@ -215,6 +218,12 @@ def test_get_availability_api_with_crawler_error():
         else:
             del app.dependency_overrides[get_crawlers_map]
             
+import os
+
+@pytest.mark.skipif(
+    os.getenv("CI") == "true" or not os.getenv("SUPABASE_URL"),
+    reason="Requires real Supabase connection (skipped in CI or without env vars)"
+)
 def test_get_availability_with_real_db():
     """
     실제 Supabase와 연동하여 데이터 로드 검증 (Integration Test)
@@ -239,15 +248,16 @@ def test_get_availability_with_real_db():
         # 2. 응답 검증
         assert response.status_code == 200
         data = response.json()
+        result = data.get("result")
         
         # 기본 응답 구조 확인
-        assert data.get("date") == target_date
-        assert "results" in data
-        assert isinstance(data["results"], list)
+        assert result.get("date") == target_date
+        assert "results" in result
+        assert isinstance(result["results"], list)
         
         # 실제 데이터가 조회되었는지 확인
-        if len(data["results"]) > 0:
-            first_room = data["results"][0]
+        if len(result["results"]) > 0:
+            first_room = result["results"][0]
             assert "room_detail" in first_room
             assert "available" in first_room
             
@@ -255,7 +265,7 @@ def test_get_availability_with_real_db():
             assert "branch_id" in first_room["room_detail"]
             assert "room_name" in first_room["room_detail"]
             
-            print(f"✅ Real DB Test Success: Found {len(data['results'])} rooms")
+            print(f"✅ Real DB Test Success: Found {len(result['results'])} rooms")
         else:
             print("⚠️ Real DB Test Warning: No rooms found (check DB data)")
 
