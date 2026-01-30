@@ -12,8 +12,8 @@ def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
     """
     try:
         response = (
-            supabase.table(SUPABASE_TABLE)
-            .select("*")
+            supabase.table("room")
+            .select("*, branch(name)")
             .gte("max_capacity", capacity)  # gte: greater than or equal (>=)
             .execute()
         )

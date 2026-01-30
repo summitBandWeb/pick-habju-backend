@@ -1,21 +1,37 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict, Union
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Dict, Union, Any, Optional
 
 # 합주실 정보 DTO
 class RoomDetail(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    # alias="DB에서_오는_키_이름"
-    name: str = Field(alias="room_name")          # room_name -> name
-    branch: str = Field(alias="branch_name")      # branch_name -> branch
-    business_id: str = Field(alias="branch_id")   # branch_id -> business_id
-    biz_item_id: str = Field(alias="room_id")     # room_id -> biz_item_id
+    # DB 컬럼명과 일치하도록 alias 설정
+    name: str                                       # DB: name
+    branch: str                                     # DB: branch (join으로 {'name': ...} 객체)
+    business_id: str                                # DB: business_id
+    biz_item_id: str                                # DB: biz_item_id
     
-    imageUrls: List[str] = Field(alias="image_urls") # image_urls -> imageUrls
-    maxCapacity: int = Field(alias="max_capacity")
+    imageUrls: List[str] = Field(default_factory=list, alias="image_urls") # DB: image_urls (nullable)
+    maxCapacity: int = Field(alias="max_capacity")   # DB: max_capacity
     recommendCapacity: int = Field(alias="recommend_capacity")
     pricePerHour: int = Field(alias="price_per_hour")
     canReserveOneHour: bool = Field(alias="can_reserve_one_hour")
     requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday")
+
+    @field_validator('branch', mode='before')
+    @classmethod
+    def extract_branch_name(cls, v: Any) -> str:
+        """Supabase join에서 {'name': 'branch_name'} 객체를 문자열로 변환"""
+        if isinstance(v, dict):
+            return v.get('name', '')
+        return v
+
+    @field_validator('imageUrls', mode='before')
+    @classmethod
+    def handle_null_image_urls(cls, v: Any) -> List[str]:
+        """DB에서 null로 오는 image_urls를 빈 리스트로 변환"""
+        if v is None:
+            return []
+        return v
 
 # 요청 DTO
 class AvailabilityRequest(BaseModel):
