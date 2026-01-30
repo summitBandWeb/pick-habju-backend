@@ -7,6 +7,8 @@ from app.core.response import error_response, ValidationErrorDetail
 from datetime import datetime
 from app.core.error_codes import ErrorCode
 from app.exception.base_exception import BaseCustomException
+from app.core.config import IS_DEBUG
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,10 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
             message="서버 내부 오류가 발생했습니다.",
-            code=ErrorCode.INTERNAL_ERROR
+            code=ErrorCode.INTERNAL_ERROR,
+            result={
+                "error_detail": str(exc),
+                "stack_trace": traceback.format_exc()
+            } if IS_DEBUG else None
         ).model_dump()
     )

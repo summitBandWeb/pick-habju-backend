@@ -13,11 +13,11 @@ class ErrorCode:
     """에러 코드 상수 클래스"""
     
     # 공통 성공 코드
-    COMMON_SUCCESS = "COMMON200"
+    COMMON_SUCCESS = "COMMON200"  # 모든 API 성공 응답에 사용
     
     # 공통 에러 코드
-    INTERNAL_ERROR = "COMMON_001"
-    VALIDATION_ERROR = "VALIDATION_ERROR"
+    INTERNAL_ERROR = "COMMON-001"    # 500 서버 내부 오류
+    VALIDATION_ERROR = "VALIDATION-001"  # 422 요청 검증 실패
     
     @staticmethod
     def http_error(status_code: int) -> str:
