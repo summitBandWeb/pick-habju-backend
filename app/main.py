@@ -6,11 +6,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
-<<<<<<< HEAD
-from app.api.test_envelope import router as test_router  # Issue #110: Envelope Pattern Test
-=======
 from app.api.favorites import router as favorites_router
->>>>>>> origin/dev
+from app.api.debug_envelope import router as test_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
@@ -83,7 +80,7 @@ if os.getenv("ENV") != "prod":
 # 우선순위: 구체적인 예외 -> 일반적인 예외(Exception) 순서로 등록
 
 # 1. 커스텀 예외 (비즈니스 로직) - 가장 구체적
-# TODO: [Issue #111] 기존 API 리팩토링 시, 이 핸들러도 Envelope Pattern(ApiResponse)을 반환하도록 수정해야 함
+# TODO: [Issue #115] 기존 API 리팩토링 시, 이 핸들러도 Envelope Pattern(ApiResponse)을 반환하도록 수정해야 함
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
 
 # 2. 검증 예외
