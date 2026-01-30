@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi import Request, HTTPException
-from app.exception.exception_handler import global_exception_handler, custom_exception_handler
+from app.exception.envelope_handlers import global_exception_handler_envelope as global_exception_handler, custom_exception_handler
 from app.exception.base_exception import BaseCustomException, ErrorCode
 from app.core.response import ApiResponse
 
@@ -46,7 +46,7 @@ async def test_global_exception_handler_structure_prod():
     request.url.path = "/test"
 
     # Patch IS_DEBUG in the handler module
-    with patch("app.exception.exception_handler.IS_DEBUG", False):
+    with patch("app.exception.envelope_handlers.IS_DEBUG", False):
         response = await global_exception_handler(request, exc)
 
         assert response.status_code == 500
@@ -72,7 +72,7 @@ async def test_global_exception_handler_structure_dev():
     request.url.path = "/test"
 
     # Patch IS_DEBUG in the handler module
-    with patch("app.exception.exception_handler.IS_DEBUG", True):
+    with patch("app.exception.envelope_handlers.IS_DEBUG", True):
         response = await global_exception_handler(request, exc)
 
         assert response.status_code == 500
