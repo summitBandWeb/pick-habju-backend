@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
 from app.api.favorites import router as favorites_router
-from app.api.envelope_demo import router as test_router  # Issue #110: Envelope Pattern Demo Endpoint
+from app.api.envelope_demo import router as demo_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
@@ -89,7 +89,7 @@ app.include_router(available_router)
 app.include_router(favorites_router)
 
 if os.getenv("ENV") != "prod":
-    app.include_router(test_router)
+    app.include_router(demo_router)
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
 # FastAPI는 예외 타입의 구체성(specificity)을 기반으로 매칭하므로

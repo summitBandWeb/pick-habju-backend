@@ -3,7 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import logging
-from app.core.response import error_response
+from app.core.response import error_response, ValidationErrorDetail
 from app.core.error_codes import ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -34,21 +34,21 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         요청 본문/쿼리 파라미터 검증 실패 시 발생하는 422 에러를
         표준 포맷으로 변환하여, 프론트엔드가 필드별 에러를 쉽게 표시할 수 있게 합니다.
     """
-    errors = {}
+    error_details = {}
     for error in exc.errors():
         field = ".".join(str(loc) for loc in error["loc"])
-        errors[field] = {
-            "message": error["msg"],
-            "type": error["type"],
-            "input": error.get("input")
-        }
+        error_details[field] = ValidationErrorDetail(
+            message=error["msg"],
+            type=error["type"],
+            input=error.get("input")
+        )
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=error_response(
             message="입력값을 확인해주세요.",
             code=ErrorCode.VALIDATION_ERROR,
-            result=errors
+            result=error_details
         ).model_dump()
     )
 
@@ -61,9 +61,8 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         예상치 못한 서버 에러가 발생해도 프론트엔드는 항상
         isSuccess: false 형태의 JSON을 받게 됩니다.
     """
-    logger.error(
+    logger.exception(
         "Unhandled Exception",
-        exc_info=True,
         extra={
             "path": request.url.path,
             "method": request.method,

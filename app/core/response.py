@@ -45,7 +45,11 @@ class ApiResponse(BaseModel, Generic[T]):
                     "code": "VALIDATION_ERROR",
                     "message": "입력값을 확인해주세요.",
                     "result": {
-                        "field": "에러 상세 정보"
+                        "field_name": {
+                            "message": "에러 메시지",
+                            "type": "error_type",
+                            "input": "provided_input"
+                        }
                     }
                 }
             ]
@@ -75,6 +79,15 @@ class ApiResponse(BaseModel, Generic[T]):
             message=message,
             result=result
         )
+
+
+class ValidationErrorDetail(BaseModel):
+    """
+    Validation 에러의 상세 정보를 담는 모델
+    """
+    message: str
+    type: str
+    input: Any | None = None
 
 
 def success_response(result: T, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> ApiResponse[T]:
