@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+APP_ENV = os.getenv("APP_ENV", "development")
+IS_DEBUG = APP_ENV == "development"
+
 LOGIN_ID = os.getenv("LOGIN_ID")
 LOGIN_PW = os.getenv("LOGIN_PW")
 

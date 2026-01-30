@@ -46,7 +46,7 @@ async def test_groove_login_error_simulation(sample_groove_rooms):
     # 예외가 리스트에 담겨 반환되는지 확인
     assert len(results) == len(sample_groove_rooms)
     assert isinstance(results[0], GrooveLoginError)
-    assert results[0].error_code == "Groove-002"
+    assert results[0].error_code.value == "CRAWLER-003"  # ErrorCode.CRAWLER_AUTH_FAILED
     assert results[0].status_code == 500
 
 
@@ -62,7 +62,7 @@ async def test_groove_credential_error_simulation(sample_groove_rooms):
     # 예외가 리스트에 담겨 반환되는지 확인
     assert len(results) == len(sample_groove_rooms)
     assert isinstance(results[0], GrooveCredentialError)
-    assert results[0].error_code == "Groove-001"
+    assert results[0].error_code.value == "CRAWLER-003"  # ErrorCode.CRAWLER_AUTH_FAILED
     assert results[0].status_code == 401
 
 # --- 2. 경계값 분석 테스트 ---

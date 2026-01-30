@@ -15,3 +15,9 @@ python-dotenv~=1.0   # 환경변수 로드
 # ==== 테스트 ====
 pytest~=8.2
 pytest-asyncio~=0.23
+
+# ==== 선택: 실제 코드에서 사용 중이면 주석 해제 ====
+# prometheus-client~=0.20    # monitor/metrics 사용시
+# sentry-sdk~=2.0            # Sentry 연동시
+# redis~=5.0                 # redis 캐시/레이트리밋 사용시
+# fastapi-limiter~=0.1       # redis 기반 레이트리밋 사용시

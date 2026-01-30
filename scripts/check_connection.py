@@ -9,7 +9,6 @@
 import sys
 import os
 import google.generativeai as genai
-import httpx
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
 
@@ -18,7 +17,7 @@ load_dotenv()
 
 def check_gemini():
     """Gemini API 연결 테스트"""
-    print("\n[1/3] Checking Gemini API Connection...")
+    print("\n[1/2] Checking Gemini API Connection...")
     api_key = os.getenv("GEMINI_API_KEY")
     
     if not api_key:
@@ -41,36 +40,9 @@ def check_gemini():
         print(f"❌ Gemini Connection Failed: {e}")
         return False
 
-def check_ollama():
-    """Ollama API 연결 테스트"""
-    print("\n[2/3] Checking Ollama Connection...")
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model_name = os.getenv("OLLAMA_MODEL", "llama3.2")
-    
-    url = f"{base_url}/api/generate"
-    payload = {
-        "model": model_name,
-        "prompt": "Hello",
-        "stream": False
-    }
-    
-    try:
-        # Sync Client 사용
-        with httpx.Client(timeout=10.0) as client:
-            response = client.post(url, json=payload)
-            if response.status_code == 200:
-                print(f"✅ Ollama Connected! Model: {model_name}")
-                return True
-            else:
-                print(f"❌ Ollama Failed: {response.status_code} {response.text}")
-                return False
-    except Exception as e:
-        print(f"❌ Ollama Connection Failed: {e}")
-        return False
-
 def check_naver_access():
     """Naver Map 접속 테스트"""
-    print("\n[3/3] Checking Naver Map Access (IP Block Check)...")
+    print("\n[2/2] Checking Naver Map Access (IP Block Check)...")
     
     status_ok = False
     
@@ -111,21 +83,16 @@ def main():
     # 1. Gemini
     gemini_ok = check_gemini()
     
-    # 2. Ollama
-    ollama_ok = check_ollama()
-    
-    # 3. Naver
+    # 2. Naver
     naver_ok = check_naver_access()
     
     print("\n=== Check Result ===")
     print(f"Gemini API: {'OK' if gemini_ok else 'FAIL'}")
-    print(f"Ollama API: {'OK' if ollama_ok else 'FAIL'}")
     print(f"Naver Map : {'OK' if naver_ok else 'FAIL'}")
     
-    # 배포 가능 조건: Gemini 또는 Ollama 중 하나라도 되고, Naver가 되어야 함
-    llm_ready = gemini_ok or ollama_ok
-    if llm_ready and naver_ok:
-        print("\n✨ Ready to Deploy (or Developer Mode)!")
+    # 배포 가능 조건: Gemini가 되고, Naver가 되어야 함
+    if gemini_ok and naver_ok:
+        print("\n✨ Ready to Deploy!")
         sys.exit(0)
     else:
         print("\n🔥 Issues found. Check your environment.")
