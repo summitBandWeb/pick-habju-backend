@@ -1,21 +1,23 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Dict, Union, Any, Optional
 
-# 합주실 정보 DTO
+# Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
+    """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
-    # DB 컬럼명과 일치하도록 alias 설정
-    name: str                                       # DB: name
-    branch: str                                     # DB: branch (join으로 {'name': ...} 객체)
-    business_id: str                                # DB: business_id
-    biz_item_id: str                                # DB: biz_item_id
-    
-    imageUrls: List[str] = Field(default_factory=list, alias="image_urls") # DB: image_urls (nullable)
-    maxCapacity: int = Field(alias="max_capacity")   # DB: max_capacity
-    recommendCapacity: int = Field(alias="recommend_capacity")
-    pricePerHour: int = Field(alias="price_per_hour")
-    canReserveOneHour: bool = Field(alias="can_reserve_one_hour")
-    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday")
+
+    # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
+    name: str = Field(description="Rehearsal room name")
+    branch: str = Field(description="Branch name (extracted from join)")
+    business_id: str = Field(description="Naver Booking Business ID")
+    biz_item_id: str = Field(description="Naver Booking Room ID")
+
+    imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
+    maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
+    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+    pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
+    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
+    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="Whether same-day reservation requires a call")
 
     @field_validator('branch', mode='before')
     @classmethod
@@ -33,22 +35,25 @@ class RoomDetail(BaseModel):
             return []
         return v
 
-# 요청 DTO
+# Request DTO
 class AvailabilityRequest(BaseModel):
-    date: str # 예약 날짜 (2025-07-03)
-    capacity: int 
-    start_hour: str
-    end_hour: str
+    """Request for checking availability"""
+    date: str = Field(..., description="Reservation date (YYYY-MM-DD)")
+    capacity: int = Field(..., description="Number of users")
+    start_hour: str = Field(..., description="Start time (HH:MM)")
+    end_hour: str = Field(..., description="End time (HH:MM)")
 
-# 응답 DTO (단일 방 기준 상세 정보)
+# Response DTO (Single Room Detail)
 class RoomAvailability(BaseModel):
-    room_detail: RoomDetail
-    available: Union[bool, str] # 합주실 최종 예약 가능 여부
-    available_slots: Dict[str, Union[bool, str]] # 합주실 예약 가능한 시간슬롯들("16:00": true,"17:00": false)
+    """Availability information for a single room"""
+    room_detail: RoomDetail = Field(..., description="Room detail information")
+    available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
+    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
 
-# 응답 전체 DTO (요약 필드 포함)
+# Full Response DTO (Summary Included)
 class AvailabilityResponse(BaseModel):
-    date: str 
-    hour_slots: List[str]
-    results: List[RoomAvailability] # 합주실 룸 정보들
-    available_biz_item_ids: List[str] # 예약 가능한 합주실 룸 id들(프론트 개발 편리성을 위한)
+    """Response for availability check"""
+    date: str = Field(..., description="Checked date")
+    hour_slots: List[str] = Field(..., description="List of checked time slots")
+    results: List[RoomAvailability] = Field(..., description="Availability status per room")
+    available_biz_item_ids: List[str] = Field(..., description="List of available room IDs for all time slots (frontend convenience)")

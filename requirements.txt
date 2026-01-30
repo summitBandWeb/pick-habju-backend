@@ -5,8 +5,14 @@ httpx[http2]~=0.27
 beautifulsoup4~=4.12
 pydantic~=2.7
 supabase~=2.4        # Supabase Python 클라이언트
+lxml~=5.2            # BeautifulSoup 'lxml' 파서
 
-# ==== 테스트(서버에 설치 원치 않으면 requirements-dev.txt로 분리 가능) ====
+# ==== 크롤러 & LLM ====
+playwright~=1.40     # Naver Map 크롤링
+google-generativeai~=0.3  # Gemini LLM (선택)
+python-dotenv~=1.0   # 환경변수 로드
+
+# ==== 테스트 ====
 pytest~=8.2
 pytest-asyncio~=0.23
 
@@ -18,4 +24,3 @@ pytest-asyncio~=0.23
 lxml~=5.2                  # BeautifulSoup에서 'lxml' 파서 지정 시
 
 slowapi~=0.1.9
-
