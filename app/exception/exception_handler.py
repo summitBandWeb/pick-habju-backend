@@ -17,12 +17,10 @@ async def custom_exception_handler(request: Request, exc: BaseCustomException):
     })
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "status": exc.status_code,
-            "errorCode": exc.error_code,
-            "message": exc.message
-        }
+        content=error_response(
+            message=exc.message,
+            code=exc.error_code
+        ).model_dump()
     )
 
 async def global_exception_handler(request: Request, exc: Exception):
@@ -35,10 +33,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     })
     return JSONResponse(
         status_code=500,
-        content={
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "status": 500,
-            "errorCode": "Common-001",
-            "message": "서버 내부 오류가 발생했습니다."
-        }
+        content=error_response(
+            message="서버 내부 오류가 발생했습니다.",
+            code="Common-001" 
+        ).model_dump()
     )

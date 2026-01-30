@@ -1,8 +1,8 @@
-from typing import TypeVar, Generic, Optional
+from typing import TypeVar, Generic, Optional, Any
 from pydantic import BaseModel, ConfigDict
 from app.core.error_codes import ErrorCode
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar('T')
 
 class ApiResponse(BaseModel, Generic[T]):
     """
