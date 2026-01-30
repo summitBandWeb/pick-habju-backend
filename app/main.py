@@ -6,11 +6,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
-<<<<<<< HEAD
 from app.api.favorites import router as favorites_router
-=======
 from app.api.envelope_demo import router as test_router  # Issue #110: Envelope Pattern Demo Endpoint
->>>>>>> efccef2 ([#110]; refactor: 테스트 코드와의 혼동 방지(파일명 수정))
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.core.response import ApiResponse, error_response
@@ -43,7 +40,22 @@ async def lifespan(app: FastAPI):
     await close_global_client()
 
 app = FastAPI(
-    lifespan=lifespan
+    title="Pick 합주 API",
+    description="""
+## 합주실 예약 가능 여부 확인 서비스
+
+### 주요 기능
+- 합주실 룸별 예약 가능 여부 조회
+- 네이버 예약 시스템 연동
+
+### 데이터 출처
+- 네이버 예약 GraphQL API (booking.naver.com)
+    """,
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # CORS 설정 (환경변수 기반)
@@ -74,13 +86,10 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
-<<<<<<< HEAD
 app.include_router(favorites_router)
-=======
 
 if os.getenv("ENV") != "prod":
     app.include_router(test_router)
->>>>>>> 3b7a353 ([#110]; refactor: 테스트 코드 보안 강화(운영 환경이 아닐 때만 테스트 라우터 등록))
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
 # 우선순위: 구체적인 예외 -> 일반적인 예외(Exception) 순서로 등록
