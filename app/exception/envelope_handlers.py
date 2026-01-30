@@ -5,7 +5,6 @@ from fastapi import HTTPException
 import logging
 from app.core.response import error_response, ValidationErrorDetail
 from datetime import datetime
-from app.core.response import error_response
 from app.core.error_codes import ErrorCode
 from app.exception.base_exception import BaseCustomException
 

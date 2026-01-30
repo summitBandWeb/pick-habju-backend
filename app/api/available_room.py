@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
-from app.core.response import ApiResponse, success_response
+from app.core.response import ApiResponse
 from app.services.availability_service import AvailabilityService
 
 router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부"])
