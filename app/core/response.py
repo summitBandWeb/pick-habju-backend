@@ -1,8 +1,11 @@
-from typing import TypeVar, Generic, Optional
+from typing import TypeVar, Generic, Optional, Any
 from pydantic import BaseModel, ConfigDict
 from app.core.error_codes import ErrorCode
 
-T = TypeVar('T', bound=BaseModel)
+# Rationale:
+# ApiResponse의 result 필드에 Pydantic 모델뿐만 아니라 Dict[str, bool] 등의 일반 Python 타입을 
+# 유연하게 허용하기 위해 bound=BaseModel 제약을 제거했습니다.
+T = TypeVar('T')
 
 class ApiResponse(BaseModel, Generic[T]):
     """
@@ -18,7 +21,7 @@ class ApiResponse(BaseModel, Generic[T]):
         
     Rationale:
         - 프론트엔드에서 일관된 방식으로 응답을 처리할 수 있도록 Envelope Pattern 적용
-        - Generic을 사용하여 타입 안전성 보장
+        - Pydantic 모델뿐만 아니라 Dict, List 등 일반 타입을 유연하게 지원하기 위해 Generic[T]의 제약(bound=BaseModel)을 제거함
         - Swagger UI에서 자동으로 타입 정보와 예시가 표시되도록 model_config 설정
     """
     isSuccess: bool
@@ -49,42 +52,40 @@ class ApiResponse(BaseModel, Generic[T]):
         }
     )
 
+    @classmethod
+    def success(cls, result: Any = None, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> "ApiResponse[Any]":
+        """
+        성공 응답 생성을 위한 클래스 메서드 (하위 호환성 유지용)
+        """
+        return cls(
+            isSuccess=True,
+            code=code,
+            message=message,
+            result=result
+        )
+
+    @classmethod
+    def error(cls, code: str = "ERROR", message: str = "에러가 발생했습니다.", result: Any = None) -> "ApiResponse[Any]":
+        """
+        실패 응답 생성을 위한 클래스 메서드 (하위 호환성 유지용)
+        """
+        return cls(
+            isSuccess=False,
+            code=code,
+            message=message,
+            result=result
+        )
+
 
 def success_response(result: T, code: str = ErrorCode.COMMON_SUCCESS, message: str = "성공입니다.") -> ApiResponse[T]:
     """
-    성공 응답 생성 팩토리 함수
-    
-    Args:
-        result: 실제 응답 데이터
-        code: 응답 코드 (기본값: ErrorCode.COMMON_SUCCESS)
-        message: 성공 메시지 (기본값: "성공입니다.")
-        
-    Returns:
-        ApiResponse: 표준 성공 응답 객체
+    성공 응답 생성 팩토리 함수 (신규 표준)
     """
-    return ApiResponse(
-        isSuccess=True,
-        code=code,
-        message=message,
-        result=result
-    )
+    return ApiResponse.success(result=result, code=code, message=message)
 
 
-def error_response(message: str, code: str = "ERROR", result: Optional[T] = None) -> ApiResponse[T]:
+def error_response(message: str, code: str = "ERROR", result: Optional[Any] = None) -> ApiResponse[Any]:
     """
-    실패 응답 생성 팩토리 함수
-    
-    Args:
-        message: 에러 메시지
-        code: 에러 코드 (기본값: "ERROR")
-        result: 에러 상세 정보 (선택사항)
-        
-    Returns:
-        ApiResponse: 표준 실패 응답 객체
+    실패 응답 생성 팩토리 함수 (신규 표준)
     """
-    return ApiResponse(
-        isSuccess=False,
-        code=code,
-        message=message,
-        result=result
-    )
+    return ApiResponse.error(code=code, message=message, result=result)

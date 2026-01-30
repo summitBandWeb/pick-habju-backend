@@ -9,21 +9,21 @@ import traceback
 logger = logging.getLogger("app")
 
 async def custom_exception_handler(request: Request, exc: BaseCustomException):
-    # 4xx/도메인 에러: 경고 수준으로 로깅(스택트레이스는 불필요)
+    # 4xx/도메인 에러: 경고 수준으로 로깅
     logger.warning({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "status": exc.status_code,
         "errorCode": exc.error_code,
         "message": exc.message,
     })
+    
+    # Envelope Pattern에 맞춰 ApiResponse 반환
     return JSONResponse(
         status_code=exc.status_code,
-        content={
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "status": exc.status_code,
-            "errorCode": exc.error_code,
-            "message": exc.message
-        }
+        content=error_response(
+            code=exc.error_code,
+            message=exc.message
+        ).model_dump()
     )
 
 async def global_exception_handler(request: Request, exc: Exception):
