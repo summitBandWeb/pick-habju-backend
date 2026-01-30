@@ -2,7 +2,7 @@ name: Discord PR SLA & Merge Reminders
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -25,10 +25,10 @@ jobs:
 
             // ✅ 긴급 멘션 하드코딩 (priority/high 관련 SLA 경고에 사용)
             const URGENT_MENTIONS = [
-                "<@kimkyeongsu6305>",
-                "<@tjdwns_2>",
-                "<@eddy81848>",
-                "<@hajeonghun1825>",
+              "<@545853009628758017>",
+              "<@767021891251601440>",
+              "<@629493215510265866>",
+              "<@880437882957996112>",
             ].join(" ");
 
             // ---- Bot actors to ignore as "reviewers" ----
@@ -61,7 +61,8 @@ jobs:
                   name
                 });
               } catch (e) {
-                if (e.status === 404) {
+                const status = (e && (e.status !== undefined ? e.status : (e.response && e.response.status)));
+                if (status === 404) {
                   try {
                     await github.rest.issues.createLabel({
                       owner: context.repo.owner,
@@ -71,14 +72,11 @@ jobs:
                       description: "internal label used by reminder bot"
                     });
                   } catch (createErr) {
-                    if (createErr.status === 403) {
-                      core.warning("라벨 생성 권한 없음(403): " + name);
-                    } else {
-                      throw createErr;
-                    }
+                    try {
+                      const msg = "라벨 생성 권한 없음 또는 실패: " + name;
+                      if (typeof core !== "undefined" && core.warning) core.warning(msg); else console.warn(msg);
+                    } catch (_) {}
                   }
-                } else {
-                  throw e;
                 }
               }
             }
@@ -104,11 +102,13 @@ jobs:
                   labels: [label]
                 });
               } catch (e) {
-                if (e.status === 403) {
-                  core.warning("라벨 추가 권한 없음(403): " + label + " - Discord 알림만 전송됨. Org/Repo Actions 권한을 Read and write로 설정하세요.");
-                } else {
-                  core.warning("addBotLabel 실패: " + e.message);
-                }
+                try {
+                  const status = (e && (e.status !== undefined ? e.status : (e.response && e.response.status)));
+                  const msg = (status === 403)
+                    ? "라벨 추가 권한 없음(403): " + label + " - Discord 알림만 전송됨."
+                    : "addBotLabel 실패: " + (e && e.message || String(e));
+                  if (typeof core !== "undefined" && core.warning) core.warning(msg); else console.warn(msg);
+                } catch (_) {}
               }
             }
 
@@ -222,7 +222,7 @@ jobs:
               // 1) Base rule: any PR -> 24h 시점에 리뷰 0개면 알림 (딱 1번)
               if (ageH >= 24 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-base-24h")) {
                 await sendDiscord({
-                  content: "", // 기본 알림은 멘션 없음
+                  content: URGENT_MENTIONS || "@here",
                   title: "⏰ 24시간 경과: 리뷰가 아직 부족해요",
                   pr,
                   extraFields: [
