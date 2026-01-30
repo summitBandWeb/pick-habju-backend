@@ -18,3 +18,4 @@ pytest-asyncio~=0.23
 lxml~=5.2                  # BeautifulSoup에서 'lxml' 파서 지정 시
 
 slowapi~=0.1.9
+

@@ -1,4 +1,4 @@
-from app.core.database import supabase
+from app.core.supabase_client import supabase
 from app.core.config import SUPABASE_TABLE
 from typing import List, Dict, Any
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
@@ -18,7 +18,13 @@ def get_rooms_by_capacity(capacity: int) -> List[RoomDetail]:
             .execute()
         )
         
-        target_rooms = [RoomDetail.model_validate(row) for row in response.data]
+        # Data Sanitization: DTO 검증 전 데이터 정제
+        target_rooms = []
+        for row in response.data:
+            # image_urls가 None인 경우 빈 리스트로 변환 (DTO 요구사항 준수)
+            if row.get("image_urls") is None:
+                row["image_urls"] = []
+            target_rooms.append(RoomDetail.model_validate(row))
         return target_rooms
 
     except APIError as e:

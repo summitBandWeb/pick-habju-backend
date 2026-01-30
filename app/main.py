@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.available_room import router as available_router
+from app.api.favorites import router as favorites_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
 from app.exception.base_exception import BaseCustomException
@@ -62,6 +63,7 @@ def ping():
 
 # API 라우터 포함
 app.include_router(available_router)
+app.include_router(favorites_router)
 
 # 예외 핸들러
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
