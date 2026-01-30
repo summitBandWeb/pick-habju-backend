@@ -92,7 +92,9 @@ if os.getenv("ENV") != "prod":
     app.include_router(test_router)
 
 # === Global Exception Handlers (Envelope Pattern 적용) ===
-# 우선순위: 구체적인 예외 -> 일반적인 예외(Exception) 순서로 등록
+# FastAPI는 예외 타입의 구체성(specificity)을 기반으로 매칭하므로
+# 등록 순서와 관계없이 더 구체적인 예외 핸들러가 우선 적용됩니다.
+# 아래는 가독성을 위해 구체적 → 일반적 순서로 나열했습니다.
 
 # 1. 커스텀 예외 (비즈니스 로직) - 가장 구체적
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
