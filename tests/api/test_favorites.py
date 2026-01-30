@@ -119,7 +119,7 @@ def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_de
 
     # Assert
     assert response.status_code == 400
-    assert response.json()["detail"] == expected_detail
+    assert response.json()["message"] == expected_detail
 
 
 # --------------------------------------------------------------------------
@@ -180,4 +180,4 @@ def test_get_favorites_error_cases(client):
     # 헤더 누락
     response = client.get("/api/favorites", headers={})
     assert response.status_code == 400
-    assert response.json()["detail"] == "X-Device-Id header is required and cannot be empty"
+    assert response.json()["message"] == "X-Device-Id header is required and cannot be empty"

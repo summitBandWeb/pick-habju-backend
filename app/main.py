@@ -1,23 +1,35 @@
 import uvicorn
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app.api.available_room import router as available_router
 from app.api.favorites import router as favorites_router
+from app.api.envelope_demo import router as demo_router
 from app.core.config import ALLOWED_ORIGINS
 from app.core.logging_config import setup_logging
+from app.core.response import ApiResponse, error_response
 from app.exception.base_exception import BaseCustomException
 from app.exception.exception_handler import custom_exception_handler, global_exception_handler
 import app.crawler  # Trigger crawler registration on startup.
+
+from contextlib import asynccontextmanager
+from app.utils.client_loader import set_global_client, close_global_client
+
+from app.exception.envelope_handlers import (
+    http_exception_handler,
+    validation_exception_handler,
+    global_exception_handler_envelope
+)
+
 
 ALLOWED_ORIGINS_SET = {
     "https://www.pickhabju.com",
     "https://pickhabju.com",
     # 필요시 추가
 }
-
-from contextlib import asynccontextmanager
-from app.utils.client_loader import set_global_client, close_global_client
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,9 +88,25 @@ def ping():
 app.include_router(available_router)
 app.include_router(favorites_router)
 
-# 커스텀 예외 핸들러는 라우터 포함 이후에 추가
+if os.getenv("ENV") != "prod":
+    app.include_router(demo_router)
+
+# === Global Exception Handlers (Envelope Pattern 적용) ===
+# FastAPI는 예외 타입의 구체성(specificity)을 기반으로 매칭하므로
+# 등록 순서와 관계없이 더 구체적인 예외 핸들러가 우선 적용됩니다.
+# 아래는 가독성을 위해 구체적 → 일반적 순서로 나열했습니다.
+
+# 1. 커스텀 예외 (비즈니스 로직) - 가장 구체적
 app.add_exception_handler(BaseCustomException, custom_exception_handler)
-app.add_exception_handler(Exception, global_exception_handler)
+
+# 2. 검증 예외
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+
+# 3. HTTP 예외
+app.add_exception_handler(HTTPException, http_exception_handler)
+
+# 4. 그 외 모든 예외 (서버 에러) - 가장 일반적
+app.add_exception_handler(Exception, global_exception_handler_envelope)
 
 # 로깅 설정(콘솔 + 일자별 파일 로테이션, JSON 포맷)
 setup_logging()

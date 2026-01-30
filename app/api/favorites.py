@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, Query
 from typing import Dict, Any, List
 from app.repositories.base import IFavoriteRepository
 from app.api.dependencies import get_favorite_repository, validate_device_id
-from app.models.response import ApiResponse
+from app.core.response import ApiResponse
 
 router = APIRouter(
     prefix="/api/favorites",

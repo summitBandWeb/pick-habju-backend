@@ -5,10 +5,11 @@ import logging
 import traceback
 
 from app.core.config import IS_DEBUG
+from app.core.response import ApiResponse, error_response
 from app.exception.base_exception import BaseCustomException, ErrorCode
-from app.models.response import ApiResponse
 
 logger = logging.getLogger("app")
+
 
 async def custom_exception_handler(request: Request, exc: BaseCustomException):
     """
@@ -18,19 +19,20 @@ async def custom_exception_handler(request: Request, exc: BaseCustomException):
     logger.warning({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "status": exc.status_code,
-        "errorCode": exc.error_code.value, # Enum value 사용
+        "errorCode": exc.error_code.value,  # Enum value 사용
         "message": exc.message,
         "path": request.url.path
     })
     
-    # ApiResponse 포맷으로 응답
+    # Envelope Pattern에 맞춰 ApiResponse 반환
     return JSONResponse(
         status_code=exc.status_code,
-        content=ApiResponse.error(
+        content=error_response(
             code=exc.error_code.value,
             message=exc.message
-        ).model_dump() # Pydantic v2
+        ).model_dump()
     )
+
 
 async def global_exception_handler(request: Request, exc: Exception):
     """
@@ -50,7 +52,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     })
 
     # 응답 생성
-    response_content = ApiResponse.error(
+    response_content = error_response(
         code=ErrorCode.COMMON_INTERNAL_ERROR.value,
         message="서버 내부 오류가 발생했습니다."
     ).model_dump()

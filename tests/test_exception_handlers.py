@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 from fastapi import Request, HTTPException
 from app.exception.exception_handler import global_exception_handler, custom_exception_handler
 from app.exception.base_exception import BaseCustomException, ErrorCode
-from app.models.response import ApiResponse
+from app.core.response import ApiResponse
 
 # Test Custom Exception
 class TestCustomException(BaseCustomException):
@@ -34,7 +34,6 @@ async def test_custom_exception_handler_structure():
     assert body["isSuccess"] is False
     assert body["code"] == "COMMON-002"
     assert body["message"] == "Test Error"
-    assert "timestamp" in body
     assert body["result"] is None
 
 @pytest.mark.asyncio
@@ -57,7 +56,6 @@ async def test_global_exception_handler_structure_prod():
         
         assert body["isSuccess"] is False
         assert body["code"] == "COMMON-001"
-        assert "timestamp" in body
         # Result should be None or not contain stack_trace
         if body["result"]:
             assert "stack_trace" not in body["result"]

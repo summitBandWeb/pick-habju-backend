@@ -222,7 +222,7 @@ import os
 
 @pytest.mark.skipif(
     os.getenv("CI") == "true" or not os.getenv("SUPABASE_URL"),
-    reason="Requires real Supabase connection (skipped in CI or without env vars)"
+    reason="[#115] Requires real Supabase connection and view 'v_full_info' is temporarily missing (skipped in CI or without env vars)"
 )
 def test_get_availability_with_real_db():
     """
