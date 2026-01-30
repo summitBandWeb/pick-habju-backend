@@ -15,6 +15,8 @@ async def custom_exception_handler(request: Request, exc: BaseCustomException):
         "status": exc.status_code,
         "errorCode": exc.error_code,
         "message": exc.message,
+        "client_ip": request.client.host,
+        "path": str(request.url),
     })
     return JSONResponse(
         status_code=exc.status_code,
@@ -46,23 +48,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
-    # RateLimitException 클래스의 속성 사용
-    error_code = RateLimitException.error_code
-    message = RateLimitException.message
-    status_code = RateLimitException.status_code
-
-    logger.warning({
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "status": status_code,
-        "errorCode": error_code,
-        "message": message,
-    })
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "status": status_code,
-            "errorCode": error_code,
-            "message": message
-        }
-    )
+    # RateLimitException 인스턴스를 생성해서 custom_exception_handler 재사용
+    rate_limit_exc = RateLimitException()
+    return await custom_exception_handler(request, rate_limit_exc)
+    

@@ -5,6 +5,13 @@ from app.main import app
 
 client = TestClient(app)
 
+@pytest.fixture(autouse=True)
+def reset_limiter():
+    """각 테스트 전에 limiter storage를 리셋"""
+    from app.core.limiter import limiter
+    limiter.reset()
+    yield
+
 def test_rate_limit_exceeded():
     """
     Rate Limit (1분당 5회) 초과 시 429 에러 및 커스텀 에러 포맷 검증
@@ -22,22 +29,11 @@ def test_rate_limit_exceeded():
     # 처음 5번 요청은 성공(200) 또는 400/404 (로직상) 이어야 함.
     # 하지만 429는 아니어야 함.
     for i in range(5):
-        # 테스트 격리를 위해 client의 IP를 고정하거나 모킹할 수 있으나,
-        # 기본적으로 TestClient는 'testclient' 또는 '127.0.0.1'을 사용함.
-        # 이전 테스트의 영향이 있을 수 있으므로, 만약 이미 429가 뜨면 리셋 필요하지만
-        # 여기서는 단순하게 진행.
+        # reset_limiter fixture 덕분에 매 테스트마다 카운트가 초기화됨
         response = client.get(url, params=params)
         
-        # 만약 이미 제한에 걸려있다면(다른 테스트 영향 등), 이 테스트는 실패할 수 있음.
-        # 실전에서는 limiter storage를 비우는 코드가 필요할 수 있음.
-        if response.status_code == 429:
-            # 이미 제한이 걸려있다면 6번째 검증을 위해 그냥 진행하거나,
-            # 여기서 fail 처리할 수 있음. 
-            # 하지만 독립 실행을 가정하고 진행.
-            pass
-        else:
-            # 정상적인 경우 200 또는 400(데이터 없음) 등이 나와야 함
-            assert response.status_code != 429, f"Request {i+1} failed with 429"
+        # 정상적인 경우 200 또는 400(데이터 없음) 등이 나와야 함
+        assert response.status_code != 429, f"Request {i+1} failed with 429"
 
     # 6번째 요청: Rate Limit 걸려야 함
     response = client.get(url, params=params)
