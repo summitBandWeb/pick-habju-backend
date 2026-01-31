@@ -2,15 +2,17 @@ from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi import HTTPException
+from slowapi.errors import RateLimitExceeded
 import logging
 from app.core.response import error_response, ValidationErrorDetail
 from datetime import datetime
 from app.core.error_codes import ErrorCode
 from app.exception.base_exception import BaseCustomException
+from app.exception.common.rate_limit_exception import RateLimitException
 from app.core.config import IS_DEBUG
 import traceback
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("app")
 
 
 async def custom_exception_handler(request: Request, exc: BaseCustomException):
@@ -21,17 +23,22 @@ async def custom_exception_handler(request: Request, exc: BaseCustomException):
         도메인 로직에서 발생한 예외를 표준 에러 응답으로 변환합니다.
         4xx 에러이므로 경고 수준으로 로깅합니다.
     """
+    # error_code가 Enum이면 .value, 아니면 그대로 사용
+    error_code_value = exc.error_code.value if hasattr(exc.error_code, 'value') else exc.error_code
+    
     logger.warning({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "status": exc.status_code,
-        "errorCode": exc.error_code,
+        "errorCode": error_code_value,
         "message": exc.message,
+        "client_ip": request.client.host,
+        "path": request.url.path
     })
     return JSONResponse(
         status_code=exc.status_code,
         content=error_response(
             message=exc.message,
-            code=exc.error_code
+            code=error_code_value
         ).model_dump()
     )
 
@@ -108,3 +115,15 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
             } if IS_DEBUG else None
         ).model_dump()
     )
+
+
+async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
+    """
+    Rate Limit 초과 시 발생하는 예외를 ApiResponse 포맷으로 변환
+    
+    Rationale:
+        slowapi의 RateLimitExceeded 예외를 비즈니스 예외(RateLimitException)로
+        변환하여 custom_exception_handler를 재사용합니다.
+    """
+    rate_limit_exc = RateLimitException()
+    return await custom_exception_handler(request, rate_limit_exc)
