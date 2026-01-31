@@ -110,8 +110,8 @@ def test_error_response_with_result():
 def test_error_code_constants():
     """에러 코드 상수 값 검증"""
     assert ErrorCode.COMMON_SUCCESS == "COMMON200"
-    assert ErrorCode.INTERNAL_ERROR == "COMMON_001"
-    assert ErrorCode.VALIDATION_ERROR == "VALIDATION_ERROR"
+    assert ErrorCode.INTERNAL_ERROR == "COMMON-001"
+    assert ErrorCode.VALIDATION_ERROR == "VALIDATION-001"
 
 def test_error_code_http_error():
     """HTTP 상태 코드 기반 에러 코드 생성"""

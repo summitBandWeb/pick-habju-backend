@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
-from app.core.response import ApiResponse, success_response
+from app.core.response import ApiResponse
 from app.services.availability_service import AvailabilityService
 from app.core.limiter import limiter
 from app.core.config import RATE_LIMIT_PER_MINUTE

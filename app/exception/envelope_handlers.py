@@ -4,9 +4,36 @@ from fastapi.responses import JSONResponse
 from fastapi import HTTPException
 import logging
 from app.core.response import error_response, ValidationErrorDetail
+from datetime import datetime
 from app.core.error_codes import ErrorCode
+from app.exception.base_exception import BaseCustomException
+from app.core.config import IS_DEBUG
+import traceback
 
 logger = logging.getLogger(__name__)
+
+
+async def custom_exception_handler(request: Request, exc: BaseCustomException):
+    """
+    비즈니스 로직 예외(BaseCustomException)를 ApiResponse 포맷으로 변환
+    
+    Rationale:
+        도메인 로직에서 발생한 예외를 표준 에러 응답으로 변환합니다.
+        4xx 에러이므로 경고 수준으로 로깅합니다.
+    """
+    logger.warning({
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "status": exc.status_code,
+        "errorCode": exc.error_code,
+        "message": exc.message,
+    })
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=error_response(
+            message=exc.message,
+            code=exc.error_code
+        ).model_dump()
+    )
 
 
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -74,6 +101,10 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
             message="서버 내부 오류가 발생했습니다.",
-            code=ErrorCode.INTERNAL_ERROR
+            code=ErrorCode.INTERNAL_ERROR,
+            result={
+                "error_detail": str(exc),
+                "stack_trace": traceback.format_exc()
+            } if IS_DEBUG else None
         ).model_dump()
     )
