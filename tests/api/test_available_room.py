@@ -208,7 +208,7 @@ def test_get_availability_api_with_crawler_error():
         # NormalCrawler가 반환한 결과 1개 (room 1개)
         
         assert len(result["results"]) == 1
-        assert result["results"][0]["room_detail"]["branch_id"] == "dream_sadang"  # FastAPI uses alias (branch_id) in response
+        assert result["results"][0]["room_detail"]["business_id"] == "dream_sadang"  # business_id field (actual DB column)
         assert result["results"][0]["available"] is True
 
     finally:
@@ -261,9 +261,9 @@ def test_get_availability_with_real_db():
             assert "room_detail" in first_room
             assert "available" in first_room
             
-            # Alias 적용 확인 (business_id -> branch_id)
-            assert "branch_id" in first_room["room_detail"]
-            assert "room_name" in first_room["room_detail"]
+            # 필드 확인
+            assert "business_id" in first_room["room_detail"]
+            assert "name" in first_room["room_detail"]
             
             print(f"✅ Real DB Test Success: Found {len(result['results'])} rooms")
         else:

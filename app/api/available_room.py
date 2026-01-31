@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.core.response import ApiResponse
 from app.services.availability_service import AvailabilityService
+from app.core.limiter import limiter
+from app.core.config import RATE_LIMIT_PER_MINUTE
 
 router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부"])
 
@@ -14,7 +16,9 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
     description="지정된 날짜와 시간대에 대해 인원수에 맞는 합주실 룸들의 예약 가능 여부를 확인합니다.",
 )
 @router.get("", response_model=ApiResponse[AvailabilityResponse], include_in_schema=False)
+@limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute")  # Rate Limit 적용
 async def check_room_availability(
+    request: Request,
     date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
     capacity: int = Query(..., description="사용 인원 수"),
     start_hour: str = Query(..., description="시작 시간 (HH:MM)"),

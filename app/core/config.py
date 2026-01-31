@@ -31,6 +31,8 @@ DREAM_COOKIES = {
 
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
 
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
+
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
 

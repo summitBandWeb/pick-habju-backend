@@ -6,6 +6,7 @@ from app.models.dto import RoomDetail, RoomAvailability
 from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverRequestError
 from app.exception.api.client_loader_exception import RequestFailedError
 from app.utils.client_loader import load_client
+from app.exception.base_exception import BaseCustomException
 
 from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
@@ -15,8 +16,11 @@ class NaverCrawler(BaseCrawler):
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             try:
                 return await self._fetch_naver_availability_room(date, hour_slots, room)
-            except NaverAvailabilityError as e:
+            except BaseCustomException as e:
                 return e
+            except Exception as e:
+                # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
+                return Exception(f"[{room.name}] Unexpected error: {str(e)}")
 
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
