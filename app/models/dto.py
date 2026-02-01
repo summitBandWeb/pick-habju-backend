@@ -6,9 +6,9 @@ class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
 
-    # DB 컬럼명과 일치
+    # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
     name: str = Field(description="Rehearsal room name")
-    branch: str = Field(description="Branch name")
+    branch: str = Field(description="Branch name (extracted from join)")
     business_id: str = Field(description="Naver Booking Business ID")
     biz_item_id: str = Field(description="Naver Booking Room ID")
 
@@ -71,6 +71,13 @@ class RoomInfo(BaseModel):
     pricePerHour: int
     canReserveOneHour: bool
     requiresCallOnSameDay: bool
+    
+# Crawler Result DTO (Internal Logic Use Only)
+class RoomAvailability(BaseModel):
+    """Availability information for a single room (Internal Use)"""
+    room_detail: RoomDetail = Field(..., description="Room detail information")
+    available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
+    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
 
 # Branch Summary Stat Model
 class BranchStats(BaseModel):
