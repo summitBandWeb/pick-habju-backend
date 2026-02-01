@@ -8,26 +8,30 @@ from pydantic import ValidationError
 
 def get_rooms_by_criteria(
     capacity: int,
-    swLat: float,
-    swLng: float,
-    neLat: float,
-    neLng: float
+    swLat: float = None,
+    swLng: float = None,
+    neLat: float = None,
+    neLng: float = None
 ) -> List[RoomDetail]:
     """
     Supabase에서 capacity 이상인 룸만 조회합니다.
+    좌표가 주어지면 해당 범위 내의 룸만 필터링합니다.
     """
     try:
-        # Bounding Box 필터링 쿼리 수행 (인원수 조건 & 지도 범위 조건)
-        response = (
-            supabase.table("room")
-            .select("*, branch!inner(name, lat, lng)")
-            .gte("max_capacity", capacity)
-            .gte("branch.lat", swLat)
-            .lte("branch.lat", neLat)
-            .gte("branch.lng", swLng)
-            .lte("branch.lng", neLng)
-            .execute()
-        )
+        # 기본 쿼리: 인원수 조건 & Branch 정보 Join
+        query = supabase.table("room").select("*, branch!inner(name, lat, lng)").gte("max_capacity", capacity)
+
+        # 지도 좌표가 있는 경우 범위 필터링 추가
+        if all(v is not None for v in [swLat, swLng, neLat, neLng]):
+            query = (
+                query
+                .gte("branch.lat", swLat)
+                .lte("branch.lat", neLat)
+                .gte("branch.lng", swLng)
+                .lte("branch.lng", neLng)
+            )
+
+        response = query.execute()
 
         target_rooms = []
         for row in response.data:

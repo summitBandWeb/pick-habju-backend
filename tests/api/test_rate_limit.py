@@ -34,7 +34,7 @@ def test_rate_limit_exceeded():
     # Mock 데이터 준비 (빈 리스트 반환하여 빠르게 200 응답)
     mock_rooms = []
     
-    with patch("app.services.availability_service.get_rooms_by_capacity", return_value=mock_rooms):
+    with patch("app.services.availability_service.get_rooms_by_criteria", return_value=mock_rooms):
         # 환경변수에서 가져온 rate limit 횟수만큼 요청 - 429가 아니어야 함
         for i in range(RATE_LIMIT_PER_MINUTE):
             response = client.get(url, params=params)
