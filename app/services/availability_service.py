@@ -22,7 +22,7 @@
 from __future__ import annotations
 import asyncio
 import logging
-from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomInfo, BranchStats
+from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability, BranchStats
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
@@ -94,13 +94,19 @@ class AvailabilityService:
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
         """Check room availability for a specific map area and criteria."""
 
-        # 1. 시간 범위 생성
+        # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
+        # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
         try:
             hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
         except ValueError as e:
             logger.error(f"Time slot generation error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         
+        # 1.5. 지도 좌표 유효성 검증 (좌표가 있는 경우에만)
+        if all(v is not None for v in [request.swLat, request.swLng, request.neLat, request.neLng]):
+            from app.validate.request_validator import validate_map_coordinates
+            validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
+
         # 2. 인원수 및 지도 범위에 맞는 룸 필터링 (DB)
         target_rooms = get_rooms_by_criteria(
             capacity=request.capacity,
@@ -124,6 +130,8 @@ class AvailabilityService:
                 date=request.date,
                 start_hour=request.start_hour,
                 end_hour=request.end_hour,
+                hour_slots=hour_slots,
+                available_biz_item_ids=[],
                 results=[],
                 branch_summary={}
             )
@@ -136,32 +144,18 @@ class AvailabilityService:
         # 4. 결과 집계 (Aggregation)
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
         
-        room_info_results = []
+        available_results = []
         branch_summary = {}
 
         for res in successful_results:
-            # 룸 정보 평탄화
+            # 룸 정보 추출
             room_detail = res.room_detail
             
             # 예약 가능한 룸만 결과 리스트에 포함
             if res.available is True:
-                room_info = RoomInfo(
-                    name=room_detail.name,
-                    branch=room_detail.branch,
-                    business_id=room_detail.business_id,
-                    biz_item_id=room_detail.biz_item_id,
-                    imageUrls=room_detail.imageUrls,
-                    maxCapacity=room_detail.maxCapacity,
-                    recommendCapacity=room_detail.recommendCapacity,
-                    baseCapacity=room_detail.baseCapacity,
-                    extraCharge=room_detail.extraCharge,
-                    pricePerHour=room_detail.pricePerHour,
-                    canReserveOneHour=room_detail.canReserveOneHour,
-                    requiresCallOnSameDay=room_detail.requiresCallOnSameDay
-                )
-                room_info_results.append(room_info)
+                available_results.append(res)
 
-                # 지점 요약 정보 업데이트
+                # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
                 bid = room_detail.business_id
                 if bid not in branch_summary:
                     branch_summary[bid] = BranchStats(
@@ -180,9 +174,13 @@ class AvailabilityService:
             date=request.date,
             start_hour=request.start_hour,
             end_hour=request.end_hour,
-            results=room_info_results,
+            hour_slots=hour_slots,
+            available_biz_item_ids=[r.room_detail.biz_item_id for r in available_results],
+            results=available_results,
             branch_summary=branch_summary
         )
+
+
 
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
         """크롤링 결과에서 에러를 추출하여 로깅.

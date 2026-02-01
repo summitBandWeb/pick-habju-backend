@@ -1,4 +1,5 @@
 from typing import List
+from fastapi import HTTPException
 from app.models.dto import RoomDetail
 from app.validate.date_validator import validate_date
 from app.validate.hour_validator import validate_hour_slots
@@ -27,18 +28,14 @@ def validate_map_coordinates(swLat: float, swLng: float, neLat: float, neLng: fl
     """
     # 1. 위도 경도 범위 체크
     if not (-90 <= swLat <= 90) or not (-90 <= neLat <= 90):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="위도는 -90도에서 90도 사이여야 합니다.")
     
     if not (-180 <= swLng <= 180) or not (-180 <= neLng <= 180):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="경도는 -180도에서 180도 사이여야 합니다.")
 
     # 2. 영역 논리 체크 (SW < NE)
     if swLat >= neLat:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
 
     if swLng >= neLng:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")
