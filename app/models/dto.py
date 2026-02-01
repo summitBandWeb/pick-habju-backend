@@ -50,11 +50,12 @@ class AvailabilityRequest(BaseModel):
     start_hour: str = Field(..., description="Start time (HH:MM)")
     end_hour: str = Field(..., description="End time (HH:MM)")
     
-    # 지도 영역 좌표 (선택)
-    swLat: Optional[float] = Field(None, description="South-West Latitude")
-    swLng: Optional[float] = Field(None, description="South-West Longitude")
-    neLat: Optional[float] = Field(None, description="North-East Latitude")
-    neLng: Optional[float] = Field(None, description="North-East Longitude")
+    # 지도 영역 좌표 (필수)
+    swLat: float = Field(..., description="South-West Latitude")
+    swLng: float = Field(..., description="South-West Longitude")
+    neLat: float = Field(..., description="North-East Latitude")
+    neLng: float = Field(..., description="North-East Longitude")
+
 
 # Room Info (Response용 평탄화된 모델)
 class RoomInfo(BaseModel):

@@ -102,10 +102,10 @@ class AvailabilityService:
             logger.error(f"Time slot generation error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         
-        # 1.5. 지도 좌표 유효성 검증 (좌표가 있는 경우에만)
-        if all(v is not None for v in [request.swLat, request.swLng, request.neLat, request.neLng]):
-            from app.validate.request_validator import validate_map_coordinates
-            validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
+        # 1.5. 지도 좌표 유효성 검증 (필수)
+        from app.validate.request_validator import validate_map_coordinates
+        validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
+
 
         # 2. 인원수 및 지도 범위에 맞는 룸 필터링 (DB)
         target_rooms = get_rooms_by_criteria(
