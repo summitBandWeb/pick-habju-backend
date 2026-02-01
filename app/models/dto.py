@@ -6,23 +6,30 @@ class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
 
-    # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
+    # DB 컬럼명과 일치
     name: str = Field(description="Rehearsal room name")
-    branch: str = Field(description="Branch name (extracted from join)")
+    branch: str = Field(description="Branch name")
     business_id: str = Field(description="Naver Booking Business ID")
     biz_item_id: str = Field(description="Naver Booking Room ID")
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
     recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+    
+    # 신규 필드 추가
+    baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
+    extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
+    lat: Optional[float] = Field(None, description="Branch latitude")
+    lng: Optional[float] = Field(None, description="Branch longitude")
+
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
     canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
     requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="Whether same-day reservation requires a call")
 
     @field_validator('branch', mode='before')
     @classmethod
-    def extract_branch_name(cls, v: Any) -> str:
-        """Supabase join에서 {'name': 'branch_name'} 객체를 문자열로 변환"""
+    def extract_branch_info(cls, v: Any) -> str:
+        """Supabase join 결과 정제"""
         if isinstance(v, dict):
             return v.get('name', '')
         return v
@@ -42,18 +49,43 @@ class AvailabilityRequest(BaseModel):
     capacity: int = Field(..., description="Number of users")
     start_hour: str = Field(..., description="Start time (HH:MM)")
     end_hour: str = Field(..., description="End time (HH:MM)")
+    
+    # 지도 영역 좌표 (필수)
+    swLat: float = Field(..., description="South-West Latitude")
+    swLng: float = Field(..., description="South-West Longitude")
+    neLat: float = Field(..., description="North-East Latitude")
+    neLng: float = Field(..., description="North-East Longitude")
 
-# Response DTO (Single Room Detail)
-class RoomAvailability(BaseModel):
-    """Availability information for a single room"""
-    room_detail: RoomDetail = Field(..., description="Room detail information")
-    available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+# Room Info (Response용 평탄화된 모델)
+class RoomInfo(BaseModel):
+    """조건에 맞는 개별 룸 정보"""
+    name: str
+    branch: str
+    business_id: str
+    biz_item_id: str
+    imageUrls: List[str]
+    maxCapacity: int
+    recommendCapacity: int
+    baseCapacity: Optional[int] = None
+    extraCharge: Optional[int] = None
+    pricePerHour: int
+    canReserveOneHour: bool
+    requiresCallOnSameDay: bool
 
-# Full Response DTO (Summary Included)
+# Branch Summary Stat Model
+class BranchStats(BaseModel):
+    """지점별 요약 정보"""
+    min_price: int = Field(..., description="Minimum price in this branch")
+    available_count: int = Field(..., description="Number of available rooms")
+    lat: float = Field(..., description="Branch latitude")
+    lng: float = Field(..., description="Branch longitude")
+
+# Full Response DTO (Map optimized)
 class AvailabilityResponse(BaseModel):
-    """Response for availability check"""
+    """Response for availability check (Map optimized)"""
     date: str = Field(..., description="Checked date")
-    hour_slots: List[str] = Field(..., description="List of checked time slots")
-    results: List[RoomAvailability] = Field(..., description="Availability status per room")
-    available_biz_item_ids: List[str] = Field(..., description="List of available room IDs for all time slots (frontend convenience)")
+    start_hour: str = Field(..., description="Checked start time")
+    end_hour: str = Field(..., description="Checked end time")
+    
+    results: List[RoomInfo] = Field(..., description="List of rooms matching criteria")
+    branch_summary: Dict[str, BranchStats] = Field(..., description="Summary stats per branch (business_id as key)")
