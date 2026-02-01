@@ -22,14 +22,14 @@
 from __future__ import annotations
 import asyncio
 import logging
-from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability
+from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomInfo, BranchStats
 from app.validate.request_validator import validate_availability_request
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
-from typing import List
+from typing import List, Dict
 from datetime import datetime, timedelta
-from app.utils.room_loader import get_rooms_by_capacity
+from app.utils.room_loader import get_rooms_by_criteria
 from fastapi import HTTPException
 
 logger = logging.getLogger("app")
@@ -92,22 +92,27 @@ class AvailabilityService:
         
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
-        """Check room availability across all registered crawlers."""
+        """Check room availability for a specific map area and criteria."""
 
-        # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
-        # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        # 1. 시간 범위 생성
         try:
             hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
         except ValueError as e:
             logger.error(f"Time slot generation error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         
-        # 2. 인원수에 맞는 룸 필터링 (DB 데이터 활용)
-        target_rooms = get_rooms_by_capacity(request.capacity)
+        # 2. 인원수 및 지도 범위에 맞는 룸 필터링 (DB)
+        target_rooms = get_rooms_by_criteria(
+            capacity=request.capacity,
+            swLat=request.swLat,
+            swLng=request.swLng,
+            neLat=request.neLat,
+            neLng=request.neLng
+        )
 
         validate_availability_request(request.date, hour_slots, target_rooms)
 
-        # Prepare tasks for each crawler
+        # 3. 크롤러 작업 준비 및 실행
         tasks = []
         for crawler_type, crawler in self.crawlers_map.items():
             filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
@@ -117,9 +122,10 @@ class AvailabilityService:
         if not tasks:
             return AvailabilityResponse(
                 date=request.date,
-                hour_slots=hour_slots,
+                start_hour=request.start_hour,
+                end_hour=request.end_hour,
                 results=[],
-                available_biz_item_ids=[]
+                branch_summary={}
             )
 
         results_of_lists = await asyncio.gather(*tasks)
@@ -127,14 +133,55 @@ class AvailabilityService:
 
         self._log_errors(all_results, request.date)
 
-        # Filter out exceptions (None check unnecessary per RoomResult type)
+        # 4. 결과 집계 (Aggregation)
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
+        
+        room_info_results = []
+        branch_summary = {}
+
+        for res in successful_results:
+            # 룸 정보 평탄화
+            room_detail = res.room_detail
+            
+            # 예약 가능한 룸만 결과 리스트에 포함
+            if res.available is True:
+                room_info = RoomInfo(
+                    name=room_detail.name,
+                    branch=room_detail.branch,
+                    business_id=room_detail.business_id,
+                    biz_item_id=room_detail.biz_item_id,
+                    imageUrls=room_detail.imageUrls,
+                    maxCapacity=room_detail.maxCapacity,
+                    recommendCapacity=room_detail.recommendCapacity,
+                    baseCapacity=room_detail.baseCapacity,
+                    extraCharge=room_detail.extraCharge,
+                    pricePerHour=room_detail.pricePerHour,
+                    canReserveOneHour=room_detail.canReserveOneHour,
+                    requiresCallOnSameDay=room_detail.requiresCallOnSameDay
+                )
+                room_info_results.append(room_info)
+
+                # 지점 요약 정보 업데이트
+                bid = room_detail.business_id
+                if bid not in branch_summary:
+                    branch_summary[bid] = BranchStats(
+                        min_price=room_detail.pricePerHour,
+                        available_count=1,
+                        lat=room_detail.lat,
+                        lng=room_detail.lng
+                    )
+                else:
+                    stats = branch_summary[bid]
+                    stats.available_count += 1
+                    if room_detail.pricePerHour < stats.min_price:
+                        stats.min_price = room_detail.pricePerHour
 
         return AvailabilityResponse(
             date=request.date,
-            hour_slots=hour_slots,
-            results=successful_results,
-            available_biz_item_ids=[r.room_detail.biz_item_id for r in successful_results if r.available is True]
+            start_hour=request.start_hour,
+            end_hour=request.end_hour,
+            results=room_info_results,
+            branch_summary=branch_summary
         )
 
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
