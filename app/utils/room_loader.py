@@ -6,6 +6,9 @@ from app.models.dto import RoomDetail
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
+# NOTE: API 레벨에서는 좌표가 필수(Mandatory)이지만, 기존 유닛 테스트 코드들과의 
+# 하위 호환성을 위해 내부 유틸리티 함수에서는 Optional로 유지합니다. 
+# 추후 모든 테스트 코드에 Dummy 좌표를 적용한 뒤 필수값으로 리팩토링 예정입니다.
 def get_rooms_by_criteria(
     capacity: int,
     swLat: float = None,
@@ -13,6 +16,7 @@ def get_rooms_by_criteria(
     neLat: float = None,
     neLng: float = None
 ) -> List[RoomDetail]:
+
 
 
     """
