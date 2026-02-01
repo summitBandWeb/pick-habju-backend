@@ -50,11 +50,11 @@ class AvailabilityRequest(BaseModel):
     start_hour: str = Field(..., description="Start time (HH:MM)")
     end_hour: str = Field(..., description="End time (HH:MM)")
     
-    # 지도 영역 좌표 (필수)
-    swLat: float = Field(..., description="South-West Latitude")
-    swLng: float = Field(..., description="South-West Longitude")
-    neLat: float = Field(..., description="North-East Latitude")
-    neLng: float = Field(..., description="North-East Longitude")
+    # 지도 영역 좌표 (선택)
+    swLat: Optional[float] = Field(None, description="South-West Latitude")
+    swLng: Optional[float] = Field(None, description="South-West Longitude")
+    neLat: Optional[float] = Field(None, description="North-East Latitude")
+    neLng: Optional[float] = Field(None, description="North-East Longitude")
 
 # Room Info (Response용 평탄화된 모델)
 class RoomInfo(BaseModel):
@@ -84,15 +84,25 @@ class BranchStats(BaseModel):
     """지점별 요약 정보"""
     min_price: int = Field(..., description="Minimum price in this branch")
     available_count: int = Field(..., description="Number of available rooms")
-    lat: float = Field(..., description="Branch latitude")
-    lng: float = Field(..., description="Branch longitude")
+    lat: Optional[float] = Field(None, description="Branch latitude")
+    lng: Optional[float] = Field(None, description="Branch longitude")
 
-# Full Response DTO (Map optimized)
+# Full Response DTO (Legacy + Map Extension)
 class AvailabilityResponse(BaseModel):
-    """Response for availability check (Map optimized)"""
+    """Response for availability check
+    
+    기존 응답 구조를 유지하면서, 지도 검색을 위한 branch_summary를 추가했습니다.
+    """
     date: str = Field(..., description="Checked date")
     start_hour: str = Field(..., description="Checked start time")
     end_hour: str = Field(..., description="Checked end time")
     
-    results: List[RoomInfo] = Field(..., description="List of rooms matching criteria")
-    branch_summary: Dict[str, BranchStats] = Field(..., description="Summary stats per branch (business_id as key)")
+    # 기존 필드 유지
+    hour_slots: List[str] = Field(default_factory=list, description="List of checked hour slots")
+    available_biz_item_ids: List[str] = Field(default_factory=list, description="List of available biz_item_ids")
+    results: List[RoomAvailability] = Field(..., description="List of rooms with availability info")
+    
+    # 지도 검색을 위한 신규 필드
+    branch_summary: Dict[str, BranchStats] = Field(default_factory=dict, description="Summary stats per branch for map markers")
+
+
