@@ -82,7 +82,7 @@ def test_get_availability_api():
     # get_rooms_by_capacity가 RoomDetail 객체 리스트를 반환하도록 Mocking
     mock_room_details = [RoomDetail(**r) for r in rooms_payload]
     
-    with patch("app.services.availability_service.get_rooms_by_capacity", return_value=mock_room_details):
+    with patch("app.services.availability_service.get_rooms_by_criteria", return_value=mock_room_details):
         # API 호출 (MockCrawler가 주입되어 실행됨)
         response = client.get(
             f"{url}?date={target_date}&capacity=3&start_hour=18:00&end_hour=21:00"
@@ -97,6 +97,9 @@ def test_get_availability_api():
         assert "available_biz_item_ids" in result
         # MockCrawler는 항상 True를 반환하므로 결과가 있어야 함
         assert len(result["results"]) == 2
+        # branch_summary가 있어야 함 (지도 기능 확장)
+        assert "branch_summary" in result
+
 
 
 def test_preflight_request():
@@ -194,7 +197,7 @@ def test_get_availability_api_with_crawler_error():
 
         # Validation Bypass
         with patch("app.validate.request_validator.validate_room_detail_list") as mock_validator, \
-             patch("app.services.availability_service.get_rooms_by_capacity", return_value=mock_room_details):
+             patch("app.services.availability_service.get_rooms_by_criteria", return_value=mock_room_details):
              
             response = client.get(
                 f"{url}?date={target_date}&capacity=3&start_hour=18:00&end_hour=19:00"
