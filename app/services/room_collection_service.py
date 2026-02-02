@@ -145,9 +145,12 @@ class RoomCollectionService:
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
+        coords = business.get("coordinates")
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
+            "lat": coords.get("latitude") if coords else None,
+            "lng": coords.get("longitude") if coords else None,
         }
         
         # Upsert Branch
