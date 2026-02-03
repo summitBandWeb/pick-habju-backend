@@ -12,13 +12,10 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
 @router.get(
     "/",
     response_model=ApiResponse[AvailabilityResponse],
-    summary="합주실 예약 가능 여부 조회 & 지도 기반 검색",
+    summary="합주실 지도 기반 검색 (예약 가능 여부 포함)",
     description="""
-지정된 날짜와 시간대에 대해 인원수에 맞는 합주실 룸들의 예약 가능 여부를 확인합니다.
-
-### 🗺 지도 API 기능 통합
-- **좌표 필터링**: `swLat`, `swLng`, `neLat`, `neLng` 파라미터를 통해 특정 영역 내의 합주실만 조회할 수 있습니다 (Optional).
-- **지점별 요약 정보**: 응답의 `branch_summary` 필드를 통해 지도 마커 표시에 필요한 지점별 최저가와 예약 가능 룸 개수 정보를 제공합니다.
+지정된 날짜와 시간대에 대해 인원수에 맞는 합주실을 **지도 영역** 내에서 검색하고 예약 가능 여부를 확인합니다.
+모든 검색은 지도 기반이므로 좌표 정보가 필수입니다.
 """,
 )
 @router.get("", response_model=ApiResponse[AvailabilityResponse], include_in_schema=False)
@@ -29,12 +26,13 @@ async def check_room_availability(
     capacity: int = Query(..., description="사용 인원 수"),
     start_hour: str = Query(..., description="시작 시간 (HH:MM)"),
     end_hour: str = Query(..., description="종료 시간 (HH:MM)"),
-    swLat: Optional[float] = Query(None, description="남서쪽 위도 (Optional - 지도 검색 시 사용)"),
-    swLng: Optional[float] = Query(None, description="남서쪽 경도 (Optional - 지도 검색 시 사용)"),
-    neLat: Optional[float] = Query(None, description="북동쪽 위도 (Optional - 지도 검색 시 사용)"),
-    neLng: Optional[float] = Query(None, description="북동쪽 경도 (Optional - 지도 검색 시 사용)"),
+    swLat: float = Query(..., description="남서쪽 위도 (필수)"),
+    swLng: float = Query(..., description="남서쪽 경도 (필수)"),
+    neLat: float = Query(..., description="북동쪽 위도 (필수)"),
+    neLng: float = Query(..., description="북동쪽 경도 (필수)"),
     service: AvailabilityService = Depends(get_availability_service)
 ):
+
     """
     GET 요청을 받아 합주실 예약 가능 여부를 조회합니다.
     지도 영역 좌표(swLat, neLat 등)가 주어지면 해당 범위 내의 룸만 필터링하여 반환합니다.
