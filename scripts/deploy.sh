@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 필수 명령어 설치 여부 확인
+command -v lsof > /dev/null 2>&1 || { echo "lsof가 설치되어 있지 않습니다. 설치 후 재배포하세요."; exit 1; }
+
 # 가상 환경 생성 (이미 존재하는 경우 다시 만들지 않음)
 if [ ! -d "venv" ]; then
   echo "가상 환경을 생성합니다..."
@@ -26,18 +29,36 @@ PIDS=$(lsof -t -i:8000 2>/dev/null) || true
 
 if [ -n "$PIDS" ]; then
     echo "종료할 프로세스 PID: $PIDS"
-    # SIGKILL(-9)로 강제 종료
-    echo "$PIDS" | xargs kill -9 2>/dev/null || true
-    # 프로세스 종료 및 포트 해제 대기
-    sleep 3
+    
+    # 먼저 SIGTERM으로 우아한 종료 시도
+    echo "$PIDS" | xargs kill -15 2>/dev/null || true
+    sleep 2
+    
+    # SIGTERM 후 아직 실행 중인 프로세스가 있으면 SIGKILL로 강제 종료
+    PIDS=$(lsof -t -i:8000 2>/dev/null) || true
+    if [ -n "$PIDS" ]; then
+        echo "SIGTERM 후 아직 실행 중인 프로세스를 강제 종료합니다. PID: $PIDS"
+        echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+    
     echo "이전 프로세스 종료됨."
 else
     echo "포트 8000에서 실행 중인 프로세스가 없습니다."
 fi
 
-# 추가 안전장치: fuser로 한번 더 확인 및 종료
-fuser -k 8000/tcp 2>/dev/null || true
-sleep 1
+# 추가 안전장치: fuser로 한번 더 확인 및 SIGKILL로 강제 종료
+fuser -k -s KILL 8000/tcp 2>/dev/null || true
+
+# 포트 해제 대기 루프 (최대 10초)
+for i in $(seq 1 10); do
+    if ! lsof -i:8000 > /dev/null 2>&1; then
+        echo "포트 8000이 해제되었습니다."
+        break
+    fi
+    echo "포트 8000 해제 대기 중... (${i}s)"
+    sleep 1
+done
 
 # 애플리케이션 시작 (백그라운드에서)
 echo "애플리케이션을 시작합니다..."
