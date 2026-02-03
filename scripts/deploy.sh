@@ -18,18 +18,26 @@ pip install --upgrade pip || { echo "pip 업데이트 실패."; exit 1; }
 echo "의존성 패키지를 설치합니다..."
 pip install -r requirements.txt || { echo "패키지 설치 실패."; exit 1; }
 
-# (이전 프로세스 종료 및 새 프로세스 시작 로직)
-echo "이전 프로세스를 종료합니다..."
-# 이 부분은 사용자 환경에 맞게 수정
-# 예시: Gunicorn/Uvicorn 프로세스를 PID 파일로 종료
-PID_FILE="/home/ubuntu/pick-habju-backend/uvicorn.pid"
-if [ -f "$PID_FILE" ]; then
-    kill $(cat "$PID_FILE") || true
-    rm -f "$PID_FILE"
+# 포트 8000을 사용하는 모든 프로세스 종료
+echo "포트 8000을 사용하는 프로세스를 종료합니다..."
+
+# lsof를 사용하여 포트 8000을 점유하는 프로세스 PID 찾기
+PIDS=$(lsof -t -i:8000 2>/dev/null) || true
+
+if [ -n "$PIDS" ]; then
+    echo "종료할 프로세스 PID: $PIDS"
+    # SIGKILL(-9)로 강제 종료
+    echo "$PIDS" | xargs kill -9 2>/dev/null || true
+    # 프로세스 종료 및 포트 해제 대기
+    sleep 3
     echo "이전 프로세스 종료됨."
 else
-    echo "실행 중인 이전 프로세스를 찾을 수 없습니다."
+    echo "포트 8000에서 실행 중인 프로세스가 없습니다."
 fi
+
+# 추가 안전장치: fuser로 한번 더 확인 및 종료
+fuser -k 8000/tcp 2>/dev/null || true
+sleep 1
 
 # 애플리케이션 시작 (백그라운드에서)
 echo "애플리케이션을 시작합니다..."
@@ -38,8 +46,6 @@ echo "애플리케이션을 시작합니다..."
 nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 > access.log 2>&1 &
 # Uvicorn이 백그라운드에서 실행되도록 nohup과 & 사용
 
-# Uvicorn PID를 파일에 저장 (선택 사항, 프로세스 관리용)
-echo $! > "$PID_FILE"
 echo "애플리케이션이 백그라운드에서 시작되었습니다. PID: $!"
 
 echo "배포가 성공적으로 완료되었습니다."
