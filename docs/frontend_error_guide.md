@@ -39,7 +39,7 @@ try {
 ```json
 {
   "isSuccess": false,          // 성공 여부 (true/false)
-  "code": "ROOM_001",          // 에러 코드 (상수)
+  "code": "COMMON-001",          // 에러 코드 (상수)
   "message": "이미 예약된 시간입니다.", // 사용자에게 보여줄 친절한 메시지
   "result": null               // (성공 시 데이터, 실패 시 에러 상세)
 }
@@ -85,6 +85,33 @@ instance.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+```
+
+### 예시 (Fetch API)
+
+`fetch`는 기본적으로 HTTP 에러를 `throw`하지 않으므로, 래퍼 유틸리티를 만드는 것이 좋습니다.
+
+```javascript
+// user-friendly-fetch.js
+export async function myFetch(url, options = {}) {
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+
+    // 1. 서버 표준 에러 응답 처리
+    if (data.isSuccess === false) {
+       console.error(`[Error] ${data.code}: ${data.message}`);
+       // throw new Error(data.message); // 필요 시 throw
+       return data; // 또는 에러 정보가 담긴 data 반환
+    }
+
+    return data;
+  } catch (err) {
+    // 네트워크 에러 등
+    console.error("Network Error:", err);
+    throw err;
+  }
+}
 ```
 
 ### ✨ 장점

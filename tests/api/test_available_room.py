@@ -79,7 +79,7 @@ def test_get_availability_api():
         },
     ]
     
-    # get_rooms_by_capacity가 RoomDetail 객체 리스트를 반환하도록 Mocking
+    # get_rooms_by_criteria가 RoomDetail 객체 리스트를 반환하도록 Mocking
     mock_room_details = [RoomDetail(**r) for r in rooms_payload]
     
     with patch("app.services.availability_service.get_rooms_by_criteria", return_value=mock_room_details):

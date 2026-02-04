@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-APP_ENV = os.getenv("APP_ENV", "development")
+APP_ENV = os.getenv("APP_ENV", "production")
 IS_DEBUG = APP_ENV == "development"
 
 LOGIN_ID = os.getenv("LOGIN_ID")

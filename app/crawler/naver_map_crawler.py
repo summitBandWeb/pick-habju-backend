@@ -106,7 +106,7 @@ class NaverMapCrawler:
                     if (key.startsWith('PlaceSummary:')) {
                         const place = state[key];
                         places.push({
-                            id: place.bookingBusinessId || key.split(':')[1],
+                            id: place.bookingBusinessId ?? key.split(':')[1],
                             name: place.name,
                             category: place.category,
                             address: place.address,

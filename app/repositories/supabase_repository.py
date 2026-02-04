@@ -58,7 +58,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
         """
         try:
             response = self.supabase.table(self.table_name).select(
-                "*", count="exact", head=True
+                "", count="exact", head=True
             ).eq(
                 "device_id", device_id
             ).eq(
