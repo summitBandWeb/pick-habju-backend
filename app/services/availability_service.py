@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability, BranchStats
-from app.validate.request_validator import validate_availability_request
+from app.validate.request_validator import validate_availability_request, validate_map_coordinates
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
@@ -103,7 +103,6 @@ class AvailabilityService:
             raise HTTPException(status_code=400, detail=str(e))
         
         # 1.5. 지도 좌표 유효성 검증 (필수)
-        from app.validate.request_validator import validate_map_coordinates
         validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
 
 

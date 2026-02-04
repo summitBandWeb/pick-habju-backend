@@ -1,6 +1,6 @@
 from app.core.supabase_client import supabase
 from app.core.config import SUPABASE_TABLE
-from typing import List
+from typing import List, Optional
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
 from app.models.dto import RoomDetail
 from postgrest.exceptions import APIError
@@ -11,13 +11,11 @@ from pydantic import ValidationError
 # 추후 모든 테스트 코드에 Dummy 좌표를 적용한 뒤 필수값으로 리팩토링 예정입니다.
 def get_rooms_by_criteria(
     capacity: int,
-    swLat: float = None,
-    swLng: float = None,
-    neLat: float = None,
-    neLng: float = None
+    swLat: Optional[float] = None,
+    swLng: Optional[float] = None,
+    neLat: Optional[float] = None,
+    neLng: Optional[float] = None
 ) -> List[RoomDetail]:
-
-
 
     """
     Supabase에서 capacity 이상인 룸만 조회합니다.
@@ -36,8 +34,6 @@ def get_rooms_by_criteria(
                 .gte("branch.lng", swLng)
                 .lte("branch.lng", neLng)
             )
-
-
 
         response = query.execute()
 

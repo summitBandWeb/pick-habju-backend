@@ -58,16 +58,16 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
         """
         try:
             response = self.supabase.table(self.table_name).select(
-                "biz_item_id"
+                "", count="exact", head=True
             ).eq(
                 "device_id", device_id
             ).eq(
                 "business_id", business_id
             ).eq(
                 "biz_item_id", biz_item_id
-            ).limit(1).execute()
+            ).execute()
             
-            return len(response.data) > 0
+            return response.count > 0
         except Exception as e:
             logger.error(f"Error checking existence: {e}")
             return False

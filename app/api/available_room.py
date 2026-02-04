@@ -42,10 +42,10 @@ async def check_room_availability(
         capacity: 사용 인원 수 (1 이상의 정수)
         start_hour: 시작 시간 (HH:MM 형식, 예: 14:00)
         end_hour: 종료 시간 (HH:MM 형식, 예: 16:00)
-        swLat: 남서쪽 위도 (Optional)
-        swLng: 남서쪽 경도 (Optional)
-        neLat: 북동쪽 위도 (Optional)
-        neLng: 북동쪽 경도 (Optional)
+        swLat: 남서쪽 위도 (필수)
+        swLng: 남서쪽 경도 (필수)
+        neLat: 북동쪽 위도 (필수)
+        neLng: 북동쪽 경도 (필수)
 
     Returns:
         ApiResponse[AvailabilityResponse]: 예약 가능 여부 및 상세 정보 (branch_summary 포함)

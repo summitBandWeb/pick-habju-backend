@@ -1,0 +1,20 @@
+{
+  "project": {
+    "name": "pick-habju-backend",
+    "type": "fullstack"
+  },
+  "agents": {
+    "pm": { "enabled": true, "model": "gemini-2.0-flash" },
+    "frontend": { "enabled": true, "model": "gemini-2.0-flash" },
+    "backend": { "enabled": true, "model": "gemini-2.0-flash" },
+    "qa": { "enabled": true, "model": "gemini-2.0-flash" },
+    "debug": { "enabled": true, "model": "gemini-2.0-flash" }
+  },
+  "memory": {
+    "provider": "serena",
+    "path": "./.agents/memory.md"
+  },
+  "workflows": {
+    "default": ["pm", "backend", "qa"]
+  }
+}
