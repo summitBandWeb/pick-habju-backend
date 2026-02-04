@@ -17,7 +17,6 @@ def get_rooms_by_criteria(
     neLng: Optional[float] = None
 ) -> List[RoomDetail]:
 
-
     """
     Supabase에서 capacity 이상인 룸만 조회합니다.
     좌표가 주어지면 해당 범위 내의 룸만 필터링합니다.
@@ -35,7 +34,6 @@ def get_rooms_by_criteria(
                 .gte("branch.lng", swLng)
                 .lte("branch.lng", neLng)
             )
-
 
         response = query.execute()
 

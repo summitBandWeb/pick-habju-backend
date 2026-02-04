@@ -219,8 +219,11 @@ jobs:
               const reviewCount = await getValidReviewCount(prNumber, pr.user.login);
               const reviewStatus = `${reviewCount}/${requiredReviews}`;
 
+              // 한 번 실행당 PR당 알림 1개만 (우선순위: 24h 리뷰 부족 > SLA 긴급 > 머지 리마인드 중 가장 긴 시간)
+              let sent = false;
+
               // 1) Base rule: any PR -> 24h 시점에 리뷰 0개면 알림 (딱 1번)
-              if (ageH >= 24 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-base-24h")) {
+              if (!sent && ageH >= 24 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-base-24h")) {
                 await sendDiscord({
                   content: URGENT_MENTIONS || "@here",
                   title: "⏰ 24시간 경과: 리뷰가 아직 부족해요",
@@ -231,11 +234,11 @@ jobs:
                   ]
                 });
                 await addBotLabel(prNumber, "bot/reminded-base-24h");
+                sent = true;
               }
 
-              // 2) SLA Miss reminders (D=21h 제거, F=45h 제거)
-              //    priority/high + review/24h => 24h에만 (리뷰 부족하면)
-              if (hasPriorityHigh && hasReview24 && ageH >= 24 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-sla24-24h")) {
+              // 2) SLA Miss (priority/high + review/24h or 48h)
+              if (!sent && hasPriorityHigh && hasReview24 && ageH >= 24 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-sla24-24h")) {
                 await sendDiscord({
                   content: URGENT_MENTIONS || "@here",
                   title: "🚨 긴급 PR: review/24h 리뷰 응답 목표를 넘겼어요",
@@ -246,10 +249,9 @@ jobs:
                   ]
                 });
                 await addBotLabel(prNumber, "bot/reminded-sla24-24h");
+                sent = true;
               }
-
-              //    priority/high + review/48h => 48h에만 (리뷰 부족하면)
-              if (hasPriorityHigh && hasReview48 && ageH >= 48 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-sla48-48h")) {
+              if (!sent && hasPriorityHigh && hasReview48 && ageH >= 48 && reviewCount < requiredReviews && !hasLabel(pr, "bot/reminded-sla48-48h")) {
                 await sendDiscord({
                   content: URGENT_MENTIONS || "@here",
                   title: "🚨 긴급 PR: review/48h 리뷰 응답 목표를 넘겼어요",
@@ -260,33 +262,11 @@ jobs:
                   ]
                 });
                 await addBotLabel(prNumber, "bot/reminded-sla48-48h");
+                sent = true;
               }
 
-              // 3) Merge reminders: PR이 열려있고(=머지 안됨) 48/60/72h 도달 시 1회씩
-              //    (리뷰가 있어도 머지가 안 됐으면 여전히 리마인드 의미가 있으니 계속 보냄)
-              if (ageH >= 48 && !hasLabel(pr, "bot/reminded-merge-48h")) {
-                await sendDiscord({
-                  content: "@here",
-                  title: "🔁 머지 리마인드: PR이 48시간째 열려 있어요",
-                  pr,
-                  extraFields: [
-                    { name: "유효 리뷰 수 (CODEOWNER 기준)", value: reviewStatus, inline: true }
-                  ]
-                });
-                await addBotLabel(prNumber, "bot/reminded-merge-48h");
-              }
-              if (ageH >= 60 && !hasLabel(pr, "bot/reminded-merge-60h")) {
-                await sendDiscord({
-                  content: "@here",
-                  title: "🔁 머지 리마인드: PR이 60시간째 열려 있어요",
-                  pr,
-                  extraFields: [
-                    { name: "유효 리뷰 수 (CODEOWNER 기준)", value: reviewStatus, inline: true }
-                  ]
-                });
-                await addBotLabel(prNumber, "bot/reminded-merge-60h");
-              }
-              if (ageH >= 72 && !hasLabel(pr, "bot/reminded-merge-72h")) {
+              // 3) Merge reminders (72h > 60h > 48h 순으로 하나만)
+              if (!sent && ageH >= 72 && !hasLabel(pr, "bot/reminded-merge-72h")) {
                 await sendDiscord({
                   content: "@here",
                   title: "🔁 머지 리마인드: PR이 72시간째 열려 있어요",
@@ -296,5 +276,29 @@ jobs:
                   ]
                 });
                 await addBotLabel(prNumber, "bot/reminded-merge-72h");
+                sent = true;
+              }
+              if (!sent && ageH >= 60 && !hasLabel(pr, "bot/reminded-merge-60h")) {
+                await sendDiscord({
+                  content: "@here",
+                  title: "🔁 머지 리마인드: PR이 60시간째 열려 있어요",
+                  pr,
+                  extraFields: [
+                    { name: "유효 리뷰 수 (CODEOWNER 기준)", value: reviewStatus, inline: true }
+                  ]
+                });
+                await addBotLabel(prNumber, "bot/reminded-merge-60h");
+                sent = true;
+              }
+              if (!sent && ageH >= 48 && !hasLabel(pr, "bot/reminded-merge-48h")) {
+                await sendDiscord({
+                  content: "@here",
+                  title: "🔁 머지 리마인드: PR이 48시간째 열려 있어요",
+                  pr,
+                  extraFields: [
+                    { name: "유효 리뷰 수 (CODEOWNER 기준)", value: reviewStatus, inline: true }
+                  ]
+                });
+                await addBotLabel(prNumber, "bot/reminded-merge-48h");
               }
             }

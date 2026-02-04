@@ -34,11 +34,15 @@ jobs:
 
             // Only notify on:
             // - opened / ready_for_review => always notify
-            // - labeled => only when relevant labels added
+            // - labeled => only when relevant labels added AND PR이 올라온 지 10분 지남 (오픈 직후 라벨 붙이면 중복 알림 방지)
             const isOpenEvent = (action === "opened" || action === "ready_for_review");
             const labeledName = context.payload.label?.name || "";
+            const prCreatedAt = pr.created_at ? new Date(pr.created_at).getTime() : 0;
+            const minutesSinceOpen = (Date.now() - prCreatedAt) / (1000 * 60);
             const isRelevantLabelEvent =
-              action === "labeled" && ["priority/high", "review/24h", "review/48h", "risk/high"].includes(labeledName);
+              action === "labeled" &&
+              minutesSinceOpen >= 10 &&
+              ["priority/high", "review/24h", "review/48h", "risk/high"].includes(labeledName);
 
             if (!isOpenEvent && !isRelevantLabelEvent) {
               core.info("Not an event we notify on.");
