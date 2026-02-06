@@ -26,7 +26,7 @@ class OllamaClient:
     
     OLLAMA_URL = "http://localhost:11434/api/generate"
     DEFAULT_MODEL = "llama3.1:8b"
-    DEFAULT_TIMEOUT = 60.0  # 8B 모델은 30초 이내 응답이 일반적이나 여유 확보
+    DEFAULT_TIMEOUT = 120.0  # 로컬 GPU 연산 시간 고려 (8B 모델은 CPU 시 느림)
     
     def __init__(
         self,

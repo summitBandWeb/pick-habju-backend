@@ -19,6 +19,18 @@ from app.core.ollama_client import OllamaClient
 logger = logging.getLogger(__name__)
 
 
+# Level 1: Keyword Capacity Map (명확한 의미가 있는 키워드만)
+# NOTE: 알파벳 한 글자(L룸, S룸, M룸)는 의도적으로 제외
+#       합주실마다 의미가 다를 수 있음 (S = Small 또는 Special)
+KEYWORD_CAPACITY_MAP = {
+    "대형": 15,
+    "중형": 8,
+    "소형": 4,
+    "대합주실": 15,
+    "소합주실": 4,
+}
+
+
 # 8B 모델 최적화 프롬프트 (Few-shot 예시 포함)
 ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
@@ -83,6 +95,33 @@ class RoomParserService:
         """
         self.ollama_client = ollama_client or OllamaClient()
 
+    def _clean_text_for_llm(self, text: str) -> str:
+        """LLM 입력 전 노이즈 제거.
+        
+        HTML 태그, 이모지, 특수문자를 제거하여 8B 모델이
+        핵심 정보(숫자)에 집중할 수 있도록 합니다.
+        """
+        # 1. HTML 태그 제거
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # 2. 이모지 및 특수문자 제거 (한글, 영문, 숫자, 공백만 유지)
+        text = re.sub(r'[^\w\s가-힣]', ' ', text)
+        
+        # 3. 연속 공백 정리
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text.strip()
+    
+    def _infer_capacity_from_keyword(self, name: str) -> Optional[int]:
+        """룸 이름에서 키워드 기반으로 수용 인원을 즉시 추론.
+        
+        대형/중형/소형 등 명확한 의미가 있는 키워드만 사용합니다.
+        """
+        for keyword, capacity in KEYWORD_CAPACITY_MAP.items():
+            if keyword in name:
+                return capacity
+        return None
+
     async def parse_room_desc(self, name: str, desc: str) -> Dict[str, Any]:
         """룸 이름과 설명을 기반으로 구조화된 정보를 추출합니다.
         
@@ -93,9 +132,28 @@ class RoomParserService:
         Returns:
             파싱된 룸 정보 딕셔너리
         """
+        # Level 1: Keyword Map (가장 빠름)
+        keyword_capacity = self._infer_capacity_from_keyword(name)
+        if keyword_capacity:
+            # 키워드 매칭 성공 시 Regex로 나머지 정보 보완
+            regex_result = self._parse_with_regex(name, desc)
+            regex_result["max_capacity"] = keyword_capacity
+            logger.debug(f"Keyword Map 성공: {name} -> max_capacity={keyword_capacity}")
+            return regex_result
+        
+        # Level 2: Regex 시도 (max_capacity가 추출되면 성공)
+        regex_result = self._parse_with_regex(name, desc)
+        if regex_result.get("max_capacity"):
+            logger.debug(f"Regex 파싱 성공: {name}")
+            return regex_result
+        
+        # Level 3: Noise Reduction + LLM (느리지만 정확)
+        clean_name = self._clean_text_for_llm(name)
+        clean_desc = self._clean_text_for_llm(desc or "")
+        
         prompt = ROOM_PARSE_PROMPT.format(
-            name=name,
-            desc=desc or "내용 없음"
+            name=clean_name,
+            desc=clean_desc or "내용 없음"
         )
         
         # Ollama LLM 파싱 시도
@@ -174,65 +232,62 @@ class RoomParserService:
 
     def _parse_with_regex(self, name: str, desc: str) -> Dict[str, Any]:
         """정규표현식을 사용한 Fallback 파싱 로직.
-        
+
         LLM 파싱 실패 시 사용되는 안정적인 Fallback입니다.
+        desc를 우선 검색하고, 실패시 name에서도 capacity 정보를 추출합니다.
         """
         desc = desc or ""
-        
+
         # 1. clean_name & day_type
         clean_name = name
         day_type = None
-        
+
         if "[평일]" in name or "(평일)" in name:
             day_type = "weekday"
             clean_name = re.sub(r'\[평일\]|\(평일\)', '', clean_name).strip()
         elif "[주말]" in name or "(주말)" in name or "주말/공휴일" in name:
             day_type = "weekend"
             clean_name = re.sub(r'\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]', '', clean_name).strip()
-            
-        # 2. Capacity (최대 N인, N~M인)
+
+        # Clean capacity info from name (e.g., "(정원 13명, 최대 18명)", "(-15명)")
+        clean_name = re.sub(r'\s*\(?\s*정원\s*\d+\s*(?:인|명)\s*,?\s*(?:최대\s*\d+\s*(?:인|명))?\s*\)?', '', clean_name).strip()
+        clean_name = re.sub(r'\s*\(?\s*최대\s*\d+\s*(?:인|명)\s*\)?', '', clean_name).strip()
+        clean_name = re.sub(r'\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)', '', clean_name).strip()
+
+        # 2. Capacity extraction - prioritize desc, fallback to name
         max_cap = None
         rec_cap = None
 
-        # "최대 10인", "최대 10명", "Max 10명", "10인까지 가능"
-        max_match = re.search(r'(?:최대|max|MAX)\s*(\d+)', desc, re.IGNORECASE)
-        if max_match:
-            max_cap = int(max_match.group(1))
-        else:
-            # "10인까지", "10명까지 가능" 패턴
-            until_match = re.search(r'(\d+)\s*(?:인|명)\s*(?:까지|수용)', desc)
-            if until_match:
-                max_cap = int(until_match.group(1))
+        # Try extracting from desc first
+        max_cap, rec_cap = self._extract_capacity_from_text(desc)
 
-        # "N~M인", "N~M명" -> 권장 인원 (중간값)
-        range_match = re.search(r'(\d+)\s*[~\-]\s*(\d+)\s*(?:인|명)?', desc)
-        if range_match:
-            min_r = int(range_match.group(1))
-            max_r = int(range_match.group(2))
-            rec_cap = (min_r + max_r) // 2
-            # 최대 인원을 못 찾았으면 범위의 최댓값 사용
-            if not max_cap:
-                max_cap = max_r
-        elif max_cap and max_cap > 1:
+        # If not found in desc, try name field
+        if not max_cap and not rec_cap:
+            max_cap_from_name, rec_cap_from_name = self._extract_capacity_from_text(name)
+            max_cap = max_cap_from_name
+            rec_cap = rec_cap_from_name
+
+        # Set default recommend_capacity based on max_capacity if not found
+        if max_cap and not rec_cap:
             rec_cap = max_cap // 2 if max_cap > 4 else max_cap
-            
+
         # 3. Base Capacity & Extra Charge
         base_cap = None
         extra_charge = None
-        
+
         # "기본 4인"
         base_match = re.search(r'기본\s*(\d+)', desc)
         if base_match:
             base_cap = int(base_match.group(1))
-            
+
         # "1인 추가시 3000원", "인당 3000원"
         charge_match = re.search(r'(?:1인|인당)\s*(?:추가)?.*?(\d+(?:,\d+)?)\s*원', desc)
         if charge_match:
             extra_charge = int(charge_match.group(1).replace(',', ''))
-            
+
         # 4. Same day call
         requires_call = "당일" in desc and ("전화" in desc or "문의" in desc)
-        
+
         return {
             "clean_name": clean_name,
             "day_type": day_type,
@@ -242,6 +297,74 @@ class RoomParserService:
             "extra_charge": extra_charge,
             "requires_call_on_same_day": requires_call
         }
+
+    def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int]]:
+        """텍스트에서 max_capacity와 recommend_capacity를 추출합니다.
+
+        Args:
+            text: 검색할 텍스트 (name 또는 desc)
+
+        Returns:
+            (max_capacity, recommend_capacity) 튜플
+        """
+        max_cap = None
+        rec_cap = None
+
+        # Pattern 1: "(정원 N명, 최대 M명)" - name field에 흔함
+        capacity_paren_match = re.search(r'\(\s*정원\s*(\d+)\s*(?:인|명)\s*,\s*최대\s*(\d+)\s*(?:인|명)\s*\)', text)
+        if capacity_paren_match:
+            rec_cap = int(capacity_paren_match.group(1))
+            max_cap = int(capacity_paren_match.group(2))
+            return max_cap, rec_cap
+
+        # Pattern 2: "정원 N명" alone (recommended capacity)
+        recommend_match = re.search(r'정원\s*(\d+)\s*(?:인|명)', text)
+        if recommend_match:
+            rec_cap = int(recommend_match.group(1))
+
+        # Pattern 3: "최대 N인/명" or "Max N명"
+        max_match = re.search(r'(?:최대|max|MAX)\s*(\d+)', text, re.IGNORECASE)
+        if max_match:
+            max_cap = int(max_match.group(1))
+
+        # Pattern 4: "N인까지", "N명까지", "N인 까지", "N인이하"
+        if not max_cap:
+            until_match = re.search(r'(\d+)\s*(?:인|명)\s*(?:까지|이하|수용)', text)
+            if until_match:
+                max_cap = int(until_match.group(1))
+
+        # Pattern 5: "N인이 합주 가능", "N인 합주 가능", "N인이 이용 가능"
+        if not max_cap:
+            usage_match = re.search(r'(\d+)\s*(?:인|명)(?:이|이서)?\s*(?:합주|이용|수용)?\s*가능', text)
+            if usage_match:
+                max_cap = int(usage_match.group(1))
+
+        # Pattern 7: "(-N명)", "(-N인)" - 이름에 괄호로 최대인원 표기 (e.g., "R룸 (-15명)")
+        if not max_cap:
+            paren_max_match = re.search(r'\(\s*-\s*(\d+)\s*(?:인|명)\s*\)', text)
+            if paren_max_match:
+                max_cap = int(paren_max_match.group(1))
+
+        # Pattern 6: "N~M인", "N~M명", "권장 인원 N명 M명" (range with ~, -, or space)
+        # NOTE: 인/명 접미사 필수 - 장비 모델명 오파싱 방지 (e.g., "OB1-500")
+        range_match = re.search(r'(\d+)\s*[~\-]\s*(\d+)\s*(?:인|명)', text)
+        if range_match:
+            min_r = int(range_match.group(1))
+            max_r = int(range_match.group(2))
+            rec_cap = (min_r + max_r) // 2
+            if not max_cap:
+                max_cap = max_r
+        elif not rec_cap and not range_match:
+            # "권장 인원 10명 12명" - space separated range
+            space_range_match = re.search(r'권장\s*인원\s*(\d+)\s*(?:인|명)\s*(\d+)\s*(?:인|명)', text)
+            if space_range_match:
+                min_r = int(space_range_match.group(1))
+                max_r = int(space_range_match.group(2))
+                rec_cap = (min_r + max_r) // 2
+                if not max_cap:
+                    max_cap = max_r
+
+        return max_cap, rec_cap
 
     async def parse_room_desc_batch(self, items: List[Dict]) -> Dict[str, Dict]:
         """여러 룸 정보를 한 번에 파싱합니다.

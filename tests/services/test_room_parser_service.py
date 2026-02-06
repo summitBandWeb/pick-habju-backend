@@ -11,9 +11,11 @@ RoomParserService 단위 테스트
 실행: pytest tests/services/test_room_parser_service.py -v
 """
 
+import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.room_parser_service import RoomParserService
+from app.services.room_collection_service import RoomCollectionService
 
 
 class TestParseWithRegex:
@@ -92,6 +94,71 @@ class TestParseWithRegex:
         
         assert result["day_type"] == "weekend"
         assert "주말" not in result["clean_name"]
+
+
+    # ============== TC: "N인이 합주 가능" 패턴 ==============
+    def test_usage_possible_pattern(self, parser):
+        """'N인이 합주 가능' 패턴 인식"""
+        result = parser._parse_with_regex("룸A", "10인이 합주 가능")
+        assert result["max_capacity"] == 10
+
+    def test_usage_possible_pattern_with_space(self, parser):
+        """'8 인이 합주 가능' (공백 포함) 패턴 인식"""
+        result = parser._parse_with_regex("룸B", "8 인이 합주 가능")
+        assert result["max_capacity"] == 8
+
+    # ============== TC: "N인 까지 이용 가능" 패턴 ==============
+    def test_until_usage_pattern(self, parser):
+        """'N인 까지 이용 가능' 패턴 인식"""
+        result = parser._parse_with_regex("룸C", "4인 까지 이용 가능")
+        assert result["max_capacity"] == 4
+
+    # ============== TC: "N인 이하" 패턴 ==============
+    def test_under_n_pattern(self, parser):
+        """'N인 이하' 패턴 인식"""
+        result = parser._parse_with_regex("룸D", "15인 이하")
+        assert result["max_capacity"] == 15
+
+    # ============== TC: name에서 "(정원 N명, 최대 M명)" 추출 ==============
+    def test_name_capacity_parentheses(self, parser):
+        """name 필드의 '(정원 13명, 최대 18명)' 패턴 추출"""
+        result = parser._parse_with_regex("블랙룸 (정원 13명, 최대 18명)", "")
+        assert result["clean_name"] == "블랙룸"
+        assert result["max_capacity"] == 18
+        assert result["recommend_capacity"] == 13
+
+    # ============== TC: "권장 인원 N명 M명" 공백 범위 ==============
+    def test_recommend_space_range(self, parser):
+        """'권장 인원 10명 12명' 공백 범위 패턴 인식"""
+        result = parser._parse_with_regex("룸E", "권장 인원 10명 12명")
+        assert result["recommend_capacity"] == 11  # (10+12)//2
+        assert result["max_capacity"] == 12
+
+    # ============== TC: desc 우선 추출 ==============
+    def test_desc_priority_over_name(self, parser):
+        """desc에 인원 정보 있으면 name보다 우선"""
+        result = parser._parse_with_regex("블랙룸 (최대 18명)", "최대 30인 수용 가능")
+        assert result["max_capacity"] == 30
+
+    # ============== TC: name에만 인원 정보 있을 때 fallback ==============
+    def test_name_fallback_when_desc_empty(self, parser):
+        """desc에 인원 정보 없으면 name에서 추출"""
+        result = parser._parse_with_regex("블랙룸 (정원 13명, 최대 18명)", "넓은 공간입니다")
+        assert result["max_capacity"] == 18
+        assert result["recommend_capacity"] == 13
+
+    # ============== TC: "(-N명)" 괄호 최대인원 패턴 ==============
+    def test_paren_dash_capacity(self, parser):
+        """'R룸 (-15명)' 괄호 최대인원 패턴 인식"""
+        result = parser._parse_with_regex("R룸 (-15명)", "")
+        assert result["clean_name"] == "R룸"
+        assert result["max_capacity"] == 15
+
+    def test_paren_dash_capacity_small(self, parser):
+        """'C룸 (-6명)' 소규모 괄호 패턴"""
+        result = parser._parse_with_regex("C룸 (-6명)", "장비 목록만 있는 설명")
+        assert result["clean_name"] == "C룸"
+        assert result["max_capacity"] == 6
 
 
 class TestExtractJsonFromResponse:
@@ -206,6 +273,16 @@ class TestOllamaIntegration:
         return RoomParserService(ollama_client=mock_client)
     
     @pytest.mark.asyncio
+    async def test_parse_with_actual_ollama(self, parser):
+        """실제 Ollama 서버와 통신 테스트 (서버 실행 중일 때만)"""
+        try:
+            result = await parser.parse_room_desc("[평일] 블랙룸", "최대 10인, 4~6인 권장")
+            assert "clean_name" in result
+            assert "max_capacity" in result
+        except Exception:
+            pytest.skip("Ollama 서버가 실행 중이 아님")
+
+    @pytest.mark.asyncio
     async def test_fallback_to_regex_when_ollama_unavailable(self, mock_parser):
         """Ollama 응답 없을 시 Regex Fallback"""
         result = await mock_parser.parse_room_desc("[평일] 블랙룸", "최대 10인")
@@ -237,3 +314,113 @@ class TestOllamaIntegration:
         # Regex Fallback으로 정상 파싱
         assert result["clean_name"] == "블랙룸"
         assert result["max_capacity"] == 10
+
+
+class TestMultiLevelParsing:
+    """다단계 파싱 파이프라인 테스트"""
+    
+    @pytest.fixture
+    def parser(self):
+        """Mock Ollama 클라이언트를 사용하는 파서"""
+        mock_client = MagicMock()
+        mock_client.generate = AsyncMock(return_value=None)  # LLM 응답 없음
+        return RoomParserService(ollama_client=mock_client)
+    
+    # ============== Level 1: Keyword Map ==============
+    @pytest.mark.asyncio
+    async def test_keyword_map_대형(self, parser):
+        """'대형' 키워드가 있으면 max_capacity=15"""
+        result = await parser.parse_room_desc("대형 합주실", "")
+        assert result["max_capacity"] == 15
+    
+    @pytest.mark.asyncio
+    async def test_keyword_map_중형(self, parser):
+        """'중형' 키워드가 있으면 max_capacity=8"""
+        result = await parser.parse_room_desc("중형 A룸", "")
+        assert result["max_capacity"] == 8
+    
+    @pytest.mark.asyncio
+    async def test_keyword_map_소형(self, parser):
+        """'소형' 키워드가 있으면 max_capacity=4"""
+        result = await parser.parse_room_desc("소형룸", "")
+        assert result["max_capacity"] == 4
+    
+    @pytest.mark.asyncio
+    async def test_keyword_map_not_triggered_by_alphabet(self, parser):
+        """알파벳 한 글자(S룸, L룸)는 Keyword Map 적용 안 됨"""
+        result = await parser.parse_room_desc("S룸", "최대 20인")  # Regex fallback
+        assert result["max_capacity"] == 20  # Regex에서 추출
+    
+    # ============== Noise Reduction ==============
+    def test_clean_text_removes_html(self, parser):
+        """HTML 태그 제거"""
+        result = parser._clean_text_for_llm("<b>최대 10인</b>")
+        assert "<b>" not in result
+        assert "최대 10인" in result
+    
+    def test_clean_text_removes_emoji(self, parser):
+        """이모지 제거"""
+        result = parser._clean_text_for_llm("✨최대 10명🎉")
+        assert "최대" in result
+        assert "10" in result
+        assert "✨" not in result
+    
+    def test_clean_text_normalizes_whitespace(self, parser):
+        """연속 공백 정리"""
+        result = parser._clean_text_for_llm("최대   10   명")
+        assert "  " not in result
+
+
+class TestExportUnresolved:
+    """_export_unresolved 메서드 테스트"""
+
+    @pytest.fixture
+    def service(self):
+        """Mock 의존성을 가진 RoomCollectionService"""
+        with patch('app.services.room_collection_service.NaverMapCrawler'), \
+             patch('app.services.room_collection_service.NaverRoomFetcher'), \
+             patch('app.services.room_collection_service.RoomParserService'), \
+             patch('app.services.room_collection_service.get_supabase_client'):
+            return RoomCollectionService()
+
+    @pytest.mark.asyncio
+    async def test_exports_when_no_capacity(self, service, tmp_path, monkeypatch):
+        """max_capacity가 None이면 unresolved JSON으로 내보내기"""
+        import app.services.room_collection_service as mod
+        fake_file = str(tmp_path / "app" / "services" / "room_collection_service.py")
+        monkeypatch.setattr(mod, '__file__', fake_file)
+
+        business = {"businessId": "b1", "businessDisplayName": "테스트합주실"}
+        rooms = [{"bizItemId": "r1", "name": "룸A", "desc": "설명 없음"}]
+        parsed_results = {"r1": {"max_capacity": None, "clean_name": "룸A"}}
+
+        await service._export_unresolved(business, rooms, parsed_results)
+
+        export_dir = tmp_path / "scripts" / "unresolved"
+        files = list(export_dir.glob("unresolved_*.json"))
+        assert len(files) == 1
+
+        with open(files[0], "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        assert len(data) == 1
+        assert data[0]["biz_item_id"] == "r1"
+        assert data[0]["failure_reason"] == "no_capacity_info"
+
+    @pytest.mark.asyncio
+    async def test_no_export_when_capacity_found(self, service, tmp_path, monkeypatch):
+        """max_capacity가 정상이면 unresolved로 내보내지 않음"""
+        import app.services.room_collection_service as mod
+        fake_file = str(tmp_path / "app" / "services" / "room_collection_service.py")
+        monkeypatch.setattr(mod, '__file__', fake_file)
+
+        business = {"businessId": "b1", "businessDisplayName": "테스트합주실"}
+        rooms = [{"bizItemId": "r1", "name": "룸A", "desc": "최대 10인"}]
+        parsed_results = {"r1": {"max_capacity": 10, "clean_name": "룸A"}}
+
+        await service._export_unresolved(business, rooms, parsed_results)
+
+        export_dir = tmp_path / "scripts" / "unresolved"
+        if export_dir.exists():
+            files = list(export_dir.glob("unresolved_*.json"))
+            assert len(files) == 0

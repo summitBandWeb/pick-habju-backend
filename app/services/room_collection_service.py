@@ -1,5 +1,8 @@
 import logging
 import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Optional
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
@@ -116,6 +119,9 @@ class RoomCollectionService:
         await self._save_to_db(business, rooms, parsed_results)
         logger.info(f"Successfully saved business {business_id} with {len(rooms)} rooms")
 
+        # 4. Export unresolved items (Phase 6: Manual verification queue)
+        await self._export_unresolved(business, rooms, parsed_results)
+
     async def _parse_with_concurrency(self, items: List[Dict]) -> Dict[str, Dict]:
         """Parse items in concurrent batches."""
         if not items:
@@ -225,3 +231,68 @@ class RoomCollectionService:
             return None
         # Use minPrice as the base price
         return min_max.get("minPrice")
+
+    async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
+        """
+        Export unresolved parsing results to JSON file for manual LLM verification.
+
+        Phase 6: When parsing is incomplete (especially when no capacity info is found),
+        export the original crawled text to a JSON file for later manual verification.
+        """
+        unresolved_items = []
+
+        for room in rooms:
+            rid = room["bizItemId"]
+            parsed = parsed_results.get(rid, {})
+
+            # Identify unresolved items based on capacity parsing failures
+            max_capacity = parsed.get("max_capacity")
+            failure_reason = None
+
+            if max_capacity is None:
+                failure_reason = "no_capacity_info"
+            elif max_capacity == self.MANUAL_REVIEW_FLAG:
+                failure_reason = "manual_review_flag"
+
+            # Only export if there's a failure reason
+            if failure_reason:
+                unresolved_item = {
+                    "business_id": business["businessId"],
+                    "business_name": business["businessDisplayName"],
+                    "biz_item_id": rid,
+                    "raw_name": room["name"],
+                    "raw_desc": room.get("desc"),
+                    "parsed_result": parsed,
+                    "failure_reason": failure_reason,
+                    "price_per_hour": self._extract_price(room),
+                    "exported_at": datetime.now().isoformat()
+                }
+                unresolved_items.append(unresolved_item)
+
+        # If there are unresolved items, export them
+        if unresolved_items:
+            # Create directory if it doesn't exist
+            export_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate filename with current date
+            date_str = datetime.now().strftime("%Y%m%d")
+            export_file = export_dir / f"unresolved_{date_str}.json"
+
+            # Load existing data if file exists, otherwise start with empty list
+            existing_data = []
+            if export_file.exists():
+                try:
+                    with open(export_file, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to read existing unresolved file: {e}")
+
+            # Append new unresolved items
+            existing_data.extend(unresolved_items)
+
+            # Write back to file
+            with open(export_file, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=2)
+
+            logger.info(f"Exported {len(unresolved_items)} unresolved items to {export_file}")
