@@ -60,6 +60,8 @@ class RealIPMiddleware(BaseHTTPMiddleware):
                     "method": request.method,
                     "path": request.url.path,
                     "user_agent": request.headers.get("User-Agent", ""),
+                    "referer": request.headers.get("Referer", ""),
+                    "request_id": request.headers.get("X-Request-ID", ""),
                 },
             )
 
