@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.available_room import router as available_router
-from app.core.config import ALLOWED_ORIGINS
+from app.core.config import ALLOWED_ORIGINS, CORS_ORIGIN_REGEX
 from app.core.logging_config import setup_logging
 from app.core.middleware import CacheControlMiddleware, RealIPMiddleware
 from app.exception.base_exception import BaseCustomException
@@ -51,7 +51,7 @@ origins = list(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"^https:\/\/pick\-habju\-frontend.*\.vercel\.app$",
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -13,15 +13,18 @@ GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp"
 GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp"
 GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp"
 
-DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php" # 드림 합주실 실제 로그인 URL
+DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php"  # 드림 합주실 실제 로그인 URL
 DREAM_HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Content-Type": "application/x-www-form-urlencoded"
+    "Content-Type": "application/x-www-form-urlencoded",
 }
 DREAM_COOKIES = {
-    'PHPSESSID': 'your_dream_php_session_id',
-    'e1192aefb64683cc97abb83c71057733': 'your_dream_cookie_value'
+    "PHPSESSID": "your_dream_php_session_id",
+    "e1192aefb64683cc97abb83c71057733": "your_dream_cookie_value",
 }
+
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
+
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:
@@ -30,6 +33,7 @@ def _parse_origins(value: str | None) -> list[str]:
     normalized = value.replace("\n", ",").replace(";", ",")
     items = [item.strip() for item in normalized.split(",")]
     return [item for item in items if item]
+
 
 _DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -44,4 +48,11 @@ _frontend_origins = _parse_origins(os.getenv("FRONTEND_ORIGINS"))
 _single_frontend_url = [os.getenv("FRONTEND_URL")] if os.getenv("FRONTEND_URL") else []
 
 # 중복 제거를 위해 dict 키 보존 방식 사용
-ALLOWED_ORIGINS = list(dict.fromkeys(_DEFAULT_ALLOWED_ORIGINS + _cors_allowed_origins + _frontend_origins + _single_frontend_url))
+ALLOWED_ORIGINS = list(
+    dict.fromkeys(
+        _DEFAULT_ALLOWED_ORIGINS
+        + _cors_allowed_origins
+        + _frontend_origins
+        + _single_frontend_url
+    )
+)
