@@ -18,10 +18,6 @@ DREAM_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Content-Type": "application/x-www-form-urlencoded",
 }
-DREAM_COOKIES = {
-    "PHPSESSID": "your_dream_php_session_id",
-    "e1192aefb64683cc97abb83c71057733": "your_dream_cookie_value",
-}
 
 CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
 
