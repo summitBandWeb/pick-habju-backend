@@ -152,8 +152,10 @@ jobs:
           if [ -d "supabase/migrations" ] && [ "$(ls -A supabase/migrations/*.sql 2>/dev/null)" ]; then
             echo "📦 [TEST] Creating database backup before migration..."
             
-            # PostgreSQL 클라이언트 설치
-            sudo apt-get update && sudo apt-get install -y postgresql-client
+            # PostgreSQL 17 클라이언트 설치 (Supabase 서버 버전과 일치)
+            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+            sudo apt-get update && sudo apt-get install -y postgresql-client-17
             
             # 백업 파일명 (타임스탬프 포함)
             BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
