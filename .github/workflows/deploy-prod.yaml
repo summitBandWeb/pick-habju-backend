@@ -195,8 +195,9 @@ jobs:
             echo "🔄 Applying database migrations..."
             
             # Supabase CLI 설치 (Linux용 바이너리 다운로드)
-            curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz | tar -xz
-            sudo mv supabase /usr/local/bin/supabase
+            mkdir -p /tmp/supabase-cli
+            curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz | tar -xz -C /tmp/supabase-cli
+            sudo mv /tmp/supabase-cli/supabase /usr/local/bin/supabase
             
             # 프로젝트 연결 (환경변수로 지정)
             supabase link --project-ref ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
