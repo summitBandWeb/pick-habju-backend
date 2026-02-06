@@ -1,99 +1,182 @@
-import os
+"""
+룸 정보 파싱 서비스
+
+Ollama 로컬 LLM을 사용하여 비정형 합주실 정보를 구조화된 데이터로 변환합니다.
+LLM 파싱 실패 시 정규표현식 기반 Fallback으로 안정성을 보장합니다.
+
+사용법:
+    service = RoomParserService()
+    result = await service.parse_room_desc("[평일] 블랙룸", "최대 10인")
+"""
+
 import json
 import logging
-import asyncio
 import re
-import google.generativeai as genai
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, List, Optional
+
+from app.core.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
-# Gemini 무료 플랜 Rate Limiting (15 RPM)
-GEMINI_RATE_LIMIT_SECONDS = 4
+
+# 8B 모델 최적화 프롬프트 (Few-shot 예시 포함)
+ROOM_PARSE_PROMPT = """Extract room info as JSON.
+
+Example 1:
+Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false}}
+
+Example 2:
+Input: "화이트룸", "기본 4인, 인당 3000원 추가"
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false}}
+
+Example 3:
+Input: "[주말] 스튜디오A", "당일 예약은 전화 문의"
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true}}
+
+Rules:
+- clean_name: Remove tags like [평일], (주말) from name
+- day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
+- max_capacity: Max people (number)
+- recommend_capacity: Recommended people. Use mid-value for ranges (4~6 -> 5)
+- base_capacity: Base people count for pricing
+- extra_charge: Extra charge per person (number only, no currency)
+- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+
+Now extract:
+Input: "{name}", "{desc}"
+Output:"""
+
+
+# 배치 파싱용 프롬프트
+BATCH_PARSE_PROMPT = """Extract room info from multiple rooms as JSON object.
+Keys should be the room IDs provided. Use null for missing values.
+
+Rules:
+- clean_name: Remove tags like [평일], (주말) from name
+- day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
+- max_capacity: Max people (number)
+- recommend_capacity: Use mid-value for ranges (4~6 -> 5)
+- base_capacity: Base people count for pricing
+- extra_charge: Extra charge per person (number only)
+- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+
+Rooms:
+{rooms_text}
+
+Output format:
+{{"id1": {{"clean_name": "...", "day_type": "...", ...}}, "id2": {{...}}}}"""
+
 
 class RoomParserService:
-    """LLM(Gemini)을 사용하여 비정형 룸 정보를 구조화된 데이터로 변환합니다."""
+    """Ollama 로컬 LLM을 사용하여 비정형 룸 정보를 구조화된 데이터로 변환합니다.
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-
-        if not self.api_key:
-            logger.warning("GEMINI_API_KEY is not set. LLM parsing will fail.")
-        else:
-            genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-2.0-flash')
-
+    LLM 파싱 실패 시 정규표현식 기반 Fallback을 사용하여 안정성을 보장합니다.
+    8B 소형 모델의 특성을 고려한 Few-shot 프롬프트를 사용합니다.
+    """
+    
+    def __init__(self, ollama_client: Optional[OllamaClient] = None):
+        """RoomParserService 초기화.
+        
+        Args:
+            ollama_client: Ollama 클라이언트 인스턴스 (DI용)
+        """
+        self.ollama_client = ollama_client or OllamaClient()
 
     async def parse_room_desc(self, name: str, desc: str) -> Dict[str, Any]:
-        """룸 이름과 설명을 기반으로 구조화된 정보를 추출합니다."""
-        if not self.api_key:
-            # API Key 없으면 바로 Regex Fallback
-            return self._parse_with_regex(name, desc)
-
-        prompt = f"""
-        다음 합주실 정보에서 데이터를 추출하여 JSON으로 반환해주세요.
-        값이 없거나 불확실하면 null로 표기하세요.
-
-        [입력 정보]
-        룸 이름: {name}
-        설명: {desc or "내용 없음"}
-
-        [추출 규칙]
-        1. clean_name: "[평일]", "(주말)" 등 태그를 제거한 순수 룸 이름 (예: "[평일] 블랙룸" -> "블랙룸")
-        2. day_type: 이름에 "평일"이 있으면 "weekday", "주말/공휴일"이 있으면 "weekend", 없으면 null
-        3. max_capacity: 최대 수용 인원 (숫자)
-        4. recommend_capacity: 권장 인원 (숫자). 범위(4~6)인 경우 중간값(5).
-        5. base_capacity: 추가 요금 기준이 되는 기본 인원 (숫자). "1인 추가시" 같은 문구가 있으면 해당 기준 인원.
-        6. extra_charge: 인원 초과 시 1인당/시간당 추가 요금 (숫자).
-        7. requires_call_on_same_day: "당일 예약은 전화" 같은 문구가 있으면 true (boolean)
-
-        [응답 형식]
-        {{
-            "clean_name": "...",
-            "day_type": "...",
-            "max_capacity": 0,
-            "recommend_capacity": 0,
-            "base_capacity": 0,
-            "extra_charge": 0,
-            "requires_call_on_same_day": false
-        }}
-        """
+        """룸 이름과 설명을 기반으로 구조화된 정보를 추출합니다.
         
-        try:
-            # 비동기 실행을 위해 run_in_executor 사용 (google-generativeai는 동기 라이브러리)
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(None, self.model.generate_content, prompt)
-
-            # Rate limiting (Gemini 무료 플랜 15 RPM)
-            await asyncio.sleep(GEMINI_RATE_LIMIT_SECONDS)
-
-            # JSON 파싱 (마크다운 코드블록 제거 처리)
-            text = response.text.strip()
-            text = self._extract_json_from_response(text)
-
-            return json.loads(text)
+        Args:
+            name: 룸 이름 (예: "[평일] 블랙룸")
+            desc: 룸 설명 (예: "최대 10인, 4~6인 권장")
             
-        except Exception as e:
-            logger.warning(f"LLM parsing failed for {name}: {e}. Falling back to Regex parsing.")
-            return self._parse_with_regex(name, desc)
+        Returns:
+            파싱된 룸 정보 딕셔너리
+        """
+        prompt = ROOM_PARSE_PROMPT.format(
+            name=name,
+            desc=desc or "내용 없음"
+        )
+        
+        # Ollama LLM 파싱 시도
+        response = await self.ollama_client.generate(prompt)
+        
+        if response:
+            try:
+                result = self._extract_json_from_response(response)
+                parsed = json.loads(result)
+                
+                # 파싱 결과 검증
+                if self._validate_parsed_result(parsed):
+                    return parsed
+                    
+                logger.warning(f"파싱 결과 검증 실패 for {name}. Fallback to Regex.")
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON 파싱 실패 for {name}: {e}. Fallback to Regex.")
+        
+        # Fallback: 정규표현식 파싱
+        return self._parse_with_regex(name, desc)
 
     def _extract_json_from_response(self, text: str) -> str:
-        """LLM 응답에서 JSON 부분만 추출 (마크다운 코드블록 제거)"""
+        """LLM 응답에서 JSON 부분만 추출 (마크다운 코드블록 제거)."""
         text = text.strip()
 
         # ```json ... ``` 형태
         if text.startswith("```json"):
-            text = text[7:]  # "```json" 제거
+            text = text[7:]
         elif text.startswith("```"):
-            text = text[3:]  # "```" 제거
+            text = text[3:]
 
         if text.endswith("```"):
-            text = text[:-3]  # 끝의 ``` 제거
+            text = text[:-3]
 
         return text.strip()
+    
+    def _validate_parsed_result(self, result: Dict[str, Any]) -> bool:
+        """파싱 결과의 유효성을 검증합니다.
+        
+        8B 모델은 오류율이 높으므로 현실적 범위를 검증합니다.
+        
+        Args:
+            result: 파싱된 결과 딕셔너리
+            
+        Returns:
+            유효하면 True, 아니면 False
+        """
+        # 1. 필수 필드 존재 확인
+        if "clean_name" not in result:
+            return False
+        
+        # 2. 최대 수용 인원 범위 검증 (합주실 현실적 범위: 1~50명)
+        max_cap = result.get("max_capacity")
+        if max_cap is not None:
+            if not isinstance(max_cap, (int, float)) or max_cap < 1 or max_cap > 50:
+                return False
+        
+        # 3. 권장 인원 범위 검증
+        rec_cap = result.get("recommend_capacity")
+        if rec_cap is not None:
+            if not isinstance(rec_cap, (int, float)) or rec_cap < 1 or rec_cap > 50:
+                return False
+        
+        # 4. 추가 요금 범위 검증 (0~50,000원)
+        extra = result.get("extra_charge")
+        if extra is not None:
+            if not isinstance(extra, (int, float)) or extra < 0 or extra > 50000:
+                return False
+        
+        # 5. day_type 값 검증
+        day_type = result.get("day_type")
+        if day_type is not None and day_type not in ["weekday", "weekend"]:
+            return False
+        
+        return True
 
     def _parse_with_regex(self, name: str, desc: str) -> Dict[str, Any]:
-        """정규표현식을 사용한 Fallback 파싱 로직"""
+        """정규표현식을 사용한 Fallback 파싱 로직.
+        
+        LLM 파싱 실패 시 사용되는 안정적인 Fallback입니다.
+        """
         desc = desc or ""
         
         # 1. clean_name & day_type
@@ -105,7 +188,7 @@ class RoomParserService:
             clean_name = re.sub(r'\[평일\]|\(평일\)', '', clean_name).strip()
         elif "[주말]" in name or "(주말)" in name or "주말/공휴일" in name:
             day_type = "weekend"
-            clean_name = re.sub(r'\[주말[^]]*\]|\(주말[^)]*\)|\[주말/공휴일\]', '', clean_name).strip()
+            clean_name = re.sub(r'\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]', '', clean_name).strip()
             
         # 2. Capacity (최대 N인, N~M인)
         max_cap = None
@@ -131,7 +214,7 @@ class RoomParserService:
             if not max_cap:
                 max_cap = max_r
         elif max_cap and max_cap > 1:
-            rec_cap = max_cap // 2 if max_cap > 4 else max_cap  # 대략적인 추정
+            rec_cap = max_cap // 2 if max_cap > 4 else max_cap
             
         # 3. Base Capacity & Extra Charge
         base_cap = None
@@ -161,83 +244,54 @@ class RoomParserService:
         }
 
     async def parse_room_desc_batch(self, items: List[Dict]) -> Dict[str, Dict]:
-        """
-        여러 룸 정보를 한 번에 파싱합니다.
+        """여러 룸 정보를 한 번에 파싱합니다.
+        
+        배치 처리로 API 호출 횟수를 줄여 효율성을 높입니다.
         
         Args:
             items: [{"id": "...", "name": "...", "desc": "..."}] 형태의 리스트
             
         Returns:
-            { "id": {파싱결과}, ... }
+            {"id": {파싱결과}, ...}
         """
         if not items:
             return {}
-            
-        if not self.api_key:
-            return {item["id"]: self._parse_with_regex(item["name"], item["desc"]) for item in items}
-
+        
         # 프롬프트 구성
-        prompt_items = []
+        rooms_text_parts = []
         for item in items:
-            prompt_items.append(f"ID: {item['id']}\nName: {item['name']}\nDesc: {item.get('desc') or ''}\n---")
-            
-        prompt_text = "\n".join(prompt_items)
+            rooms_text_parts.append(
+                f"ID: {item['id']}\nName: {item['name']}\nDesc: {item.get('desc') or ''}\n---"
+            )
         
-        prompt = f"""
-        Extract structured data from the following list of rehearsal rooms.
-        Return a JSON Object where keys are the 'ID' provided and values are the extracted data.
-        Use 'null' for missing or uncertain values.
-
-        [Data List]
-        {prompt_text}
-
-        [Extraction Rules]
-        1. clean_name: Remove tags like "[Weekday]", "(Weekend)" from name.
-        2. day_type: "weekday" if name contains "평일", "weekend" if "주말", else null.
-        3. max_capacity: Max people (number).
-        4. recommend_capacity: Recommended people (number). Use mid-value for ranges (4~6 -> 5).
-        5. base_capacity: Base people count for pricing (number).
-        6. extra_charge: Extra charge per person (number).
-        7. requires_call_on_same_day: true if "당일" and ("전화" or "문의") found (boolean).
-
-        [Response Format]
-        {{
-            "id1": {{ "clean_name": "...", "max_capacity": 4, ... }},
-            "id2": {{ ... }}
-        }}
-        """
+        prompt = BATCH_PARSE_PROMPT.format(rooms_text="\n".join(rooms_text_parts))
         
-        try:
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(None, self.model.generate_content, prompt)
-
-            # Rate limiting
-            await asyncio.sleep(GEMINI_RATE_LIMIT_SECONDS)
-
-            text = response.text.strip()
-            return self._process_llm_response(text, items)
-
-        except Exception as e:
-            logger.warning(f"Batch LLM parsing failed: {e}. Falling back to Regex.")
-            return {item["id"]: self._parse_with_regex(item["name"], item["desc"]) for item in items}
-
-    def _process_llm_response(self, text: str, items: List[Dict]) -> Dict[str, Dict]:
-        """LLM 응답 텍스트를 파싱하고 후처리하는 공통 로직"""
-        text = self._extract_json_from_response(text)
-        try:
-            parsed_results = json.loads(text)
-        except json.JSONDecodeError:
-            logger.warning("JSON Decode Error in LLM response. Fallback to Regex.")
-            return {item["id"]: self._parse_with_regex(item["name"], item["desc"]) for item in items}
-            
-        final_results = {}
-        for item in items:
-            rid = item["id"]
-            data = parsed_results.get(rid)
-            if not data:
-                logger.warning(f"Batch parsing failed for item {rid}, using regex fallback.")
-                final_results[rid] = self._parse_with_regex(item["name"], item["desc"])
-            else:
-                final_results[rid] = data
+        # Ollama LLM 파싱 시도
+        response = await self.ollama_client.generate(prompt, max_tokens=1024)
         
-        return final_results
+        if response:
+            try:
+                text = self._extract_json_from_response(response)
+                parsed_results = json.loads(text)
+                
+                # 각 아이템별로 검증, 실패 시 Regex Fallback
+                final_results = {}
+                for item in items:
+                    rid = item["id"]
+                    data = parsed_results.get(rid)
+                    if data and self._validate_parsed_result(data):
+                        final_results[rid] = data
+                    else:
+                        logger.warning(f"배치 파싱 검증 실패: {rid}, Regex fallback 사용.")
+                        final_results[rid] = self._parse_with_regex(item["name"], item["desc"])
+                        
+                return final_results
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"배치 JSON 파싱 실패: {e}. 전체 Regex fallback.")
+        
+        # Fallback: 모든 아이템을 Regex로 파싱
+        return {
+            item["id"]: self._parse_with_regex(item["name"], item["desc"]) 
+            for item in items
+        }
