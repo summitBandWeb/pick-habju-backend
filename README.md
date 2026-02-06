@@ -1,7 +1,21 @@
 # Pick Habju Backend (픽합주 백엔드)
 
+![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi)
+![Supabase](https://img.shields.io/badge/Supabase-Database-3ECF8E?logo=supabase)
+![Playwright](https://img.shields.io/badge/Playwright-1.56%2B-009688?logo=playwright)
+
 **합주실 예약 가능 여부 확인 서비스**  
-사용자가 원하는 합주실의 실시간 예약 가능 여부를 확인하고, 네이버 예약 시스템과 연동하여 편리한 예약 경험을 제공하는 백엔드 API 서버입니다.
+사용자가 원하는 합주실의 실시간 예약 가능 여부를 확인하고, 네이버 예약 시스템 연동을 통해 편리한 예약 경험을 제공하는 백엔드 API 서버입니다.
+
+## ✨ Key Features (주요 기능)
+
+- [x] **실시간 예약 가능 여부 조회**: 네이버 예약 시스템 연동을 통한 실시간 데이터 수집
+- [x] **합주실 즐겨찾기**: 사용자 기기 기반(Device ID) 관심 지점 관리
+- [x] **지도 기반 검색**: 위경도 데이터를 활용한 합주실 위치 정보 제공
+- [x] **표준화된 API 응답**: Envelope Pattern을 적용하여 일관된 성공/실패 응답 구조 제공
+- [x] **확장 가능한 아키텍처**: Service Layer 패턴과 Crawler Registry를 통한 유연한 기능 확장
+- [x] **API 문서 자동화**: Swagger UI 및 ReDoc을 통한 실시간 API 명세 제공
 
 ## 🛠️ 기술 스택 (Tech Stack)
 
@@ -38,6 +52,9 @@ pick-habju-backend/
 │   │   ├── naver_map_crawler.py # 네이버 지도 검색 (위경도, 목록 수집)
 │   │   ├── naver_room_fetcher.py# 네이버 예약 상세 정보 수집
 │   │   └── registry.py          # 크롤러 등록 및 관리
+│   ├── exception/          # 사용자 정의 예외 처리 (Custom Exceptions)
+│   │   ├── base_exception.py   # 예외 기본 클래스
+│   │   └── envelope_handlers.py# 에러 응답 표준화 핸들러
 │   ├── models/             # 데이터 모델 (Pydantic DTO)
 │   │   └── dto.py              # API 요청/응답 DTO 정의
 │   ├── repositories/       # 데이터 액세스 계층 (DB 통신)
@@ -45,6 +62,12 @@ pick-habju-backend/
 │   ├── services/           # 비즈니스 로직 계층
 │   │   ├── availability_service.py # 예약 가능 여부 조회 로직
 │   │   └── room_collection_service.py # 룸 데이터 수집 및 가공
+│   ├── utils/              # 유틸리티 함수 및 헬퍼
+│   │   ├── room_loader.py      # 합주실 데이터 로더
+│   │   └── client_loader.py    # HTTP 클라이언트 설정
+│   ├── validate/           # 요청 데이터 유효성 검증 로직
+│   │   ├── request_validator.py
+│   │   └── date_validator.py
 │   └── main.py             # FastAPI 애플리케이션 진입점 (Entry Point)
 ├── scripts/                # 유틸리티 및 배포 스크립트
 ├── tests/                  # 테스트 코드 (Pytest)
@@ -125,8 +148,11 @@ playwright install chromium
 ```
 
 ### 4. 환경 변수 설정
-프로젝트 루트에 `.env` 파일을 생성하고 필요한 환경 변수를 설정합니다. (`.env.example` 참고)
-.env 파일 내용은 노션 참고
+프로젝트 루트의 `.env.example` 파일을 복사하여 `.env` 파일을 생성하고, 필요한 값을 설정합니다.
+
+```bash
+cp .env.example .env
+```
 
 ```ini
 # .env 예시
