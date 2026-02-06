@@ -1,3 +1,4 @@
+from app.exception.crawler.dream_exception import DreamRequestError
 from bs4 import BeautifulSoup
 import html
 import sys
@@ -5,12 +6,15 @@ import asyncio
 from datetime import datetime
 from typing import List
 
-from app.models.dto import RoomKey, RoomAvailability
+from app.models.dto import RoomDetail, RoomAvailability
 from app.utils.client_loader import load_client
+from app.exception.base_exception import BaseCustomException
 from app.exception.crawler.dream_exception import DreamAvailabilityError
 
 from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
+
+
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -22,32 +26,32 @@ class DreamCrawler(BaseCrawler):
     }
     DATE_LIMIT_DAYS = 121  # Reservation window limit per Dream policy.
 
-    async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
         target_date = datetime.strptime(date, '%Y-%m-%d').date()
 
         if (target_date - today).days >= self.DATE_LIMIT_DAYS:
             return [
                 RoomAvailability(
-                    name=room.name,
-                    branch=room.branch,
-                    business_id=room.business_id,
-                    biz_item_id=room.biz_item_id,
+                    room_detail=room,
                     available="unknown",
                     available_slots={hour_str: "unknown" for hour_str in hour_slots},
                 )
-                for room in rooms
+                for room in target_rooms
             ]
 
-        async def safe_fetch(room: RoomKey) -> RoomResult:
+        async def safe_fetch(room: RoomDetail) -> RoomResult:
             try:
                 return await self._fetch_dream_availability_room(date, hour_slots, room)
-            except DreamAvailabilityError as e:
+            except BaseCustomException as e:
                 return e
+            except Exception as e:
+                # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
+                return Exception(f"[{room.name}] Unexpected error: {str(e)}")
 
-        return await asyncio.gather(*[safe_fetch(room) for room in rooms])
+        return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
-    async def _fetch_dream_availability_room(self, date: str, hour_slots: List[str], room: RoomKey) -> RoomAvailability:
+    async def _fetch_dream_availability_room(self, date: str, hour_slots: List[str], room: RoomDetail) -> RoomAvailability:
         data = {
             'rm_ix': room.biz_item_id,
             'sch_date': date
@@ -70,10 +74,7 @@ class DreamCrawler(BaseCrawler):
         available = all(available_slots.values())
 
         return RoomAvailability(
-            name=room.name,
-            branch=room.branch,
-            business_id=room.business_id,
-            biz_item_id=room.biz_item_id,
+            room_detail=room,
             available=available,
             available_slots=available_slots
         )

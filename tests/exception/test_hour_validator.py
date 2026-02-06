@@ -1,6 +1,6 @@
 import pytest
 from app.validate.hour_validator import validate_hour_slot_format, validate_hour_slot_not_past, validate_hour_continuous
-from app.exception.common.hour_excpetion import InvalidHourSlotError, PastHourSlotNotAllowedError, HourDiscontinuousError
+from app.exception.common.hour_exception import InvalidHourSlotError, PastHourSlotNotAllowedError, HourDiscontinuousError
 from datetime import datetime, timedelta
 
 # 형식 실패 케이스
@@ -13,6 +13,8 @@ def test_validate_hour_slots_invalid_format():
 def test_validate_hour_slots_valid_today():
     """오늘 날짜 기준으로 현재 시각 이후의 시간대는 유효한 슬롯으로 통과되어야 한다."""
     now = datetime.now()
+    if now.hour >= 23:
+        pytest.skip("밤 11시 이후에는 날짜 변경 문제로 테스트를 건너뜁니다.")
     # 현재 시간보다 1시간 뒤
     slot = (now + timedelta(hours=1)).strftime("%H:%M")
     today = now.strftime("%Y-%m-%d")

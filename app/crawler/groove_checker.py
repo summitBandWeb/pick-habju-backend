@@ -7,7 +7,7 @@ from datetime import datetime
 from app.core.config import GROOVE_RESERVE_URL, GROOVE_RESERVE_URL1
 from app.exception.crawler.groove_exception import GrooveCredentialError, GrooveLoginError
 from app.utils.login import LoginManager
-from app.models.dto import RoomAvailability, RoomKey
+from app.models.dto import RoomAvailability, RoomDetail
 
 from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
@@ -15,7 +15,7 @@ from app.crawler.registry import registry
 class GrooveCrawler(BaseCrawler):
     RESERVATION_LIMIT_DAYS = 84  # Reservation window limit per Groove policy.
 
-    async def check_availability(self, date: str, hour_slots: List[str], rooms: List[RoomKey]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         # 1. 오늘 날짜와 목표 날짜를 date 객체로 변환
         today = datetime.now().date()
         target_date = datetime.strptime(date, '%Y-%m-%d').date()
@@ -24,13 +24,10 @@ class GrooveCrawler(BaseCrawler):
         if (target_date - today).days >= self.RESERVATION_LIMIT_DAYS:
             # 즉시 'unknown' 결과를 반환
             unknown_results = []
-            for room in rooms:
+            for room in target_rooms:
                 slots = {hour_str: "unknown" for hour_str in hour_slots}
                 result = RoomAvailability(
-                    name=room.name,
-                    branch=room.branch,
-                    business_id=room.business_id,
-                    biz_item_id=room.biz_item_id,
+                    room_detail=room,
                     available="unknown",
                     available_slots=slots,
                 )
@@ -41,14 +38,14 @@ class GrooveCrawler(BaseCrawler):
         try:
             html = await self._login_and_fetch_html(date, branch_gubun="sadang")
             soup = BeautifulSoup(html, "html.parser")
-            tasks = [self._fetch_room_availability(room, hour_slots, soup) for room in rooms]
+            tasks = [self._fetch_room_availability(room, hour_slots, soup) for room in target_rooms]
             results = await asyncio.gather(*tasks)
             return results
         except Exception as e:
             # 로그인 실패 전체 에러 핸들링을 원한다면 여기서 처리 가능하지만, 
             # 개별 room 에러가 아니라 전체 에러이므로 리스트로 변환해서 리턴하거나 
             # 상위로 예외를 던질 수 있음. 여기서는 예외 전파.
-            return [e] * len(rooms)
+            return [e] * len(target_rooms)
 
     # --- 개별 슬롯(off/on) 체크 함수 ---
     def _check_hour_slot(self, soup: BeautifulSoup, biz_item_id: str, hour_str: str) -> bool:
@@ -81,7 +78,7 @@ class GrooveCrawler(BaseCrawler):
 
     # --- 방의 예약가능 상태 확인 함수 ---
     async def _fetch_room_availability(
-            self, room: RoomKey, hour_slots: List[str], soup: BeautifulSoup
+            self, room: RoomDetail, hour_slots: List[str], soup: BeautifulSoup
     ) -> RoomAvailability:
         rm_ix = room.biz_item_id
 
@@ -89,10 +86,7 @@ class GrooveCrawler(BaseCrawler):
         overall = all(slots.values())
 
         return RoomAvailability(
-            name=room.name,
-            branch=room.branch,
-            business_id=room.business_id,
-            biz_item_id=room.biz_item_id,
+            room_detail=room,
             available=overall,
             available_slots=slots,
         )

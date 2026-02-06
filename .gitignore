@@ -180,4 +180,9 @@ cython_debug/
 .DS_Store
 
 logs/
+
+CONVENTION.md
+*.db
+nul
+
 docs/
