@@ -149,6 +149,7 @@ playwright install chromium
 
 ### 4. 환경 변수 설정
 프로젝트 루트의 `.env.example` 파일을 복사하여 `.env` 파일을 생성하고, 필요한 값을 설정합니다.
+(**구체적인 환경변수 값은 팀 노션 페이지를 참고하세요.**)
 
 ```bash
 cp .env.example .env
