@@ -190,12 +190,13 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.PROD_SUPABASE_DB_PASSWORD }}
         run: |
-          # Supabase CLI 설치
-          npm install -g supabase
-          
           # 마이그레이션 파일이 있는지 확인
           if [ -d "supabase/migrations" ] && [ "$(ls -A supabase/migrations/*.sql 2>/dev/null)" ]; then
             echo "🔄 Applying database migrations..."
+            
+            # Supabase CLI 설치 (Linux용 바이너리 다운로드)
+            curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz | tar -xz
+            sudo mv supabase /usr/local/bin/supabase
             
             # 프로젝트 연결 (환경변수로 지정)
             supabase link --project-ref ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
