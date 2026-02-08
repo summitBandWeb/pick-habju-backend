@@ -48,11 +48,6 @@ jobs:
 
       - name: 테스트 실행
         id: pytest_run
-        env:
-          SUPABASE_URL: ${{ secrets.ALPHA_SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.ALPHA_SUPABASE_KEY }}
-          GROOVE_BASE_URL: ${{ secrets.GROOVE_BASE_URL }}
-          DREAM_BASE_URL: ${{ secrets.DREAM_BASE_URL }}
         run: |
           source venv/bin/activate
           pip install pytest-json-report
