@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - dev
+      - hotfix/136-test-env-fix  # 테스트용 임시 추가
 
 env:
   # GCP 프로젝트 설정
@@ -55,6 +56,17 @@ jobs:
           DREAM_BASE_URL: ${{ secrets.DREAM_BASE_URL }}
         run: |
           source venv/bin/activate
+          
+          # 디버그: Supabase 연결 및 데이터 확인
+          python -c "
+          from app.core.supabase_client import supabase
+          result = supabase.table('room').select('name, branch!inner(name)').limit(5).execute()
+          print('=== DB 연결 테스트 ===')
+          print(f'조회된 룸 수: {len(result.data)}')
+          for r in result.data:
+              print(f'  - {r}')
+          "
+          
           pip install pytest-json-report
           pytest --json-report --json-report-file=test_results.json
 
