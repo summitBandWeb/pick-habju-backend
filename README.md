@@ -14,12 +14,17 @@
 
 ## ✨ Key Features (주요 기능)
 
-- [x] **실시간 예약 가능 여부 조회**: 네이버 예약 시스템 연동을 통한 실시간 데이터 수집
-- [x] **합주실 즐겨찾기**: 사용자 기기 기반(Device ID) 관심 지점 관리
-- [x] **지도 기반 검색**: 위경도 데이터를 활용한 합주실 위치 정보 제공
-- [x] **표준화된 API 응답**: Envelope Pattern을 적용하여 일관된 성공/실패 응답 구조 제공
-- [x] **확장 가능한 아키텍처**: Service Layer 패턴과 Crawler Registry를 통한 유연한 기능 확장
-- [x] **API 문서 자동화**: Swagger UI 및 ReDoc을 통한 실시간 API 명세 제공
+- [x] **실시간 예약 가능 여부 조회**: 네이버 예약 시스템 연동을 통한 지점별/룸별 실시간 현황 제공
+- [x] **지도 기반 합주실 탐색**: 사용자 주변 및 특정 지역의 합주실 위치와 정보를 지도상에서 한 눈에 확인
+- [x] **개인화된 즐겨찾기**: 별도의 로그인 없이 기기 기반(Device ID)으로 자주 가는 합주실을 저장하고 관리
+
+## 🚀 Engineering Highlights (기술적 강점)
+
+- **확장성 높은 크롤링 엔진**: `Crawler Registry` 패턴을 사용하여 새로운 예약 플랫폼 연동 시 기존 로직 수정 없이 동적으로 기능 확장 가능
+- **표준화된 API 응답 구조**: `Envelope Pattern`을 전역 적용하여 프론트엔드와의 통신 규약을 단일화하고 연동 생산성 극대화
+- **비동기 병렬 데이터 수집**: `FastAPI`와 `httpx` 비동기 통신을 활용하여 다수 합주실의 데이터를 지연 없이 실시간 수집 및 가공
+- **객체 지향적 계층 구조**: `Service Layer`와 `Repository Pattern`을 적용하여 비즈니스 로직의 응집도를 높이고 테스트 용이성 확보
+- **자동화된 문서화**: `Swagger UI`를 통한 실시간 API 명세 제공으로 개발 가독성 및 원활한 팀 협업 유도
 
 ## 🛠️ 기술 스택 (Tech Stack)
 
@@ -36,79 +41,100 @@
 
 ---
 
-## 📂 디렉토리 구조 (Directory Structure)
+### 📂 디렉토리 구조 및 모듈별 책임 (Module Responsibilities)
 
-프로젝트의 핵심 코드는 `app/` 디렉토리에 위치하며, 기능별로 모듈화되어 있습니다.  
-*(아래 구조는 주요 모듈 및 파일 위주로 요약되었습니다.)*
+프로젝트는 관심사 분리를 위해 각 모듈의 책임을 엄격히 제한합니다. 새로운 기능을 추가할 때는 아래의 분류 기준을 따릅니다.
 
-```
-pick-habju-backend/
-├── .github/                # GitHub Actions (CI/CD) 설정
-├── app/                    # 애플리케이션 핵심 로직
-│   ├── api/                # API 라우터 (Controller 역할)
-│   │   ├── _dev/           # 개발 및 디버깅용 API 엔드포인트
-│   │   ├── available_room.py   # 예약 가능 여부 조회 API
-│   │   ├── favorites.py        # 즐겨찾기 관리 API
-│   │   └── dependencies.py     # 의존성 주입 (Dependency Injection)
-│   ├── core/               # 프로젝트 설정 및 공통 모듈
-│   │   ├── config.py           # 환경 변수 및 앱 설정
-│   │   ├── error_codes.py      # 전역 에러 코드 정의
-│   │   ├── response.py         # 공통 응답 포맷 (Envelope) 정의
-│   │   ├── supabase_client.py  # Supabase 클라이언트 설정
-│   │   └── limiter.py          # API Rate Limiter
-│   ├── crawler/            # 크롤링 모듈 (핵심 기능)
-│   │   ├── base.py             # 크롤러 베이스 추상 클래스
-│   │   ├── dream_checker.py    # Dream 플랫폼 전용 크롤러
-│   │   ├── groove_checker.py   # Groove 플랫폼 전용 크롤러
-│   │   ├── naver_checker.py    # Naver 플랫폼 예약 가능 여부 체커
-│   │   ├── naver_map_crawler.py # 네이버 지도 검색 및 목록 수집
-│   │   └── registry.py          # 크롤러 등록 및 싱글톤 레지스트리
-│   ├── exception/          # 사용자 정의 예외 처리
-│   │   ├── base_exception.py   # 예외 기본 클래스
-│   │   └── envelope_handlers.py# 전역 에러 핸들러 (표준 응답 변환)
-│   ├── models/             # 데이터 모델 (Pydantic DTO)
-│   │   ├── dto.py              # 주요 요청/응답 DTO
-│   │   └── favorite.py         # 즐겨찾기 관련 데이터 모델
-│   ├── repositories/       # 데이터 액세스 계층 (DB 통신)
-│   │   ├── base.py             # Repository 인터페이스
-│   │   └── supabase_repository.py 
-│   ├── services/           # 비즈니스 로직 계층
-│   │   ├── availability_service.py # 통합 예약 가능 여부 조회
-│   │   └── room_parser_service.py  # 룸 데이터 파싱 및 가공
-│   ├── utils/              # 공용 유틸리티
-│   │   ├── room_loader.py      # DB 데이터 로드 유틸리티
-│   │   ├── room_router.py      # 플랫폼별 룸 라우팅 로직
-│   │   └── client_loader.py    # 비동기 HTTP 클라이언트 관리
-│   ├── validate/           # 유효성 검증 로직
-│   │   ├── request_validator.py# API 요청 파라미터 검증
-│   │   └── hour_validator.py   # 시간 포맷 및 범위 검증
-│   └── main.py             # FastAPI 애플리케이션 진입점
-├── scripts/                # 배포 및 데이터 수집 스크립트
-├── tests/                  # 테스트 코드 (Pytest)
-├── .env.example            # 환경 변수 템플릿
-├── requirements.txt        # 의존성 목록
-└── README.md               # 프로젝트 설명서
-```
+| Module | Responsibility (책임 및 역할) |
+| :--- | :--- |
+| **api/** | **Interface**: 요청을 수신하고 최종 응답을 반환. 비즈니스 로직은 Service 계층에 위임합니다. |
+| **services/** | **Business Logic**: 여러 크롤러나 레포지토리를 조합하여 애플리케이션의 핵심 기능을 수행합니다. |
+| **crawler/** | **External Data**: 외부 예약 플랫폼 연동을 담당합니다. `BaseCrawler`를 통해 일관된 인터페이스를 유지합니다. |
+| **repositories/** | **Data Access**: 데이터베이스(Supabase)에 직접 접근하여 순수한 CRUD 작업을 수행합니다. |
+| **models/** | **Data Transfer (DTO)**: 계층 간 데이터 이동을 위한 데이터 모델을 정의하고 `@field_validator`로 유효성을 검증합니다. |
+| **core/** | **Infrastructure**: 환경 설정, 전역 예외 처리, 공통 응답 포맷 등 시스템 전반의 설정을 관리합니다. |
+| **utils/** | **Utilities**: 특정 도메인에 종속되지 않는 공통 기능(HTTP 클라이언트, 로더 등)을 제공합니다. |
 
 ---
 
-## 🏗️ 아키텍처 (Architecture)
+### 🛠️ 주요 모듈 활용 및 확장 가이드 (How to Extend)
 
-이 프로젝트는 유지보수성과 확장성을 위해 **Layered Architecture (계층형 아키텍처)** 패턴을 따르고 있습니다.
-각 계층은 관심사 분리(Separation of Concerns) 원칙에 따라 명확한 역할을 가지며, 상위 계층은 하위 계층에만 의존합니다.
+#### (1) 새로운 예약 플랫폼(크롤러) 추가하기
+본 프로젝트는 **Crawler Registry** 패턴을 사용하여 새로운 플랫폼을 아주 쉽게 추가할 수 있습니다.
+1. `app/crawler/base.py`의 `BaseCrawler`를 상속받는 새로운 클래스 파일을 생성합니다.
+2. `check_availability` 추상 메서드를 플랫폼의 특성에 맞게 구현합니다.
+3. 파일 하단에서 `registry.register("플랫폼명", NewCrawler())`를 호출하여 등록합니다.
+4. 이제 `AvailabilityService`가 자동으로 새 플랫폼을 인식하여 예약 조회를 수행합니다.
 
-### 데이터 흐름 (Data Flow)
+#### (2) 공용 에러 핸들링 사용하기
+새로운 비즈니스 예외가 필요할 경우:
+1. `app/exception/base_exception.py`를 상속받아 커스텀 예외 클래스를 만듭니다.
+2. `app/core/error_codes.py`에 고유한 에러 코드를 추가합니다.
+3. 로직 내에서 예외를 `raise`하면 `app/exception/envelope_handlers.py`가 자동으로 이를 감지하여 표준 Envelope 응답으로 변환합니다.
 
-`API Layer` (요청 처리, Controller) → `Service Layer` (비즈니스 로직) → `Data Access Layer` (DB/크롤링)
+---
 
-### 각 계층의 역할과 위치
+---
 
-| Layer | Directory | Description |
-| --- | --- | --- |
-| **Presentation (API)** | `app/api/` | - 클라이언트 요청(Request)을 받아 유효성을 검증하고 응답(Response)을 반환합니다.<br>- 비즈니스 로직을 직접 수행하지 않고 Service 계층에 위임합니다.<br>- **Dependency Injection (DI)** 을 통해 Service 객체를 주입받습니다. |
-| **Business Logic (Service)** | `app/services/` | - 애플리케이션의 핵심 비즈니스 로직을 수행합니다.<br>- 여러 Repository나 Crawler를 조합하여 데이터를 가공합니다.<br>- 예: `AvailabilityService`는 여러 플랫폼의 크롤러를 병렬로 실행하고 결과를 집계합니다. |
-| **Data Access (Repository)** | `app/repositories/`<br>`app/crawler/` | - 데이터베이스(Supabase)나 외부 시스템(네이버 지도)과 직접 통신합니다.<br>- DB 쿼리 실행 또는 웹 크롤링을 담당하며, 순수한 데이터 객체(DTO)를 반환합니다. |
-| **Domain Model** | `app/models/` | - 계층 간 데이터 전달을 위한 Pydantic 모델(DTO)을 정의합니다. |
+## 🏗️ 전체 시스템 및 인프라 아키텍처 (Infrastructure Architecture)
+
+### 📐 가용성 및 보안 아키텍처
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   클라이언트    │ ──▶ │  Cloudflare  │ ──▶ │  Cloud Run   │ ──▶ │   Supabase   │
+│   (앱/웹)     │     │  (CDN/WAF)   │     │  (API 서버)   │     │  (PostgreSQL)│
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+```
+
+### ☁️ Google Cloud Platform (GCP)
+
+| 서비스 | 용도 |
+| :--- | :--- |
+| **Cloud Run** | 컨테이너화된 API 서버를 서버리스 환경에서 실행 |
+| **Artifact Registry** | Docker 이미지 빌드 및 저장소 관리 |
+| **Cloud Logging** | 실시간 로그 수집 및 모니터링 |
+
+- **CI/CD 프로세스**: `GitHub Actions` → `Docker Build` → `Artifact Registry` → `Cloud Run` 자동 배포
+- **인증**: **Workload Identity Federation (WIF)**를 통한 안전한 GCP 리소스 접근
+
+### 🔶 Cloudflare (Security & Network)
+
+| 기능 | 설명 |
+| :--- | :--- |
+| **SSL/TLS** | HTTPS 인증서 자동 관리 및 Full (Strict) 모드 적용 |
+| **WAF** | 웹 애플리케이션 방화벽을 통한 악의적 트래픽 차단 |
+| **Rate Limit** | 특정 구간(예: 검색/로그인)의 무차별 대입 및 DDoS 방어 |
+| **CDN/DNS** | API 도메인 라우팅 및 정적 리소스 최적화 |
+
+### 🗄️ Supabase (Database Layer)
+
+| 환경 | 용도 및 구성 |
+| :--- | :--- |
+| **Prod** | 실제 운영용 PostgreSQL 데이터베이스 |
+| **Alpha** | `dev` 브랜치 연동 실시간 개발/테스트용 환경 |
+
+---
+
+## 🔄 CI/CD 파이프라인 (CI/CD Pipeline)
+
+GitHub Actions를 통해 코드 품질 검증 및 자동 배포가 수행됩니다.
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                        GitHub Actions                             │
+├───────────────────────────────────────────────────────────────────┤
+│  1. 코드 체크아웃 및 테스트(Pytest) 실행                               │
+│  2. WIF로 GCP 인증                                                 │
+│  3. Docker 이미지 빌드 및 Artifact Registry 푸시                     │
+│  4. (Prod) Supabase DB 백업 및 마이그레이션 적용                     │
+│  5. Cloud Run 서비스 배포 및 Discord 알림 전송                        │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+| 워크플로우 파일 | 실시간 브랜치 | 대상 배포 환경 |
+| :--- | :--- | :--- |
+| `deploy-test.yaml` | `dev` | Alpha API 서비스 |
+| `deploy-prod.yaml` | `main` | Prod API 서비스 |
 
 ---
 
@@ -230,20 +256,13 @@ pytest tests/api/test_available_room.py
 2. **브랜치 생성**: 규칙에 맞는 브랜치를 생성합니다 (예: `feat/130-description`).
 3. **코드 작성 및 테스트**: 기능을 구현하고 적절한 테스트 코드를 작성합니다.
 4. **Pull Request**: 작업 완료 후 PR을 생성하며, 팀원 1명 이상의 승인이 필요합니다.
-5. **커밋 메시지**: 하단의 [협업 컨벤션](#-협업-컨벤션-convention)을 엄격히 준수합니다.
+5. **커밋 메시지**: 팀 노션 업무 스페이스의 컨벤션을 엄격히 준수합니다.
 
 ---
 
-## 🤝 협업 컨벤션 (Convention)
-
-- **Commit Message**: [Conventional Commits](https://www.conventionalcommits.org/) 규칙을 따릅니다.
-    (자세한 내용은 팀 노션 및 [CONVENTION.md](CONVENTION.md) 파일을 참고하세요.)
-    - `feat`: 새로운 기능 추가
-    - `fix`: 버그 수정
-    - `docs`: 문서 수정
-    - `refactor`: 코드 리팩토링
-    - `test`: 테스트 코드 추가/수정
+- **Commit Message**: [Conventional Commits](https://www.conventionalcommits.org/) 규칙을 따릅니다. 자세한 내용은 팀 노션 업무 스페이스를 참고하세요.
 - **Branch Strategy**: Git Flow 변형 (main, dev, feat/*)
+
 
 ## 🗄️ 데이터베이스 구조 (Database Schema)
 
