@@ -249,7 +249,47 @@ pytest tests/api/test_available_room.py
 
 Supabase (PostgreSQL)를 사용하여 합주실 데이터와 사용자 즐겨찾기 정보를 관리합니다.
 
-![Database ERD](docs/images/supabase_erd(260206).png)
+```mermaid
+erDiagram
+    branch ||--o{ room : "has"
+    room ||--o{ room_image : "has"
+    room ||--o{ favorites : "is favorited by"
+
+    branch {
+        string business_id PK "지점 고유 ID"
+        string name "지점명"
+        float lat "위도"
+        float lng "경도"
+    }
+
+    room {
+        string biz_item_id PK "룸 고유 ID"
+        string business_id FK "소속 지점 ID"
+        string name "룸 이름"
+        int max_capacity "최대 인원"
+        int recommend_capacity "권장 인원"
+        int base_capacity "기준 인원"
+        numeric extra_charge "추가 요금"
+        numeric price_per_hour "시간당 요금"
+        boolean can_reserve_one_hour "1시간 예약 가능"
+        boolean requires_call_on_sameday "당일 전화 필수"
+    }
+
+    room_image {
+        bigserial image_id PK "이미지 ID"
+        string business_id FK
+        string biz_item_id FK
+        text image_url "이미지 경로"
+        int sort_order "정렬 순서"
+    }
+
+    favorites {
+        uuid device_id PK "기기 식별 고유 ID"
+        string business_id FK
+        string biz_item_id FK
+        timestamp created_at "등록 일시"
+    }
+```
 
 ### 주요 테이블 설명
 
