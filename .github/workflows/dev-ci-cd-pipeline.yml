@@ -1,0 +1,149 @@
+name: ALPHA CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+
+env:
+  PROJECT_DIR: /home/ubuntu/pick-habju-backend
+
+jobs:
+  # 1) 테스트
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 셋업 및 가상환경 생성
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ./requirements.txt
+
+      - name: 가상환경 활성화 및 패키지 설치
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r ./requirements.txt
+
+      - name: 테스트 실행 (가상환경 내에서)
+        id: pytest_run
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          source venv/bin/activate
+          pip install pytest-json-report
+          pytest --json-report --json-report-file=test_results.json
+
+      - name: 테스트 결과 요약 및 Discord 알림 전송
+        if: always() && steps.pytest_run.outcome == 'failure'
+        run: |
+          if [ -f test_results.json ]; then
+            FAILED_TESTS=$(jq -r '.summary.failed // 0' test_results.json)
+            FAILED_TEST_DETAILS=$(jq -r '.report.tests[] | select(.outcome == "failed") | .nodeid' test_results.json | head -n 5)
+            if [ "$FAILED_TESTS" -gt 0 ]; then
+                DETAILS_MESSAGE="**실패한 테스트 개수**: ${FAILED_TESTS}\n"
+                DETAILS_MESSAGE="${DETAILS_MESSAGE}**실패 테스트 목록 (일부)**:\n\`\`\`\n${FAILED_TEST_DETAILS}\n\`\`\`"
+            else
+                DETAILS_MESSAGE="테스트 실패 상세 정보를 가져올 수 없습니다."
+            fi
+          else
+            DETAILS_MESSAGE="테스트 결과 JSON 파일을 찾을 수 없습니다."
+          fi
+
+          curl -H "Content-Type: application/json" -d "{
+            \"content\": \"🚨 **테스트 실패!** 배포가 중단되었습니다.\",
+            \"embeds\": [
+              {
+                \"title\": \"실패한 워크플로우 바로가기\",
+                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+                \"color\": 15158332,
+                \"fields\": [
+                  { \"name\": \"Repository\", \"value\": \"${{ github.repository }}\", \"inline\": true },
+                  { \"name\": \"Commit\", \"value\": \"\`${{ github.sha }}\`\", \"inline\": true },
+                  { \"name\": \"실패 상세\", \"value\": \"${DETAILS_MESSAGE}\", \"inline\": false }
+                ]
+              }
+            ]
+          }" ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # 2) 배포 (EC2 Start -> 상태대기 -> SSH 배포)
+  deploy:
+    name: Deploy
+    needs: test
+    if: ${{ needs.test.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write       # OIDC assume-role에 필요
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- EC2 시작 & 상태 대기 ---
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      # - name: Start EC2 instance (idempotent)
+      #   run: |
+      #     ID="${{ secrets.ALPHA_INSTANCE_ID }}"
+      #     # 현재 상태 조회
+      #     STATE=$(aws ec2 describe-instances --instance-ids "$ID" \
+      #       --query "Reservations[0].Instances[0].State.Name" --output text)
+      #     echo "Current state: $STATE"
+      #     if [ "$STATE" = "stopped" ] || [ "$STATE" = "stopping" ]; then
+      #       echo "Starting instance..."
+      #       aws ec2 start-instances --instance-ids "$ID" >/dev/null
+      #     else
+      #       echo "Instance already running or pending. Skipping start."
+      #     fi
+
+      # - name: Wait until running & status checks OK
+      #   run: |
+      #     ID="${{ secrets.ALPHA_INSTANCE_ID }}"
+      #     aws ec2 wait instance-running --instance-ids "$ID"
+      #     aws ec2 wait instance-status-ok --instance-ids "$ID"
+      #     aws ec2 describe-instances --instance-ids "$ID" \
+      #       --query "Reservations[0].Instances[0].{State:State.Name,PublicIp:PublicIpAddress,PrivateIp:PrivateIpAddress}" \
+      #       --output table
+
+      # --- SSH 배포 ---
+      - name: SSH로 EC2에 접속하여 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ALPHA_HOST }}
+          username: ${{ secrets.ALPHA_USERNAME }}
+          key: ${{ secrets.ALPHA_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            cd ${{ env.PROJECT_DIR }}
+            # 트리거 브랜치(dev)에 맞춰 pull
+            git fetch origin dev
+            git checkout dev
+            git pull --ff-only origin dev
+            bash ./scripts/deploy.sh
+
+      - name: Discord에 배포 성공 알림 전송
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "✅ **[ALPHA 서버] 배포 성공!**",
+            "embeds": [
+              {
+                "title": "배포된 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 3066993,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
