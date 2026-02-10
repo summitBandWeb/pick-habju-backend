@@ -104,8 +104,8 @@ class RoomParserService:
         # 1. HTML 태그 제거
         text = re.sub(r'<[^>]+>', '', text)
         
-        # 2. 이모지 및 특수문자 제거 (한글, 영문, 숫자, 공백만 유지)
-        text = re.sub(r'[^\w\s가-힣]', ' ', text)
+        # 2. 이모지 제거 (한글, 영문, 숫자, 공백 및 필수 기호 ~, -, , 유지)
+        text = re.sub(r'[^\w\s가-힣~\-,]', ' ', text)
         
         # 3. 연속 공백 정리
         text = re.sub(r'\s+', ' ', text)
@@ -146,34 +146,34 @@ class RoomParserService:
         if regex_result.get("max_capacity"):
             logger.debug(f"Regex 파싱 성공: {name}")
             return regex_result
-        
+
         # Level 3: Noise Reduction + LLM (느리지만 정확)
         clean_name = self._clean_text_for_llm(name)
         clean_desc = self._clean_text_for_llm(desc or "")
-        
+
         prompt = ROOM_PARSE_PROMPT.format(
             name=clean_name,
             desc=clean_desc or "내용 없음"
         )
-        
+
         # Ollama LLM 파싱 시도
         response = await self.ollama_client.generate(prompt)
-        
+
         if response:
             try:
                 result = self._extract_json_from_response(response)
                 parsed = json.loads(result)
-                
+
                 # 파싱 결과 검증
                 if self._validate_parsed_result(parsed):
                     return parsed
-                    
+
                 logger.warning(f"파싱 결과 검증 실패 for {name}. Fallback to Regex.")
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON 파싱 실패 for {name}: {e}. Fallback to Regex.")
-        
-        # Fallback: 정규표현식 파싱
-        return self._parse_with_regex(name, desc)
+
+        # Level 4 Fallback: Level 2에서 이미 계산한 regex_result 재사용
+        return regex_result
 
     def _extract_json_from_response(self, text: str) -> str:
         """LLM 응답에서 JSON 부분만 추출 (마크다운 코드블록 제거)."""
