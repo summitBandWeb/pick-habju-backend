@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests
+tests/
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+
+# CI/CD (EC2 관련)
+appspec.yml
+scripts/
+
+# 문서 및 설정
+README.md
+convention.txt
+docs/
+
+# GitHub
+.github/
+
+# 로컬 개발
+*.log
+*.pid
+access.log
+
+# 환경 파일 (주의: 필요시 제외 해제)
+.env
+.env.*
