@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - dev
+      - hotfix/136-test-env-fix
 
 env:
   # GCP 프로젝트 설정
