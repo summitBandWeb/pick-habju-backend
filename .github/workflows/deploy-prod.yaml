@@ -53,6 +53,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.PROD_SUPABASE_KEY }}
           GROOVE_BASE_URL: ${{ secrets.GROOVE_BASE_URL }}
           DREAM_BASE_URL: ${{ secrets.DREAM_BASE_URL }}
+          LOGIN_ID: ${{ secrets.LOGIN_ID }}
+          LOGIN_PW: ${{ secrets.LOGIN_PW }}
         run: |
           source venv/bin/activate
           pip install pytest-json-report
@@ -147,31 +149,26 @@ jobs:
 
       - name: Backup Prod Database (before migration)
         env:
-          SUPABASE_DB_HOST: ${{ secrets.PROD_SUPABASE_DB_HOST }}
-          SUPABASE_DB_USER: ${{ secrets.PROD_SUPABASE_DB_USER }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.PROD_SUPABASE_DB_PASSWORD }}
         run: |
           # 마이그레이션 파일이 있을 때만 백업 실행
           if [ -d "supabase/migrations" ] && [ "$(ls -A supabase/migrations/*.sql 2>/dev/null)" ]; then
             echo "📦 Creating database backup before migration..."
             
-            # PostgreSQL 17 클라이언트 설치 (Supabase 서버 버전과 일치)
-            sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-            wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-            sudo apt-get update && sudo apt-get install -y postgresql-client-17
+            # Supabase CLI 설치
+            mkdir -p /tmp/supabase-cli
+            curl -sSL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz | tar -xz -C /tmp/supabase-cli
+            sudo mv /tmp/supabase-cli/supabase /usr/local/bin/supabase
+            
+            # 프로젝트 연결
+            supabase link --project-ref ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
             
             # 백업 파일명 (타임스탬프 포함)
             BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
             
-            # pg_dump로 백업 (Session Pooler 사용)
-            PGPASSWORD="${SUPABASE_DB_PASSWORD}" pg_dump \
-              -h "${SUPABASE_DB_HOST}" \
-              -p 5432 \
-              -U "${SUPABASE_DB_USER}" \
-              -d postgres \
-              --no-owner \
-              --no-acl \
-              -f "${BACKUP_FILE}"
+            # supabase db dump로 백업 (Direct Connection 자동 사용)
+            supabase db dump -f "${BACKUP_FILE}"
             
             echo "✅ Backup created: ${BACKUP_FILE}"
             echo "📊 Backup size: $(du -h ${BACKUP_FILE} | cut -f1)"

@@ -26,13 +26,6 @@ from app.exception.envelope_handlers import (
 from app.utils.client_loader import close_global_client, set_global_client
 
 
-ALLOWED_ORIGINS_SET = {
-    "https://www.pickhabju.com",
-    "https://pickhabju.com",
-    # 필요시 추가
-}
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 설정
@@ -65,21 +58,11 @@ app.state.limiter = limiter
 
 # CORS 설정 (환경변수 기반)
 # 라우터보다 먼저 추가되어야 CORS 헤더가 올바르게 적용됩니다.
-# origins = ALLOWED_ORIGINS + ["https://6w9bh0usvh.execute-api.ap-northeast-2.amazonaws.com"] # API Gateway URL 추가
-
-origins = list(
-    {
-        *ALLOWED_ORIGINS,
-        "https://www.pickhabju.com",
-        "https://pickhabju.com",
-        # 개발용 필요하면 여기에 추가:
-        # "http://localhost:3000", "http://localhost:5173",
-    }
-)
+# ALLOWED_ORIGINS는 config.py에서 환경변수 기반으로 구성됩니다.
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],

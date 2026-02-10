@@ -53,6 +53,8 @@ jobs:
           SUPABASE_KEY: ${{ secrets.ALPHA_SUPABASE_KEY }}
           GROOVE_BASE_URL: ${{ secrets.GROOVE_BASE_URL }}
           DREAM_BASE_URL: ${{ secrets.DREAM_BASE_URL }}
+          LOGIN_ID: ${{ secrets.LOGIN_ID }}
+          LOGIN_PW: ${{ secrets.LOGIN_PW }}
         run: |
           source venv/bin/activate
           pip install pytest-json-report
