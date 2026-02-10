@@ -1,5 +1,10 @@
 import logging
 import asyncio
+import json
+import os
+import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Optional
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
@@ -116,6 +121,9 @@ class RoomCollectionService:
         await self._save_to_db(business, rooms, parsed_results)
         logger.info(f"Successfully saved business {business_id} with {len(rooms)} rooms")
 
+        # 4. Export unresolved items (Phase 6: Manual verification queue)
+        await self._export_unresolved(business, rooms, parsed_results)
+
     async def _parse_with_concurrency(self, items: List[Dict]) -> Dict[str, Dict]:
         """Parse items in concurrent batches."""
         if not items:
@@ -175,8 +183,14 @@ class RoomCollectionService:
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
             # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            new_max_cap = parsed.get("max_capacity") or self.MANUAL_REVIEW_FLAG
-            new_rec_cap = parsed.get("recommend_capacity") or self.MANUAL_REVIEW_FLAG
+            new_max_cap = parsed.get("max_capacity")
+            if new_max_cap is None:
+                new_max_cap = self.MANUAL_REVIEW_FLAG
+                
+            new_rec_cap = parsed.get("recommend_capacity")
+            if new_rec_cap is None:
+                new_rec_cap = self.MANUAL_REVIEW_FLAG
+                
             new_price = self._extract_price(room)
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
@@ -185,13 +199,16 @@ class RoomCollectionService:
             final_price = new_price
 
             if existing:
-                # If new max_capacity is default(1) but existing is valid(>1), keep existing
-                if new_max_cap <= 1 and existing.get("max_capacity", 0) > 1:
-                    final_max_cap = existing["max_capacity"]
+                existing_max = existing.get("max_capacity", 0)
+                existing_rec = existing.get("recommend_capacity", 0)
+
+                # [Logic] 기존 값이 유효하고(>1), 새 값이 기본값(1)이거나 수동검토플래그(100)인 경우 기존 값 보존
+                # 단, 기존 값 자체가 100인 경우는 제외
+                if (new_max_cap <= 1 or new_max_cap == self.MANUAL_REVIEW_FLAG) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
+                    final_max_cap = existing_max
                 
-                # If new recommend_capacity is default(1) but existing is valid(>1), keep existing
-                if new_rec_cap <= 1 and existing.get("recommend_capacity", 0) > 1:
-                    final_rec_cap = existing["recommend_capacity"]
+                if (new_rec_cap <= 1 or new_rec_cap == self.MANUAL_REVIEW_FLAG) and existing_rec > 1 and existing_rec != self.MANUAL_REVIEW_FLAG:
+                    final_rec_cap = existing_rec
 
                 # If new price is 0/None but existing is valid, keep existing
                 # Note: self._extract_price returns None if missing, which is not > 0.
@@ -225,3 +242,86 @@ class RoomCollectionService:
             return None
         # Use minPrice as the base price
         return min_max.get("minPrice")
+
+    async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
+        """
+        Export unresolved parsing results to JSON file for manual LLM verification.
+
+        Phase 6: When parsing is incomplete (especially when no capacity info is found),
+        export the original crawled text to a JSON file for later manual verification.
+        """
+        unresolved_items = []
+
+        for room in rooms:
+            rid = room["bizItemId"]
+            parsed = parsed_results.get(rid, {})
+
+            # Identify unresolved items based on capacity parsing failures
+            max_capacity = parsed.get("max_capacity")
+            failure_reason = None
+
+            if max_capacity is None:
+                failure_reason = "no_capacity_info"
+            elif max_capacity == self.MANUAL_REVIEW_FLAG:
+                failure_reason = "manual_review_flag"
+
+            # Only export if there's a failure reason
+            if failure_reason:
+                unresolved_item = {
+                    "business_id": business["businessId"],
+                    "business_name": business["businessDisplayName"],
+                    "biz_item_id": rid,
+                    "raw_name": room["name"],
+                    "raw_desc": room.get("desc"),
+                    "parsed_result": parsed,
+                    "failure_reason": failure_reason,
+                    "price_per_hour": self._extract_price(room),
+                    "exported_at": datetime.now().isoformat()
+                }
+                unresolved_items.append(unresolved_item)
+
+        # If there are unresolved items, export them
+        if unresolved_items:
+            # 환경변수로 경로 설정 가능, 기본값은 프로젝트 루트/scripts/unresolved
+            default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
+            export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate filename with current date
+            date_str = datetime.now().strftime("%Y%m%d")
+            export_file = export_dir / f"unresolved_{date_str}.json"
+
+            # Load existing data if file exists, otherwise start with empty list
+            existing_data = []
+            if export_file.exists():
+                try:
+                    with open(export_file, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to read existing unresolved file: {e}")
+
+            # Append new unresolved items with duplicate check
+            existing_ids = {item["biz_item_id"] for item in existing_data}
+            new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
+
+            if new_items:
+                existing_data.extend(new_items)
+
+                # Atomic write: temp file → rename으로 중간 상태 방지
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=str(export_dir), suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                        json.dump(existing_data, f, ensure_ascii=False, indent=2)
+                    # os.replace는 원자적 (같은 파일시스템 내)
+                    os.replace(tmp_path, str(export_file))
+                except Exception:
+                    # 실패 시 임시 파일 정리
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                    raise
+
+                logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
+            else:
+                logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
