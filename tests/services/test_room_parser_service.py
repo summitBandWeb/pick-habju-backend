@@ -155,10 +155,22 @@ class TestParseWithRegex:
         assert result["max_capacity"] == 15
 
     def test_paren_dash_capacity_small(self, parser):
-        """'C룸 (-6명)' 소규모 괄호 패턴"""
+        """'C룸 (-6명)' 소규모 괄호 패턴 인식"""
         result = parser._parse_with_regex("C룸 (-6명)", "장비 목록만 있는 설명")
         assert result["clean_name"] == "C룸"
         assert result["max_capacity"] == 6
+
+    def test_suryong_ganeung_pattern(self, parser):
+        """'N인 수용 가능' 패턴 인식 (Pattern 4/5 경계)"""
+        result = parser._parse_with_regex("룸", "10인 수용 가능")
+        assert result["max_capacity"] == 10
+
+    def test_equipment_model_false_positive(self, parser):
+        """장비 모델명(OB1-500)이 인원으로 오파싱되지 않는지 확인 (회귀 테스트)"""
+        # '인/명' 접미사가 없으므로 파싱되지 않아야 함
+        result = parser._parse_with_regex("룸A", "Orange OB1-500 Head, Marshall 앰프")
+        assert result["max_capacity"] is None
+
 
 
 class TestExtractJsonFromResponse:
@@ -365,10 +377,14 @@ class TestMultiLevelParsing:
         assert "10" in result
         assert "✨" not in result
     
-    def test_clean_text_normalizes_whitespace(self, parser):
-        """연속 공백 정리"""
-        result = parser._clean_text_for_llm("최대   10   명")
-        assert "  " not in result
+    def test_clean_text_preserves_allowed_chars(self, parser):
+        """인원/가격 관련 특수문자(~, -, ,) 보존 확인"""
+        result = parser._clean_text_for_llm("4~6인, 1인당 3,000원")
+        assert "~" in result
+        assert "-" not in result # 4~6인은 ~만 있음
+        assert "," in result
+        assert "3,000" in result
+
 
 
 class TestExportUnresolved:
