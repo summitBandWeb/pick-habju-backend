@@ -1,0 +1,129 @@
+# .github/workflows/ci-cd.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  PROJECT_DIR: /home/ubuntu/pick-habju-backend
+
+jobs:
+  # 1. 테스트 잡(Job)
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 셋업 및 가상환경 생성
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip' # 패키지 캐싱으로 설치 속도 향상
+          cache-dependency-path: ./requirements.txt
+
+      - name: 가상환경 활성화 및 패키지 설치
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r ./requirements.txt
+
+      - name: 테스트 실행 (가상환경 내에서)
+        id: pytest_run
+        # pytest 결과를 test_output.txt 파일로 리디렉션합니다.
+        # --json-report 옵션과 --json-report-file 옵션을 사용하여
+        # 테스트 결과를 JSON 형식으로 저장하면 파싱하기 더 쉽습니다.
+        # 이 기능을 사용하려면 'pytest-json-report' 플러그인이 필요합니다.
+        # 아니면 --tb=long 등으로 자세한 traceback을 텍스트로 뽑아내도 됩니다.
+        run: |
+          source venv/bin/activate
+          # pytest-json-report 설치 (만약 requirements.txt에 없다면)
+          pip install pytest-json-report
+          # 테스트 결과를 JSON 파일로 저장합니다.
+          pytest --json-report --json-report-file=test_results.json || true
+          # pytest가 실패해도 워크플로우가 다음 스텝으로 진행되도록 '|| true'를 붙입니다.
+          # 이렇게 해야 실패 알림을 보낼 수 있습니다.
+        continue-on-error: true # 이 스텝에서 오류가 나도 다음 스텝을 진행합니다.
+
+      - name: 테스트 결과 요약 및 Discord 알림 전송
+        if: failure() && steps.pytest_run.outcome == 'failure'
+        run: |
+          # test_results.json 파일이 존재하는지 확인합니다.
+          if [ -f test_results.json ]; then
+            # jq를 사용하여 실패한 테스트 파일 경로를 추출합니다.
+            # jq는 JSON 데이터를 파싱하는 도구이며, GitHub Actions 런너에 보통 설치되어 있습니다.
+            FAILED_TESTS=$(jq -r '.summary.failed // 0' test_results.json)
+            # 실패한 테스트 목록을 추출 (첫 5개만 예시로 가져옵니다)
+            FAILED_TEST_DETAILS=$(jq -r '.report.tests[] | select(.outcome == "failed") | .nodeid' test_results.json | head -n 5)
+            
+            # 실패한 테스트에 대한 상세 정보를 Discord 메시지에 포함합니다.
+            if [ "$FAILED_TESTS" -gt 0 ]; then
+                DETAILS_MESSAGE="**실패한 테스트 개수**: ${FAILED_TESTS}\n"
+                DETAILS_MESSAGE="${DETAILS_MESSAGE}**실패 테스트 목록 (일부)**:\n\`\`\`\n${FAILED_TEST_DETAILS}\n\`\`\`"
+            else
+                DETAILS_MESSAGE="테스트 실패 상세 정보를 가져올 수 없습니다."
+            fi
+          else
+            DETAILS_MESSAGE="테스트 결과 JSON 파일을 찾을 수 없습니다."
+          fi
+
+          curl -H "Content-Type: application/json" -d "{
+            \"content\": \"🚨 **테스트 실패!** 배포가 중단되었습니다.\",
+            \"embeds\": [
+              {
+                \"title\": \"실패한 워크플로우 바로가기\",
+                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+                \"color\": 15158332,
+                \"fields\": [
+                  { \"name\": \"Repository\", \"value\": \"${{ github.repository }}\", \"inline\": true },
+                  { \"name\": \"Commit\", \"value\": \"\`${{ github.sha }}\`\", \"inline\": true },
+                  { \"name\": \"실패 상세\", \"value\": \"${DETAILS_MESSAGE}\", \"inline\": false }
+                ]
+              }
+            ]
+          }" ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # 2. 배포 잡(Job) - SSH를 통해 EC2에 git pull
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH로 EC2에 접속하여 배포
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            # 1. 프로젝트 디렉토리로 이동
+            cd ${{ env.PROJECT_DIR }}
+
+            # 2. git pull로 최신 코드 가져오기
+            git pull origin main # 또는 master
+
+            # 3. 애플리케이션 재시작
+            # 이 스크립트 파일이 EC2에 존재해야 합니다.
+            # 예: /home/ubuntu/pick-habju-backend/scripts/deploy.sh
+            bash ./scripts/deploy.sh
+
+      - name: Discord에 배포 성공 알림 전송
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "✅ **배포 성공!**",
+            "embeds": [
+              {
+                "title": "배포된 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 3066993,
+                "fields": [
+                  { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
