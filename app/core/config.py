@@ -49,6 +49,9 @@ _DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://www.pickhabju.com",
+    "https://pickhabju.com",
+    "https://www.dev-pickhabju.store",
 ]
 
 # 우선순위: CORS_ALLOWED_ORIGINS(복수) > FRONTEND_ORIGINS(복수) > FRONTEND_URL(단일)
