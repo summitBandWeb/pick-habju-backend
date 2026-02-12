@@ -157,6 +157,7 @@ class RoomCollectionService:
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
+            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
         }
@@ -225,11 +226,13 @@ class RoomCollectionService:
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap,
                 "recommend_capacity": final_rec_cap,
-                # "created_at": "now()", # Schema does not have created_at
+                # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
+                "recommend_capacity_range": parsed.get("recommend_capacity_range") or [final_rec_cap, final_rec_cap],
+                "price_config": parsed.get("price_config", []),
                 "base_capacity": parsed.get("base_capacity"),
                 "extra_charge": parsed.get("extra_charge"),
                 "requires_call_on_sameday": parsed.get("requires_call_on_same_day") or False,
-                "image_urls": image_urls # Save to JSONB column
+                "image_urls": image_urls  # Save to JSONB column
             }
             
             # Upsert Room
