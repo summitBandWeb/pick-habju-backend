@@ -227,7 +227,13 @@ class RoomCollectionService:
                 "max_capacity": final_max_cap,
                 "recommend_capacity": final_rec_cap,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
-                "recommend_capacity_range": parsed.get("recommend_capacity_range") or [final_rec_cap, final_rec_cap],
+                "recommend_capacity_range": self._calculate_capacity_range(
+                    parsed.get("recommend_capacity_range"),
+                    final_rec_cap,
+                    final_max_cap,
+                    parsed.get("base_capacity"),
+                    parsed.get("extra_charge")
+                ),
                 "price_config": parsed.get("price_config", []),
                 "base_capacity": parsed.get("base_capacity"),
                 "extra_charge": parsed.get("extra_charge"),
@@ -245,6 +251,42 @@ class RoomCollectionService:
             return None
         # Use minPrice as the base price
         return min_max.get("minPrice")
+
+    def _calculate_capacity_range(
+        self,
+        parsed_range: Optional[List[int]],
+        rec_cap: int,
+        max_cap: int,
+        base_cap: Optional[int],
+        extra_charge: Optional[int]
+    ) -> List[int]:
+        """추가 요금 유무에 따라 권장 인원 범위 계산
+        
+        1. 파싱된 범위가 있으면 우선 사용 (단, 유효성 검증 필요)
+        2. 추가 요금 발생 시: [base_cap, max_cap]
+        3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
+        """
+        # 1. 파싱된 값이 유효하면 사용 (단, 현재 LLM이 범위를 잘 못 뽑는 경향이 있어 계산 로직 우선 고려)
+        # 정책: LLM보다 규칙 기반 계산을 우선시함 (일관성 위해)
+        
+        # 2. 추가 요금 있는 경우
+        if extra_charge and extra_charge > 0 and base_cap:
+            # min: base_cap, max: max_cap
+            # 단, max_cap < base_cap인 비정상 데이터 방어
+            real_max = max(max_cap, base_cap)
+            return [base_cap, real_max]
+            
+        # 3. 추가 요금 없는 경우 (기본)
+        # min: rec_cap, max: rec_cap + 2
+        # 단, max_cap을 넘지 않도록 제한
+        min_c = rec_cap
+        max_c = min(rec_cap + 2, max_cap)
+        
+        # 만약 rec_cap + 2 > max_cap 이라서 max_c가 min_c보다 작아지는 경우 방어
+        # (예: rec=5, max=5 -> min=5, max=5)
+        max_c = max(max_c, min_c)
+        
+        return [min_c, max_c]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """
