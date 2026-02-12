@@ -120,11 +120,17 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
     """
-    Rate Limit 초과 시 발생하는 예외를 ApiResponse 포맷으로 변환
+    Rate Limit 초과 예외 핸들러
     
-    Rationale:
-        slowapi의 RateLimitExceeded 예외를 비즈니스 예외(RateLimitException)로
-        변환하여 custom_exception_handler를 재사용합니다.
+    slowapi의 RateLimitExceeded 예외를 비즈니스 예외(RateLimitException)로 변환하여
+    일관된 에러 응답 포맷을 유지합니다.
+
+    Args:
+        request (Request): FastAPI Request 객체
+        exc (RateLimitExceeded): 발생한 Rate Limit 예외
+
+    Returns:
+        JSONResponse: 429 Too Many Requests 응답
     """
     rate_limit_exc = RateLimitException()
     return await custom_exception_handler(request, rate_limit_exc)

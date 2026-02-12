@@ -17,8 +17,15 @@ logger = logging.getLogger(__name__)
 
 class TraceIDMiddleware(BaseHTTPMiddleware):
     """
-    모든 요청에 대해 고유한 Trace ID를 관리합니다.
-    클라이언트가 X-Trace-ID 헤더를 보내면 이를 사용하고, 없으면 신규 UUID를 생성(Fallback)합니다.
+    HTTP 요청 추적을 위한 Trace ID 관리 미들웨어
+    
+    모든 요청에 대해 고유 식별자(Trace ID)를 부여하고 관리합니다.
+    - 요청 헤더(X-Trace-ID)가 존재하면 해당 값을 사용 (분산 추적 연동)
+    - 없으면 새로운 UUIDv4를 생성하여 할당 (Fallback)
+    - 응답 헤더(X-Trace-ID)에 포함하여 클라이언트에 반환
+
+    Attributes:
+        TRACE_ID_HEADER (str): "X-Trace-ID"
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:

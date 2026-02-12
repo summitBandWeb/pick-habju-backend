@@ -9,7 +9,7 @@ from app.core.context import get_trace_id
 
 class LogMasker:
     """민감 정보를 마스킹하는 유틸리티 클래스"""
-    SENSITIVE_KEYS = {
+    SENSITIVE_KEYS: set[str] = {
         "password", "passwd", "token", "access_token", "refresh_token",
         "secret", "key", "api_key", "supabase_key", "device_id", "x-device-id",
         "authorization", "cookie"
