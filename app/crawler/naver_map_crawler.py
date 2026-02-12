@@ -4,6 +4,7 @@ import logging
 from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
+from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
 
 logger = logging.getLogger(__name__)
 
@@ -141,22 +142,7 @@ class NaverMapCrawler:
         Sequential execution for stability on Windows.
         Returns list of collected business Item dicts (deduplicated).
         """
-        # Seoul 25 districts
-        seoul_districts = [
-            "강남구 합주실", "강동구 합주실", "강북구 합주실", "강서구 합주실", "관악구 합주실",
-            "광진구 합주실", "구로구 합주실", "금천구 합주실", "노원구 합주실", "도봉구 합주실",
-            "동대문구 합주실", "동작구 합주실", "마포구 합주실", "서대문구 합주실", "서초구 합주실",
-            "성동구 합주실", "성북구 합주실", "송파구 합주실", "양천구 합주실", "영등포구 합주실",
-            "용산구 합주실", "은평구 합주실", "종로구 합주실", "중구 합주실", "중랑구 합주실"
-        ]
-        
-        # Major Metropolitan Cities & Areas
-        major_cities = [
-            "부산 합주실", "대구 합주실", "인천 합주실", "광주 합주실", "대전 합주실", "울산 합주실",
-            "수원 합주실", "성남 합주실", "고양 합주실", "부천 합주실"
-        ]
-        
-        all_queries = seoul_districts + major_cities
+        all_queries = SEOUL_DISTRICTS + MAJOR_CITIES
         logger.info(f"Starting sequential crawl for {len(all_queries)} regions...")
         
         all_results = {}
