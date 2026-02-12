@@ -69,10 +69,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 미들웨어 설정 (순서 주의: 후순위로 추가된 것이 먼저 실행됨)
-# OUTERMOST (실행 순서 1) -> Trace ID: 모든 요청에 고유 ID 부여 및 로깅 컨텍스트 설정
-# MIDDLE    (실행 순서 2) -> Cache-Control: API 응답 캐시 방지
+# 미들웨어 설정 (FastAPI는 LIFO: 마지막에 추가된 것이 가장 먼저 실행됨)
+# 따라서 아래에서 위로 읽으면 실제 실행 순서와 일치합니다.
 # INNERMOST (실행 순서 3) -> Real IP: 실제 IP 추출 및 요청 정보 로깅
+# MIDDLE    (실행 순서 2) -> Cache-Control: API 응답 캐시 방지
+# OUTERMOST (실행 순서 1) -> Trace ID: 모든 요청에 고유 ID 부여 및 로깅 컨텍스트 설정
 app.add_middleware(RealIPMiddleware)
 app.add_middleware(CacheControlMiddleware)
 app.add_middleware(TraceIDMiddleware)
