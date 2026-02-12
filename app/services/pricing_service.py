@@ -22,7 +22,7 @@ Rationale:
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 import math
 
 
@@ -37,11 +37,11 @@ class TimeBand(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    @field_validator("end_hour")
-    def validate_end_hour(cls, v, values):
-        if "start_hour" in values.data and v <= values.data["start_hour"]:
+    @model_validator(mode="after")
+    def validate_end_hour(self):
+        if self.end_hour <= self.start_hour:
             raise ValueError("end_hour must be greater than start_hour")
-        return v
+        return self
 
 
 class PriceRule(BaseModel):
