@@ -46,7 +46,7 @@ class LogMasker:
     def mask_dict(cls, data: Any) -> Any:
         if isinstance(data, dict):
             return {
-                k: (cls.mask_dict(v) if k.lower() not in cls.ALL_SENSITIVE else "***")
+                k: ("***" if k.lower() in cls.ALL_SENSITIVE else cls.mask_dict(v))
                 for k, v in data.items()
             }
         elif isinstance(data, list):
