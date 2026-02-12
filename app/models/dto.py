@@ -14,9 +14,12 @@ class RoomDetail(BaseModel):
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
-    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+    recommendCapacity: Union[int, List[int]] = Field(alias="recommend_capacity", description="Recommended capacity")
+
+    # 신규 필드 추가 (v2.0.0 Metadata)
+    recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="Recommended capacity range [min, max]")
+    priceConfig: Optional[List[Dict[str, Any]]] = Field(None, alias="price_config", description="Dynamic price configuration")
     
-    # 신규 필드 추가
     baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
     extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
     lat: Optional[float] = Field(None, description="Branch latitude")
