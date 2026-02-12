@@ -8,6 +8,7 @@ Rationale:
 """
 
 import uuid
+import re
 import json
 import logging
 import pytest
@@ -52,6 +53,10 @@ class TestTraceIDMiddleware:
         assert trace_id is not None, "X-Trace-ID 응답 헤더가 없습니다"
 
         # NOTE: UUIDv4 형식인지 검증 (하이픈 포함 36자)
+        # 사용자 요청에 따른 정규식 검증 추가
+        uuid_pattern = r'^[0-9a-f-]{36}$'
+        assert re.match(uuid_pattern, trace_id, re.IGNORECASE)
+        
         parsed = uuid.UUID(trace_id, version=4)
         assert str(parsed) == trace_id
 

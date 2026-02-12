@@ -44,14 +44,18 @@ class LogMasker:
     ALL_SENSITIVE = SENSITIVE_KEYS | SENSITIVE_HEADERS
 
     @classmethod
-    def mask_dict(cls, data: Any) -> Any:
+    def mask_dict(cls, data: Any, depth: int = 0) -> Any:
+        # 순환 참조 및 너무 깊은 중첩 방지 (최대 10단계)
+        if depth > 10:
+            return str(data)
+
         if isinstance(data, dict):
             return {
-                k: ("***" if k.lower() in cls.ALL_SENSITIVE else cls.mask_dict(v))
+                k: ("***" if k.lower() in cls.ALL_SENSITIVE else cls.mask_dict(v, depth + 1))
                 for k, v in data.items()
             }
         elif isinstance(data, list):
-            return [cls.mask_dict(i) for i in data]
+            return [cls.mask_dict(i, depth + 1) for i in data]
         return data
 
     @classmethod

@@ -175,6 +175,25 @@ class TestLogMaskerDict:
         result = LogMasker.mask_dict([])
         assert result == []
 
+    def test_mask_none_value(self):
+        """값에 None이 포함된 경우 에러 없이 처리되는지 검증"""
+        data = {"password": None, "user": "test"}
+        masked = LogMasker.mask_dict(data)
+        # None도 민감 키라면 마스킹됨 (구현상 ***로 대체됨)
+        assert masked["password"] == "***"
+        assert masked["user"] == "test"
+
+    def test_mask_circular_reference(self):
+        """순환 참조나 깊은 중첩 시 RecursionError 대신 문자열 변환 등으로 안전하게 처리되는지 검증"""
+        data = {"a": {}}
+        data["a"]["parent"] = data  # 순환 참조
+        
+        # 깊이 제한(10)에 걸려 에러 없이 반환되어야 함
+        result = LogMasker.mask_dict(data)
+        assert isinstance(result, dict)
+        # 특정 깊이 이상은 문자열로 변환됨을 확인
+        # 정확한 구조 검증보다는 에러가 발생하지 않는 것이 중요
+
 
 # =============================================================================
 # SensitiveDataFilter 에지 케이스
