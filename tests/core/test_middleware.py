@@ -57,13 +57,38 @@ class TestTraceIDMiddleware:
 
     @pytest.mark.asyncio
     async def test_trace_id_passthrough(self, client):
-        """클라이언트가 보낸 X-Trace-ID가 그대로 응답에 반환되는지 검증"""
-        custom_trace_id = "custom-trace-12345-abcde"
+        """클라이언트가 보낸 유효한 X-Trace-ID가 그대로 응답에 반환되는지 검증"""
+        # 유효한 UUID v4 형식 사용
+        valid_trace_id = str(uuid.uuid4())
         response = await client.get(
-            "/ping", headers={"X-Trace-ID": custom_trace_id}
+            "/ping", headers={"X-Trace-ID": valid_trace_id}
         )
 
-        assert response.headers.get("X-Trace-ID") == custom_trace_id
+        assert response.headers.get("X-Trace-ID") == valid_trace_id
+
+    @pytest.mark.asyncio
+    async def test_trace_id_invalid_ignored(self, client):
+        """
+        잘못된 형식(악성 스크립트, 비표준 포맷)의 Trace ID는 무시되고
+        새로운 UUID가 발급되어야 함을 검증
+        """
+        invalid_ids = [
+            "<script>alert(1)</script>",
+            "not-a-uuid-format",
+            "12345",
+            "../etc/passwd"
+        ]
+
+        for invalid_id in invalid_ids:
+            response = await client.get(
+                "/ping", headers={"X-Trace-ID": invalid_id}
+            )
+            
+            trace_id = response.headers.get("X-Trace-ID")
+            assert trace_id is not None
+            assert trace_id != invalid_id
+            # 새로 생성된 값은 UUID 형식이어야 함
+            uuid.UUID(trace_id, version=4)
 
 
 # =============================================================================
@@ -188,7 +213,8 @@ class TestMiddlewareChain:
     @pytest.mark.asyncio
     async def test_middleware_chain_all_headers(self, client):
         """모든 미들웨어가 협력하여 헤더가 올바르게 설정되는지 E2E 검증"""
-        custom_trace = "e2e-test-trace-001"
+        # 보안 강화로 인해 유효한 UUID만 허용됨
+        custom_trace = str(uuid.uuid4())
         response = await client.get(
             "/api/v1/available",
             headers={
