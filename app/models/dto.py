@@ -14,7 +14,15 @@ class RoomDetail(BaseModel):
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
-    recommendCapacity: Union[int, List[int]] = Field(alias="recommend_capacity", description="Recommended capacity")
+    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+
+    @field_validator('recommendCapacity', mode='before')
+    @classmethod
+    def normalize_recommend_capacity(cls, v: Any) -> int:
+        """레거시 데이터 호환: 리스트로 들어올 경우 첫 번째 값을 사용"""
+        if isinstance(v, list):
+            return v[0] if v else 0
+        return v
 
     # 신규 필드 추가 (v2.0.0 Metadata)
     recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="Recommended capacity range [min, max]")
