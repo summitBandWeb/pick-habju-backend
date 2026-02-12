@@ -347,3 +347,36 @@ class TestJsonFormatter:
 
         assert "합주실 예약이 완료되었습니다" in parsed["message"]
         assert "🎸" in parsed["message"]
+
+
+# =============================================================================
+# setup_logging 권한 설정 테스트
+# =============================================================================
+
+class TestSetupLogging:
+    """
+    setup_logging 보안 설정 테스트
+    
+    Rationale:
+        로그 파일이 생성된 후 권한이 안전하게(0600) 설정되는지 검증합니다.
+    """
+
+    @patch("app.core.logging_config.os.chmod")
+    @patch("app.core.logging_config.os.path.exists")
+    @patch("app.core.logging_config.os.makedirs")
+    @patch("app.core.logging_config.logging")
+    @patch("app.core.logging_config.TimedRotatingFileHandler")
+    def test_setup_logging_permissions(self, mock_handler, mock_logging, mock_makedirs, mock_exists, mock_chmod):
+        """로그 파일 생성 후 권한이 0600(S_IRUSR | S_IWUSR)으로 설정되는지 검증"""
+        from app.core.logging_config import setup_logging
+        import stat
+        import os  # test 내부에서 os.path.join 사용
+        
+        # 설정: 파일이 존재한다고 가정
+        mock_exists.return_value = True
+        
+        setup_logging("logs")
+        
+        # 검증: chmod가 호출되었는지 확인
+        log_file = os.path.join("logs", "app.log")
+        mock_chmod.assert_called_with(log_file, stat.S_IRUSR | stat.S_IWUSR)

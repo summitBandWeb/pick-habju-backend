@@ -2,6 +2,7 @@ import logging
 import json
 import os
 import re
+import stat
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any
 from app.core.context import get_trace_id
@@ -197,3 +198,9 @@ def setup_logging(log_dir: str = "logs"):
     file_handler.setFormatter(json_formatter)
     file_handler.addFilter(sensitive_filter)
     root_logger.addHandler(file_handler)
+
+    # 파일 권한 설정 (소유자만 읽기/쓰기 가능 - 0600)
+    # 보안상 로그 파일은 다른 사용자가 읽을 수 없어야 함
+    log_file = os.path.join(log_dir, "app.log")
+    if os.path.exists(log_file):
+        os.chmod(log_file, stat.S_IRUSR | stat.S_IWUSR)
