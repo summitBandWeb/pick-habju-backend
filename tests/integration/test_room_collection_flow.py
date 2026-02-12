@@ -56,8 +56,10 @@ class TestCollectByIdFlow:
                 "day_type": "weekday",
                 "max_capacity": 6,
                 "recommend_capacity": 4,
+                "recommend_capacity_range": [4, 4],
                 "base_capacity": 4,
                 "extra_charge": 3000,
+                "price_config": [{"day_type": "weekday", "price_per_hour": 15000}],
                 "requires_call_on_same_day": False
             },
             "room2": {
@@ -65,8 +67,10 @@ class TestCollectByIdFlow:
                 "day_type": "weekend",
                 "max_capacity": 6,
                 "recommend_capacity": 5,
+                "recommend_capacity_range": [4, 6],
                 "base_capacity": None,
                 "extra_charge": None,
+                "price_config": [],
                 "requires_call_on_same_day": False
             }
         })
@@ -139,6 +143,9 @@ class TestCollectByIdFlow:
         assert room1_data["base_capacity"] == 4
         assert room1_data["extra_charge"] == 3000
         assert len(room1_data["image_urls"]) == 2
+        # [v2.0.0] 신규 필드 검증
+        assert room1_data["recommend_capacity_range"] == [4, 4]
+        assert room1_data["price_config"] == [{"day_type": "weekday", "price_per_hour": 15000}]
     
     # ============== IT03: Fetcher 실패 시 예외 ==============
     @pytest.mark.asyncio
