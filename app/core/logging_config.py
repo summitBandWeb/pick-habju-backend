@@ -10,17 +10,28 @@ from app.core.context import get_trace_id
 class LogMasker:
     """민감 정보를 마스킹하는 유틸리티 클래스"""
     # 1. 일반 변수/JSON 키: 공백이나 구분자(&, ,)로 값이 끝남
+    # 1. 일반 변수/JSON 키: 공백이나 구분자(&, ,)로 값이 끝남
     SENSITIVE_KEYS: set[str] = {
-        # Credentials
-        "password", "passwd", "pwd", "secret", "key", "api_key", "apikey",
-        "token", "access_token", "refresh_token", "session_id", "auth_code",
-        "verification_code", "client_secret",
-        "supabase_key",
+        # Credentials - Basic
+        "password", "passwd", "pwd", "pass",
+        "secret", "secret_key", "client_secret",
+        "key", "api_key", "apikey", "private_key", "public_key", "supabase_key",
+        
+        # Credentials - Token & Auth
+        "token", "access_token", "refresh_token", "id_token", "bearer",
+        "authorization", "auth", "x-api-key",
+        "cookie", "session", "session_id", "sessionid",
 
-        # PII
+        # Device & Identity
+        "device_id", "x-device-id",
+        
+        # PII (Personal Identifiable Information)
         "user_id", "email", "phone", "mobile", "address",
         "ssn", "resident_number",
-        "credit_card", "card_number", "cvc", "cvv", "account_number"
+        "credit_card", "card_number", "cvc", "cvv", "account_number",
+        
+        # Infrastructure
+        "database_url", "db_password", "connection_string"
     }
 
     # 2. 헤더류: 값이 공백을 포함할 수 있으며, 세미콜론(;)이나 줄바꿈으로 끝남
