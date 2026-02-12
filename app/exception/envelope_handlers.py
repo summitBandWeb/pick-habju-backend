@@ -92,22 +92,23 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
     모든 예외(500 포함)를 ApiResponse 포맷으로 변환
     
     Rationale:
-        예상치 못한 서버 에러가 발생해도 프론트엔드는 항상
-        isSuccess: false 형태의 JSON을 받게 됩니다.
+        예상치 못한 서버 에러 발생 시 상세 스택 트레이스는 로그에만 기록하고,
+        클라이언트에게는 일반적인 메시지만 반환하여 보안을 강화합니다.
     """
+    # 상세 로그 기록 (Trace ID는 로깅 필터에서 자동으로 주입됨)
     logger.exception(
-        "Unhandled Exception",
+        f"Unhandled Exception: {str(exc)}",
         extra={
             "path": request.url.path,
             "method": request.method,
-            "client": request.client.host if request.client else None
+            "client_ip": request.client.host if request.client else None,
         }
     )
     
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
-            message="서버 내부 오류가 발생했습니다.",
+            message="서버 내부 오류가 발생했습니다. 담당자에게 문의해주세요.",
             code=ErrorCode.INTERNAL_ERROR,
             result={
                 "error_detail": str(exc),

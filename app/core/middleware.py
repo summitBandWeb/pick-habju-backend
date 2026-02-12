@@ -6,11 +6,38 @@
 # =============================================================================
 
 import logging
+import uuid
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from app.core.context import set_trace_id
 
 logger = logging.getLogger(__name__)
+
+
+class TraceIDMiddleware(BaseHTTPMiddleware):
+    """
+    모든 요청에 대해 고유한 Trace ID를 관리합니다.
+    클라이언트가 X-Trace-ID 헤더를 보내면 이를 사용하고, 없으면 신규 UUID를 생성(Fallback)합니다.
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # 1. 클라이언트가 보낸 Trace ID 확인 (우선순위 높음)
+        trace_id = request.headers.get("X-Trace-ID")
+        
+        # 2. 없으면 신규 생성 (Fallback for Swagger, Postman, internal calls)
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
+        
+        # 3. 컨텍스트 변수에 설정 (로거에서 참조 가능)
+        set_trace_id(trace_id)
+        request.state.trace_id = trace_id
+        
+        response = await call_next(request)
+        
+        # 4. 응답 헤더에 Trace ID 포함
+        response.headers["X-Trace-ID"] = trace_id
+        return response
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
