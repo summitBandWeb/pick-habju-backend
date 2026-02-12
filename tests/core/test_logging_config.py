@@ -64,6 +64,34 @@ class TestLogMaskerString:
         result = LogMasker.mask_string(text)
 
         assert "eyJhbGciOiJ" not in result
+        assert "***" in result
+        # user 파라미터는 보존되어야 함
+        assert "user=test" in result or "test" in result
+
+    def test_mask_string_quoted_with_space(self):
+        """따옴표로 감싸진 값 내부의 공백이 있어도 마스킹되는지 검증"""
+        text = 'password="my secret value" token=\'another secret\''
+        result = LogMasker.mask_string(text)
+        
+        assert "my secret value" not in result
+        assert "another secret" not in result
+        assert 'password="***"' in result or "password='***'" in result
+        assert "token='***'" in result or 'token="***"' in result
+
+    def test_mask_string_query_string_separator(self):
+        """쿼리 스트링 구분자(&)가 있을 때 값만 정확히 마스킹되는지 검증"""
+        text = "token=abc12345&user_id=999&auth=xyz"
+        result = LogMasker.mask_string(text)
+        
+        assert "abc12345" not in result
+        assert "xyz" not in result
+        # user_id도 민감 키워드에 포함되어 있다면 마스킹됨 (SENSITIVE_KEYS 확인 필요)
+        # 만약 user_id가 민감 키라면 999도 마스킹되어야 함
+        if "user_id" in LogMasker.SENSITIVE_KEYS:
+            assert "999" not in result
+        
+        # 구분자는 유지되어야 함 (구조 보존)
+        assert "&" in result
 
     def test_mask_string_header_format(self):
         """HTTP 헤더 포맷(Authorization: Bearer xxx)이 마스킹되는지 검증"""

@@ -58,34 +58,54 @@ class LogMasker:
         if not isinstance(text, str):
             return text
         
+        # SENSITIVE_KEYS 패턴 미리 컴파일 (성능 최적화)
+        keys_pattern = '|'.join(re.escape(k) for k in cls.SENSITIVE_KEYS)
+
         # 1차: 헤더 마스킹 (값에 공백 포함 가능, ; 또는 줄바꿈 등으로 종료)
-        # 패턴: (헤더명)\s*[:=]\s*(값...)
-        # 값: [^;\n]+ (세미콜론이나 줄바꿈 전까지 탐욕적 매칭)
-        header_pattern = r'({})\s*[:=]\s*(?P<value>[^;\n]+)'.format(
+        # 패턴: (헤더명)[:] (값...) -> 헤더는 보통 콜론(:) 사용
+        header_pattern = r'({})\s*:\s*(?P<value>[^;\n]+)'.format(
             '|'.join(re.escape(k) for k in cls.SENSITIVE_HEADERS)
         )
         text = re.sub(header_pattern, r'\1: ***', text, flags=re.IGNORECASE)
 
-        # 2차: 일반 키 마스킹 (JSON, Query Param 등)
-        # 패턴: ["']?(키)["']?\s*[:=]\s*(값)
-        # 값: 따옴표 문자열 OR 공백/구분자 제외 문자열
-        key_pattern = r'["\']?({})\s*["\']?\s*[:=]\s*(?P<value>"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|[^\s,;&]+)'.format(
-            '|'.join(re.escape(k) for k in cls.SENSITIVE_KEYS)
-        )
+        # 2차: Quoted Value 패턴 (JSON, Key="Value" 등)
+        # 키: 따옴표가 있거나 없을 수 있음
+        # 구분자: [:=] (JSON은 :, 쿼리스트링은 =)
+        # 값: 따옴표(" 또는 ')로 감싸져 있음. 내부의 이스케이프 문자(\") 처리
+        # 정규식 설명:
+        #   (["']?): 키 앞의 따옴표 (선택)
+        #   ({keys}): 민감 키
+        #   \2: 키 뒤의 따옴표 (앞과 매칭되어야 함 -> \2로 참조? 아니면 ["']? 로 유연하게?)
+        #   \s*[:=]\s*: 구분자
+        #   (?P<quote>["']): 값의 시작 따옴표 (캡처)
+        #   (?P<value>(?:(?=(\\?))\6.)*?): 값 내용 (이스케이프 문자 처리 포함)
+        #   (?P=quote): 값의 종료 따옴표 (시작 따옴표와 동일)
         
-        def replace(match):
+        # 간단한 버전 (이스케이프 처리는 복잡하므로 비탐욕적 매칭 사용)
+        quoted_pattern = r'(["\']?)({keys})\1\s*[:=]\s*(?P<quote>["\'])(?P<value>.*?)(?P=quote)'.format(keys=keys_pattern)
+        
+        def replace_quoted(match):
+            full_match = match.group(0)
+            quote = match.group('quote')
+            value = match.group('value')
+            # 값 부분을 ***로 대체 (따옴표는 유지)
+            return full_match.replace(f"{quote}{value}{quote}", f"{quote}***{quote}")
+
+        text = re.sub(quoted_pattern, replace_quoted, text, flags=re.IGNORECASE)
+
+        # 3차: Unquoted Value 패턴 (Query String, Form Data 등)
+        # 키: 따옴표가 있거나 없을 수 있음
+        # 값: 따옴표, 공백, 구분자(&, ;, ,)를 제외한 문자열
+        unquoted_pattern = r'(["\']?)({keys})\1\s*[:=]\s*(?P<value>[^"\',\s;&]+)'.format(keys=keys_pattern)
+        
+        def replace_unquoted(match):
             full_match = match.group(0)
             value = match.group('value')
-            # 값 부분만 '***' 또는 "***"로 대체
-            if value.startswith('"') and value.endswith('"'):
-                masked_value = '"***"'
-            elif value.startswith("'") and value.endswith("'"):
-                masked_value = "'***'"
-            else:
-                masked_value = "***"
-            return full_match.replace(value, masked_value)
+            return full_match.replace(value, "***")
 
-        return re.sub(key_pattern, replace, text, flags=re.IGNORECASE)
+        text = re.sub(unquoted_pattern, replace_unquoted, text, flags=re.IGNORECASE)
+
+        return text
 
 
 class SensitiveDataFilter(logging.Filter):
