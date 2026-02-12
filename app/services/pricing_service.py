@@ -59,7 +59,7 @@ class PriceRule(BaseModel):
         성수기+주말:   {"season": "Summer", "days": [5, 6], "price": 25000}
     """
     season: Optional[str] = None
-    days: Optional[List[int]] = Field(None, alias="week")
+    days: Optional[List[int]] = None
     time_band: Optional[TimeBand] = Field(None, alias="timeBand")
     price: int
 

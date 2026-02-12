@@ -22,7 +22,10 @@
 from __future__ import annotations
 import asyncio
 import logging
-from app.models.dto import AvailabilityRequest, AvailabilityResponse, RoomAvailability, BranchStats
+from app.models.dto import (
+    AvailabilityRequest, AvailabilityResponse,
+    RoomAvailability, BranchStats, PolicyWarning
+)
 from app.validate.request_validator import validate_availability_request, validate_map_coordinates
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
@@ -31,6 +34,7 @@ from typing import List, Dict
 from datetime import datetime, timedelta
 from app.utils.room_loader import get_rooms_by_criteria
 from fastapi import HTTPException
+from app.services.pricing_service import PricingService
 
 logger = logging.getLogger("app")
 
@@ -68,6 +72,7 @@ class AvailabilityService:
                          예: {"dream": DreamCrawler(), "groove": GrooveCrawler()}
         """
         self.crawlers_map = crawlers_map
+        self.pricing_service = PricingService()
 
     # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
@@ -105,7 +110,6 @@ class AvailabilityService:
         # 1.5. 지도 좌표 유효성 검증 (필수)
         validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
 
-
         # 2. 인원수 및 지도 범위에 맞는 룸 필터링 (DB)
         target_rooms = get_rooms_by_criteria(
             capacity=request.capacity,
@@ -140,18 +144,19 @@ class AvailabilityService:
 
         self._log_errors(all_results, request.date)
 
-        # 4. 결과 집계 (Aggregation)
+        # 4. 결과 집계 및 정책/가격 적용
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
+        processed_results = self._apply_policies(successful_results, request, hour_slots)
         
         available_results = []
         branch_summary = {}
 
-        for res in successful_results:
+        for res in processed_results:
             # 룸 정보 추출
             room_detail = res.room_detail
             
-            # 예약 가능한 룸만 결과 리스트에 포함
-            if res.available is True:
+            # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
+            if res.available is True or res.available == "unknown":
                 available_results.append(res)
 
                 # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
@@ -217,3 +222,71 @@ class AvailabilityService:
                     "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
                     "message": str(err),
                 })
+
+    def _apply_policies(
+        self, 
+        results: List[RoomAvailability], 
+        request: AvailabilityRequest,
+        hour_slots: List[str]
+    ) -> List[RoomAvailability]:
+        """정책 필터 및 가격 계산 적용
+        
+        1. 1시간 예약 정책: canReserveOneHour=False이고 슬롯이 1개면 Warning
+        2. 당일 예약 정책: requiresCallOnSameDay=True이고 당일이면 Warning
+        3. 오픈 대기 정책: standby_days 기간 내이면 available='unknown' & Warning
+        4. 가격 계산: PricingService 호출하여 estimated_price 설정
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        processed = []
+        
+        for res in results:
+            room = res.room_detail
+            policy_warnings = []
+            
+            # --- 정책 체크 ---
+
+            # 1. 1시간 예약 제한
+            if len(hour_slots) == 1 and not room.canReserveOneHour:
+                policy_warnings.append(PolicyWarning(
+                    type="call_required_1h",
+                    message="1시간 예약은 전화 문의가 필요합니다."
+                ))
+
+            # 2. 당일 예약 제한
+            if request.date == today and room.requiresCallOnSameDay:
+                policy_warnings.append(PolicyWarning(
+                    type="call_required_today",
+                    message="당일 예약은 전화 문의가 필요합니다."
+                ))
+
+            # 3. 오픈 대기 (standby_days) - 현재 DB에 데이터가 없어서 로직만 구현
+            # TODO: room_detail 또는 branch 정보에 standby_days가 있어야 함
+            # 현재 RoomDetail에는 없으므로 추후 추가 필요. 일단 Skip.
+
+            # --- 가격 계산 ---
+            # available=True일 때만 계산
+            if res.available is True:
+                try:
+                    # 시간 슬롯을 datetime 범위로 변환
+                    start_dt = datetime.strptime(f"{request.date} {hour_slots[0]}", "%Y-%m-%d %H:%M")
+                    # 마지막 슬롯 + 1시간 = 종료 시간
+                    end_dt = datetime.strptime(f"{request.date} {hour_slots[-1]}", "%Y-%m-%d %H:%M") + timedelta(hours=1)
+                    
+                    price = self.pricing_service.calculate_total_price(
+                        base_price=room.pricePerHour,
+                        price_config=room.priceConfig or [],
+                        base_capacity=room.baseCapacity,
+                        extra_charge=room.extraCharge,
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                        people_count=request.capacity
+                    )
+                    res.estimated_price = price
+                except Exception as e:
+                    logger.warning(f"Price calculation failed for {room.name}: {e}")
+                    res.estimated_price = None # 계산 실패 시 None
+
+            res.policy_warnings = policy_warnings
+            processed.append(res)
+            
+        return processed

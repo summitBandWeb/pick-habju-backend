@@ -209,7 +209,12 @@ class TestV2NewFields:
     # ============== TC: recommend_capacity_range 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_recommend_capacity_range_from_parser(self, service, mock_supabase):
-        """파서가 범위를 반환하면 그대로 DB에 저장"""
+        """규칙 기반 계산 우선: extra_charge 없으므로 [rec_cap, rec_cap+2]로 계산
+        
+        Rationale:
+            LLM 파싱 결과보다 규칙 기반 계산을 우선시함 (일관성 위해)
+            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [5, 7]
+        """
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
         parsed_results = {
@@ -229,16 +234,20 @@ class TestV2NewFields:
         upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
-        assert room_data["recommend_capacity_range"] == [4, 6]
+        # NOTE: 규칙 기반 → [5, min(7, 8)] = [5, 7]
+        assert room_data["recommend_capacity_range"] == [5, 7]
         assert room_data["price_config"] == []
     
     # ============== TC: range 없으면 [n, n] Fallback ==============
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):
-        """파서가 범위를 반환하지 않으면 [rec_cap, rec_cap]으로 Fallback"""
+        """파서가 범위를 반환하지 않으면 규칙 기반으로 계산
+        
+        Rationale:
+            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [4, 6]
+        """
         business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 10000}}]
-        # NOTE: recommend_capacity_range 없음 (None) -> [4, 4]로 Fallback
         parsed_results = {
             "r1": {
                 "max_capacity": 6,
@@ -255,7 +264,8 @@ class TestV2NewFields:
         upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
-        assert room_data["recommend_capacity_range"] == [4, 4]
+        # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
+        assert room_data["recommend_capacity_range"] == [4, 6]
     
     # ============== TC: display_name 저장 ==============
     @pytest.mark.asyncio
