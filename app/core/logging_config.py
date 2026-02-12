@@ -9,17 +9,33 @@ from app.core.context import get_trace_id
 
 class LogMasker:
     """민감 정보를 마스킹하는 유틸리티 클래스"""
+    # 1. 일반 변수/JSON 키: 공백이나 구분자(&, ,)로 값이 끝남
     SENSITIVE_KEYS: set[str] = {
-        "password", "passwd", "token", "access_token", "refresh_token",
-        "secret", "key", "api_key", "supabase_key", "device_id", "x-device-id",
-        "authorization", "cookie"
+        # Credentials
+        "password", "passwd", "pwd", "secret", "key", "api_key", "apikey",
+        "token", "access_token", "refresh_token", "session_id", "auth_code",
+        "verification_code", "client_secret",
+        "supabase_key",
+
+        # PII
+        "user_id", "email", "phone", "mobile", "address",
+        "ssn", "resident_number",
+        "credit_card", "card_number", "cvc", "cvv", "account_number"
     }
+
+    # 2. 헤더류: 값이 공백을 포함할 수 있으며, 세미콜론(;)이나 줄바꿈으로 끝남
+    SENSITIVE_HEADERS: set[str] = {
+        "authorization", "cookie", "x-auth-token", "set-cookie"
+    }
+    
+    # 통합 체크용 (dict 마스킹 시 사용)
+    ALL_SENSITIVE = SENSITIVE_KEYS | SENSITIVE_HEADERS
 
     @classmethod
     def mask_dict(cls, data: Any) -> Any:
         if isinstance(data, dict):
             return {
-                k: (cls.mask_dict(v) if k.lower() not in cls.SENSITIVE_KEYS else "***")
+                k: (cls.mask_dict(v) if k.lower() not in cls.ALL_SENSITIVE else "***")
                 for k, v in data.items()
             }
         elif isinstance(data, list):
@@ -30,8 +46,35 @@ class LogMasker:
     def mask_string(cls, text: str) -> str:
         if not isinstance(text, str):
             return text
-        pattern = r'({})\s*[=:]\s*([^\s,;]+)'.format('|'.join(re.escape(k) for k in cls.SENSITIVE_KEYS))
-        return re.sub(pattern, r'\1=***', text, flags=re.IGNORECASE)
+        
+        # 1차: 헤더 마스킹 (값에 공백 포함 가능, ; 또는 줄바꿈 등으로 종료)
+        # 패턴: (헤더명)\s*[:=]\s*(값...)
+        # 값: [^;\n]+ (세미콜론이나 줄바꿈 전까지 탐욕적 매칭)
+        header_pattern = r'({})\s*[:=]\s*(?P<value>[^;\n]+)'.format(
+            '|'.join(re.escape(k) for k in cls.SENSITIVE_HEADERS)
+        )
+        text = re.sub(header_pattern, r'\1: ***', text, flags=re.IGNORECASE)
+
+        # 2차: 일반 키 마스킹 (JSON, Query Param 등)
+        # 패턴: ["']?(키)["']?\s*[:=]\s*(값)
+        # 값: 따옴표 문자열 OR 공백/구분자 제외 문자열
+        key_pattern = r'["\']?({})\s*["\']?\s*[:=]\s*(?P<value>"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|[^\s,;&]+)'.format(
+            '|'.join(re.escape(k) for k in cls.SENSITIVE_KEYS)
+        )
+        
+        def replace(match):
+            full_match = match.group(0)
+            value = match.group('value')
+            # 값 부분만 '***' 또는 "***"로 대체
+            if value.startswith('"') and value.endswith('"'):
+                masked_value = '"***"'
+            elif value.startswith("'") and value.endswith("'"):
+                masked_value = "'***'"
+            else:
+                masked_value = "***"
+            return full_match.replace(value, masked_value)
+
+        return re.sub(key_pattern, replace, text, flags=re.IGNORECASE)
 
 
 class SensitiveDataFilter(logging.Filter):
