@@ -105,15 +105,21 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
         }
     )
     
+    # 보안 강화: 디버그 모드가 아닐 경우 상세 에러 정보(Stack Trace 등)를 노출하지 않음
+    if IS_DEBUG:
+        error_result = {
+            "error_detail": str(exc),
+            "stack_trace": traceback.format_exc()
+        }
+    else:
+        error_result = None
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
             message="서버 내부 오류가 발생했습니다. 담당자에게 문의해주세요.",
             code=ErrorCode.INTERNAL_ERROR,
-            result={
-                "error_detail": str(exc),
-                "stack_trace": traceback.format_exc()
-            } if IS_DEBUG else None
+            result=error_result
         ).model_dump()
     )
 
