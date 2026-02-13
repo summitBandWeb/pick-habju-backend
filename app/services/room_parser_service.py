@@ -280,13 +280,16 @@ class RoomParserService:
         # Try extracting from desc first
         max_cap, rec_cap, parsed_range = self._extract_capacity_from_text(desc)
 
-        # If not found in desc, try name field
-        if not max_cap and not rec_cap:
-            max_cap_from_name, rec_cap_from_name, range_from_name = self._extract_capacity_from_text(name)
+        # name 필드에서도 항상 추출을 시도하여, desc에서 누락된 값을 보충
+        # Rationale: desc에서 max_cap만 추출되고 rec_cap이 없는 경우 등,
+        #            name 필드에 보완 정보가 있을 수 있음 (예: "블랙룸 (정원 5명, 최대 10명)")
+        max_cap_from_name, rec_cap_from_name, range_from_name = self._extract_capacity_from_text(name)
+        if not max_cap:
             max_cap = max_cap_from_name
+        if not rec_cap:
             rec_cap = rec_cap_from_name
-            if not parsed_range:
-                parsed_range = range_from_name
+        if not parsed_range:
+            parsed_range = range_from_name
 
         # Set default recommend_capacity based on max_capacity if not found
         if max_cap and not rec_cap:
