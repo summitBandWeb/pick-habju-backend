@@ -231,7 +231,7 @@ class AvailabilityService:
     ) -> List[RoomAvailability]:
         """정책 필터 및 가격 계산 적용
         
-        1. 1시간 예약 정책: canReserveOneHour=False이고 슬롯이 1개면 Warning
+        1. 1시간 예약 정책: canReserveOneHour=False이고 예약 시간이 1시간이면 Warning
         2. 당일 예약 정책: requiresCallOnSameDay=True이고 당일이면 Warning
         3. 오픈 대기 정책: standby_days 기간 내이면 available='unknown' & Warning
         4. 가격 계산: PricingService 호출하여 estimated_price 설정

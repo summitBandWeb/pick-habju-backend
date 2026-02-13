@@ -209,11 +209,12 @@ class TestV2NewFields:
     # ============== TC: recommend_capacity_range 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_recommend_capacity_range_from_parser(self, service, mock_supabase):
-        """규칙 기반 계산 우선: extra_charge 없으므로 [rec_cap, rec_cap+2]로 계산
+        """파싱된 범위가 유효하면 우선 사용: [4, 6] → 검증 통과 → [4, 6] (max_cap=8 이내)
         
         Rationale:
-            LLM 파싱 결과보다 규칙 기반 계산을 우선시함 (일관성 위해)
-            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [5, 7]
+            v2 리팩토링으로 유효한 parsed_range를 규칙 기반 계산보다 우선 사용하도록 변경.
+            [4, 6]은 2개 정수, min<=max, 1~50 범위이므로 검증 통과.
+            max_cap(8) 이내이므로 clamp 없이 그대로 반환.
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
@@ -234,8 +235,8 @@ class TestV2NewFields:
         upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
-        # NOTE: 규칙 기반 → [5, min(7, 8)] = [5, 7]
-        assert room_data["recommend_capacity_range"] == [5, 7]
+        # NOTE: 유효한 parsed_range [4, 6]이 우선 사용됨
+        assert room_data["recommend_capacity_range"] == [4, 6]
         assert room_data["price_config"] == []
     
     # ============== TC: range 없으면 [n, n] Fallback ==============
