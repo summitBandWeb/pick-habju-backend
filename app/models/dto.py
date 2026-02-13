@@ -15,8 +15,19 @@ class RoomDetail(BaseModel):
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
     recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+
+    @field_validator('recommendCapacity', mode='before')
+    @classmethod
+    def normalize_recommend_capacity(cls, v: Any) -> int:
+        """레거시 데이터 호환: 리스트로 들어올 경우 첫 번째 값을 사용"""
+        if isinstance(v, list):
+            return v[0] if v else 0
+        return v
+
+    # 신규 필드 추가 (v2.0.0 Metadata)
+    recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="Recommended capacity range [min, max]")
+    priceConfig: Optional[List[Dict[str, Any]]] = Field(None, alias="price_config", description="Dynamic price configuration")
     
-    # 신규 필드 추가
     baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
     extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
     lat: Optional[float] = Field(None, description="Branch latitude")
@@ -57,6 +68,12 @@ class AvailabilityRequest(BaseModel):
     neLng: float = Field(..., description="North-East Longitude")
 
 
+# Policy Warning DTO
+class PolicyWarning(BaseModel):
+    """예약 정책 위반 경고"""
+    type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
+    message: str = Field(..., description="User-friendly warning message")
+
 # Room Info (Response용 평탄화된 모델)
 class RoomInfo(BaseModel):
     """조건에 맞는 개별 룸 정보"""
@@ -73,12 +90,20 @@ class RoomInfo(BaseModel):
     canReserveOneHour: bool
     requiresCallOnSameDay: bool
     
+    # [v2.0.0] 계산된 정보
+    estimatedPrice: Optional[int] = None
+    policyWarnings: List[PolicyWarning] = Field(default_factory=list)
+    
 # Crawler Result DTO (Internal Logic Use Only)
 class RoomAvailability(BaseModel):
     """Availability information for a single room (Internal Use)"""
     room_detail: RoomDetail = Field(..., description="Room detail information")
     available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
     available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+    
+    # [v2.0.0] 추가 정보
+    estimated_price: Optional[int] = Field(None, description="Calculated total price")
+    policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
 
 # Branch Summary Stat Model
 class BranchStats(BaseModel):

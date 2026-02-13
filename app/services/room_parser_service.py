@@ -32,25 +32,27 @@ KEYWORD_CAPACITY_MAP = {
 
 
 # 8B 모델 최적화 프롬프트 (Few-shot 예시 포함)
+# NOTE: v2.0.0 - recommend_capacity_range 추출 규칙 추가
 ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false}}
 
 Example 3:
 Input: "[주말] 스튜디오A", "당일 예약은 전화 문의"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true}}
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
 - day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
 - max_capacity: Max people (number)
 - recommend_capacity: Recommended people. Use mid-value for ranges (4~6 -> 5)
+- recommend_capacity_range: [min, max] array from ranges like "4~6인 권장". null if no range found
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
@@ -61,6 +63,7 @@ Output:"""
 
 
 # 배치 파싱용 프롬프트
+# NOTE: v2.0.0 - recommend_capacity_range 추출 규칙 추가
 BATCH_PARSE_PROMPT = """Extract room info from multiple rooms as JSON object.
 Keys should be the room IDs provided. Use null for missing values.
 
@@ -69,6 +72,7 @@ Rules:
 - day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
 - max_capacity: Max people (number)
 - recommend_capacity: Use mid-value for ranges (4~6 -> 5)
+- recommend_capacity_range: [min, max] array from ranges like "4~6인". null if no range
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
@@ -228,6 +232,17 @@ class RoomParserService:
         if day_type is not None and day_type not in ["weekday", "weekend"]:
             return False
         
+        # 6. [v2.0.0] recommend_capacity_range 검증
+        # Rationale: 배열이면 반드시 [min, max] 2원소이고, min <= max여야 함
+        rec_range = result.get("recommend_capacity_range")
+        if rec_range is not None:
+            if not isinstance(rec_range, list) or len(rec_range) != 2:
+                return False
+            if not all(isinstance(v, (int, float)) for v in rec_range):
+                return False
+            if rec_range[0] < 1 or rec_range[1] > 50 or rec_range[0] > rec_range[1]:
+                return False
+        
         return True
 
     def _parse_with_regex(self, name: str, desc: str) -> Dict[str, Any]:
@@ -235,6 +250,10 @@ class RoomParserService:
 
         LLM 파싱 실패 시 사용되는 안정적인 Fallback입니다.
         desc를 우선 검색하고, 실패시 name에서도 capacity 정보를 추출합니다.
+        
+        Rationale:
+            v2.0.0에서 recommend_capacity_range 필드가 추가되어,
+            범위 정보(4~6인)를 [min, max] 배열로 함께 반환합니다.
         """
         desc = desc or ""
 
@@ -259,13 +278,18 @@ class RoomParserService:
         rec_cap = None
 
         # Try extracting from desc first
-        max_cap, rec_cap = self._extract_capacity_from_text(desc)
+        max_cap, rec_cap, parsed_range = self._extract_capacity_from_text(desc)
 
-        # If not found in desc, try name field
-        if not max_cap and not rec_cap:
-            max_cap_from_name, rec_cap_from_name = self._extract_capacity_from_text(name)
+        # name 필드에서도 항상 추출을 시도하여, desc에서 누락된 값을 보충
+        # Rationale: desc에서 max_cap만 추출되고 rec_cap이 없는 경우 등,
+        #            name 필드에 보완 정보가 있을 수 있음 (예: "블랙룸 (정원 5명, 최대 10명)")
+        max_cap_from_name, rec_cap_from_name, range_from_name = self._extract_capacity_from_text(name)
+        if not max_cap:
             max_cap = max_cap_from_name
+        if not rec_cap:
             rec_cap = rec_cap_from_name
+        if not parsed_range:
+            parsed_range = range_from_name
 
         # Set default recommend_capacity based on max_capacity if not found
         if max_cap and not rec_cap:
@@ -288,34 +312,43 @@ class RoomParserService:
         # 4. Same day call
         requires_call = "당일" in desc and ("전화" in desc or "문의" in desc)
 
+        # [v2.0.0] recommend_capacity_range 구성
+        # Rationale: 범위 정보가 있으면 [min, max]로, 단일 값이면 [n, n]으로 변환
+        rec_range = parsed_range  # 범위 추출 결과가 있으면 그대로 사용
+        if not rec_range and rec_cap:
+            rec_range = [rec_cap, rec_cap]  # 단일값은 [n, n]으로 디폴트
+
         return {
             "clean_name": clean_name,
             "day_type": day_type,
             "max_capacity": max_cap,
             "recommend_capacity": rec_cap,
+            "recommend_capacity_range": rec_range,
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
             "requires_call_on_same_day": requires_call
         }
 
-    def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int]]:
-        """텍스트에서 max_capacity와 recommend_capacity를 추출합니다.
+    def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int], Optional[list]]:
+        """텍스트에서 max_capacity와 recommend_capacity, 범위를 추출합니다.
 
         Args:
             text: 검색할 텍스트 (name 또는 desc)
 
         Returns:
-            (max_capacity, recommend_capacity) 튜플
+            (max_capacity, recommend_capacity, capacity_range) 튜플
+            capacity_range는 [min, max] 형태이며, 범위 정보가 없으면 None
         """
         max_cap = None
         rec_cap = None
+        capacity_range = None
 
         # Pattern 1: "(정원 N명, 최대 M명)" - name field에 흔함
         capacity_paren_match = re.search(r'\(\s*정원\s*(\d+)\s*(?:인|명)\s*,\s*최대\s*(\d+)\s*(?:인|명)\s*\)', text)
         if capacity_paren_match:
             rec_cap = int(capacity_paren_match.group(1))
             max_cap = int(capacity_paren_match.group(2))
-            return max_cap, rec_cap
+            return max_cap, rec_cap, None
 
         # Pattern 2: "정원 N명" alone (recommended capacity)
         recommend_match = re.search(r'정원\s*(\d+)\s*(?:인|명)', text)
@@ -352,6 +385,8 @@ class RoomParserService:
             min_r = int(range_match.group(1))
             max_r = int(range_match.group(2))
             rec_cap = (min_r + max_r) // 2
+            # [v2.0.0] 범위 원본 저장
+            capacity_range = [min_r, max_r]
             if not max_cap:
                 max_cap = max_r
         elif not rec_cap and not range_match:
@@ -361,10 +396,11 @@ class RoomParserService:
                 min_r = int(space_range_match.group(1))
                 max_r = int(space_range_match.group(2))
                 rec_cap = (min_r + max_r) // 2
+                capacity_range = [min_r, max_r]
                 if not max_cap:
                     max_cap = max_r
 
-        return max_cap, rec_cap
+        return max_cap, rec_cap, capacity_range
 
     async def parse_room_desc_batch(self, items: List[Dict]) -> Dict[str, Dict]:
         """여러 룸 정보를 한 번에 파싱합니다.

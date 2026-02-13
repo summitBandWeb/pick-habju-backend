@@ -46,6 +46,8 @@ class TestParseWithRegex:
         assert result["day_type"] == "weekend"
         assert result["recommend_capacity"] == 5  # (4+6)//2 = 5
         assert result["max_capacity"] == 8
+        # [v2.0.0] 범위 원본 검증
+        assert result["recommend_capacity_range"] == [4, 6]
     
     # ============== TC03: 추가요금 파싱 ==============
     def test_extra_charge_parsing(self, parser):
@@ -71,6 +73,8 @@ class TestParseWithRegex:
         assert result["day_type"] is None
         assert result["max_capacity"] is None
         assert result["requires_call_on_same_day"] is False
+        # [v2.0.0] 인원 정보 없으면 range도 None
+        assert result["recommend_capacity_range"] is None
     
     # ============== TC: None 설명 처리 ==============
     def test_none_description(self, parser):
@@ -133,6 +137,8 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("룸E", "권장 인원 10명 12명")
         assert result["recommend_capacity"] == 11  # (10+12)//2
         assert result["max_capacity"] == 12
+        # [v2.0.0] 범위 검증
+        assert result["recommend_capacity_range"] == [10, 12]
 
     # ============== TC: desc 우선 추출 ==============
     def test_desc_priority_over_name(self, parser):
@@ -267,6 +273,27 @@ class TestValidateParsedResult:
             "extra_charge": None
         }
         assert parser._validate_parsed_result(result) is True
+    
+    # ============== TC: recommend_capacity_range 검증 (v2.0.0) ==============
+    def test_valid_capacity_range(self, parser):
+        """유효한 recommend_capacity_range"""
+        result = {"clean_name": "룸", "recommend_capacity_range": [4, 6]}
+        assert parser._validate_parsed_result(result) is True
+    
+    def test_invalid_capacity_range_wrong_length(self, parser):
+        """원소가 2개가 아닌 recommend_capacity_range"""
+        result = {"clean_name": "룸", "recommend_capacity_range": [4]}
+        assert parser._validate_parsed_result(result) is False
+    
+    def test_invalid_capacity_range_reversed(self, parser):
+        """min > max인 recommend_capacity_range"""
+        result = {"clean_name": "룸", "recommend_capacity_range": [10, 4]}
+        assert parser._validate_parsed_result(result) is False
+    
+    def test_invalid_capacity_range_too_high(self, parser):
+        """비현실적 범위 (최대 50 초과)"""
+        result = {"clean_name": "룸", "recommend_capacity_range": [4, 100]}
+        assert parser._validate_parsed_result(result) is False
 
 
 class TestOllamaIntegration:
