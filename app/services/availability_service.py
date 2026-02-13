@@ -246,7 +246,10 @@ class AvailabilityService:
             # --- 정책 체크 ---
 
             # 1. 1시간 예약 제한
-            if len(hour_slots) == 1 and not room.canReserveOneHour:
+            # NOTE: generate_time_slots는 end-inclusive이므로 14:00~15:00 → ["14:00", "15:00"] (2개)
+            #        따라서 슬롯 개수가 아닌 실제 시간 차이로 판단해야 함
+            booking_duration_hours = len(hour_slots) - 1  # 슬롯 간격 = 실제 예약 시간
+            if booking_duration_hours == 1 and not room.canReserveOneHour:
                 policy_warnings.append(PolicyWarning(
                     type="call_required_1h",
                     message="1시간 예약은 전화 문의가 필요합니다."

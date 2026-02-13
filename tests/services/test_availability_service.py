@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime
 from app.services.availability_service import AvailabilityService
-from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail, PolicyWarning
+from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail
 
 
 @pytest.fixture
@@ -26,7 +26,9 @@ class TestApplyPolicies:
             date="2024-01-01", capacity=2, start_hour="14:00", end_hour="15:00",
             swLat=0, swLng=0, neLat=0, neLng=0
         )
-        slots = ["14:00"]
+        # NOTE: generate_time_slots("14:00", "15:00") → ["14:00", "15:00"] (end-inclusive)
+        #        len(slots) - 1 == 1 → 1시간 예약으로 감지
+        slots = ["14:00", "15:00"]
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
