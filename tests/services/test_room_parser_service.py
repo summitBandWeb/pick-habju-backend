@@ -133,7 +133,11 @@ class TestParseWithRegex:
 
     # ============== TC: "권장 인원 N명 M명" 공백 범위 ==============
     def test_recommend_space_range(self, parser):
-        """'권장 인원 10명 12명' 공백 범위 패턴 인식"""
+        """
+        Verifies parsing of a space-separated recommended capacity range like "권장 인원 10명 12명".
+        
+        Asserts that recommend_capacity is the integer average of the two bounds, max_capacity equals the upper bound, and recommend_capacity_range contains the [min, max] pair.
+        """
         result = parser._parse_with_regex("룸E", "권장 인원 10명 12명")
         assert result["recommend_capacity"] == 11  # (10+12)//2
         assert result["max_capacity"] == 12

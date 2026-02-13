@@ -48,7 +48,14 @@ class TestCollectByIdFlow:
     
     @pytest.fixture
     def mock_parser(self):
-        """RoomParserService Mock"""
+        """
+        Factory that creates a MagicMock simulating a RoomParserService for tests.
+        
+        The mock exposes an async `parse_room_desc_batch` method which returns parsed metadata for two rooms ("room1" and "room2"). Each room entry includes: `clean_name`, `day_type`, `max_capacity`, `recommend_capacity`, `recommend_capacity_range`, `base_capacity`, `extra_charge`, `price_config`, and `requires_call_on_same_day`.
+        
+        Returns:
+            MagicMock: A mock RoomParserService whose `parse_room_desc_batch` is an AsyncMock returning the described room data.
+        """
         mock = MagicMock()
         mock.parse_room_desc_batch = AsyncMock(return_value={
             "room1": {

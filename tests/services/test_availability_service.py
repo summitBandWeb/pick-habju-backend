@@ -7,12 +7,27 @@ from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail, Po
 
 @pytest.fixture
 def mock_pricing_service():
+    """
+    Create a MagicMock that stands in for the PricingService in tests.
+    
+    Returns:
+        MagicMock: A mock object intended to mimic the PricingService interface for injection into components under test.
+    """
     return MagicMock()
 
 
 @pytest.fixture
 def service(mock_pricing_service):
     # 크롤러는 테스트하지 않으므로 빈 맵 주입
+    """
+    Create an AvailabilityService with an empty crawler map and inject the provided pricing service mock.
+    
+    Parameters:
+        mock_pricing_service: A mock or stub implementing the pricing service interface; assigned to the service's `pricing_service` attribute.
+    
+    Returns:
+        AvailabilityService: An instance whose crawler map is empty and whose `pricing_service` is set to `mock_pricing_service`.
+    """
     svc = AvailabilityService({})
     svc.pricing_service = mock_pricing_service
     return svc
@@ -117,12 +132,28 @@ class TestCheckAvailabilityFlow:
 
     @pytest.fixture
     def mock_crawler(self):
+        """
+        Create a mock crawler object with an asynchronous check_availability method for use in tests.
+        
+        Returns:
+            MagicMock: A MagicMock instance with `check_availability` set to an AsyncMock coroutine.
+        """
         crawler = MagicMock()
         crawler.check_availability = AsyncMock()
         return crawler
 
     @pytest.fixture
     def service(self, mock_crawler, mock_pricing_service):
+        """
+        Constructs an AvailabilityService configured with the provided mock crawler and pricing service for testing.
+        
+        Parameters:
+            mock_crawler: A mock or AsyncMock that implements the crawler interface used by AvailabilityService.
+            mock_pricing_service: A mock PricingService used to inject pricing behaviour in tests.
+        
+        Returns:
+            AvailabilityService: An instance whose crawler map contains `mock_crawler` under the key "mock_crawler" and whose `pricing_service` is set to `mock_pricing_service`.
+        """
         svc = AvailabilityService({"mock_crawler": mock_crawler})
         svc.pricing_service = mock_pricing_service
         return svc

@@ -65,11 +65,13 @@ class AvailabilityService:
     """
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
-        """서비스 초기화.
+        """
+        Initialize the AvailabilityService with crawler implementations and pricing.
         
-        Args:
-            crawlers_map: 크롤러 타입(키)과 BaseCrawler 인스턴스(값)의 매핑 딕셔너리
-                         예: {"dream": DreamCrawler(), "groove": GrooveCrawler()}
+        Parameters:
+            crawlers_map (dict[str, BaseCrawler]): Mapping from crawler type keys (e.g., "dream", "groove")
+                to their corresponding BaseCrawler instances. The service will use these crawlers
+                to fetch room availability for each supported provider.
         """
         self.crawlers_map = crawlers_map
         self.pricing_service = PricingService()
@@ -77,8 +79,17 @@ class AvailabilityService:
     # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
         """
-        start_hour와 end_hour 사이의 1시간 단위 슬롯 리스트를 생성합니다.
-        예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        Create hourly time-slot labels between two times, inclusive.
+        
+        Parameters:
+            start_str (str): Start time in 24-hour "HH:MM" format.
+            end_str (str): End time in 24-hour "HH:MM" format.
+        
+        Returns:
+            List[str]: Ordered list of hourly slot strings from start to end (e.g., ["14:00", "15:00", "16:00"]).
+        
+        Raises:
+            ValueError: If the start time is later than the end time.
         """
         start_time = datetime.strptime(start_str, "%H:%M")
         end_time = datetime.strptime(end_str, "%H:%M")
@@ -97,7 +108,17 @@ class AvailabilityService:
         
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
-        """Check room availability for a specific map area and criteria."""
+        """
+        Orchestrate multi-crawler availability checks for the given request and return aggregated, policy- and price-augmented availability results.
+        
+        Validates the requested time range and map coordinates, selects candidate rooms by capacity and map bounds, runs crawler availability checks in parallel (skipping crawler types with no matching rooms), logs crawler errors without failing the whole operation, applies business policies and price estimation to successful crawler results, and builds a consolidated AvailabilityResponse including available business item IDs, detailed room results, and a per-branch summary.
+        
+        Parameters:
+            request (AvailabilityRequest): Criteria for the availability query (date, start_hour, end_hour, capacity, map bounds, etc.).
+        
+        Returns:
+            AvailabilityResponse: Aggregated availability response containing the requested date and hours, generated hour_slots, list of available business item IDs, detailed room results (with policy warnings and estimated_price when applicable), and a branch_summary mapping business IDs to BranchStats.
+        """
 
         # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
         # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
@@ -187,22 +208,14 @@ class AvailabilityService:
 
 
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
-        """크롤링 결과에서 에러를 추출하여 로깅.
+        """
+        Log crawler errors extracted from a mixed list of results.
         
-        크롤러별 에러를 탐지하고 적절한 로그 레벨로 기록합니다.
-        커스텀 예외는 Warning 레벨, 일반 예외는 Error 레벨로 로깅합니다.
+        Records each Exception found in `results`: `BaseCustomException` instances are logged at warning level with their status code, error code, and message; all other exceptions are logged at error level with status 500 and `ErrorCode.COMMON_INTERNAL_ERROR`.
         
-        Args:
-            results: RoomAvailability 또는 Exception이 혼재된 리스트
-            date_context: 로그에 포함할 날짜 정보 (타임스탬프 대용)
-            
-        Note:
-            - BaseCustomException: Warning 레벨 (예상된 에러, 예: 크롤링 실패)
-            - 기타 Exception: Error 레벨 (예상치 못한 에러)
-            
-        TODO:
-            Sentry 같은 모니터링 도구 연동 고려
-            에러 발생률이 높을 경우 알림 기능 추가 필요
+        Parameters:
+            results (list[RoomAvailability | Exception]): List containing successful `RoomAvailability` items and `Exception` instances.
+            date_context (str): Date or timestamp string to include in log entries for context.
         """
         errors = [e for e in results if isinstance(e, Exception)]
         for err in errors:
@@ -229,12 +242,16 @@ class AvailabilityService:
         request: AvailabilityRequest,
         hour_slots: List[str]
     ) -> List[RoomAvailability]:
-        """정책 필터 및 가격 계산 적용
+        """
+        Apply business policies and compute estimated prices for each room availability result.
         
-        1. 1시간 예약 정책: canReserveOneHour=False이고 슬롯이 1개면 Warning
-        2. 당일 예약 정책: requiresCallOnSameDay=True이고 당일이면 Warning
-        3. 오픈 대기 정책: standby_days 기간 내이면 available='unknown' & Warning
-        4. 가격 계산: PricingService 호출하여 estimated_price 설정
+        Parameters:
+            results (List[RoomAvailability]): Room availability entries to process; each entry's `room_detail` is inspected and `policy_warnings` / `estimated_price` may be added or modified.
+            request (AvailabilityRequest): Original availability request used to determine same-day rules and requested capacity.
+            hour_slots (List[str]): Ordered list of time slot strings in "HH:MM" format representing the requested hours.
+        
+        Returns:
+            List[RoomAvailability]: The input results with policy_warnings attached for rooms that trigger business rules and with estimated_price set for rooms where pricing was successfully calculated (None if calculation failed).
         """
         today = datetime.now().strftime("%Y-%m-%d")
         processed = []

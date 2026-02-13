@@ -39,6 +39,15 @@ class TimeBand(BaseModel):
 
     @model_validator(mode="after")
     def validate_end_hour(self):
+        """
+        Validate that `end_hour` is strictly greater than `start_hour` and return the instance.
+        
+        Raises:
+            ValueError: If `end_hour` is less than or equal to `start_hour`.
+        
+        Returns:
+            self (TimeBand): The validated TimeBand instance.
+        """
         if self.end_hour <= self.start_hour:
             raise ValueError("end_hour must be greater than start_hour")
         return self
@@ -79,22 +88,23 @@ class PricingService:
         end_dt: datetime,
         people_count: int,
     ) -> int:
-        """총 이용 요금을 계산합니다. (Split & Sum 방식)
-
-        Args:
-            base_price: 기본 시간당 요금 (price_config 매칭 실패 시 fallback)
-            price_config: 동적 가격 정책 리스트 (DB JSONB 원본)
-            base_capacity: 추가 요금 기준 인원 (None이면 추가 요금 없음)
-            extra_charge: 1인 1시간당 추가 요금 (None이면 추가 요금 없음)
-            start_dt: 이용 시작 일시
-            end_dt: 이용 종료 일시
-            people_count: 이용 인원
-
+        """
+        Calculate the total charge for a booking using split-and-sum hourly pricing and optional per-person extra charges.
+        
+        Parameters:
+            base_price (int): Fallback hourly price used when no pricing rule matches.
+            price_config (List[Dict[str, Any]]): Raw price rule objects (JSONB-like) to be parsed and matched in priority order.
+            base_capacity (Optional[int]): Number of people included in base price; if `None`, no per-person extra charges apply.
+            extra_charge (Optional[int]): Additional charge per extra person per hour; if `None`, no per-person extra charges apply.
+            start_dt (datetime): Booking start timestamp.
+            end_dt (datetime): Booking end timestamp.
+            people_count (int): Total number of people for the booking.
+        
         Returns:
-            int: 총 요금 (원)
-
+            int: Total price for the interval, expressed in the same integer currency units as the input prices.
+        
         Raises:
-            ValueError: start_dt >= end_dt인 경우
+            ValueError: If `start_dt` is not before `end_dt`.
         """
         if start_dt >= end_dt:
             raise ValueError("start_dt must be before end_dt")
@@ -120,18 +130,27 @@ class PricingService:
     # ==================== Private Methods ====================
 
     def _parse_rules(self, raw: List[Dict[str, Any]]) -> List[PriceRule]:
-        """JSONB 원본을 PriceRule 리스트로 변환"""
+        """
+        Parse raw price configuration dictionaries into a list of validated PriceRule objects.
+        
+        Parameters:
+            raw (List[Dict[str, Any]]): Raw price configuration (JSON-like list of dicts) where each dict follows the PriceRule schema.
+        
+        Returns:
+            List[PriceRule]: A list of PriceRule instances constructed from the input dictionaries.
+        """
         return [PriceRule(**cfg) for cfg in raw]
 
     def _match_price(
         self, base_price: int, rules: List[PriceRule], target: datetime
     ) -> int:
-        """특정 시점에 적용할 단가를 First-Match로 결정
-
-        Rationale:
-            price_config 리스트는 구체적인 규칙 순서대로 저장되어 있어야 합니다.
-            가장 먼저 모든 조건을 만족하는 규칙의 price를 반환합니다.
-            아무 규칙도 매칭되지 않으면 base_price를 반환합니다.
+        """
+        Selects the unit price applicable at a given timestamp using first-match rule evaluation.
+        
+        Evaluates the provided rules in order and returns the price of the first rule whose day and time band match the timestamp. Season-based rules are ignored by this implementation. If no rule matches, returns the provided base_price.
+        
+        Returns:
+            int: The matched rule's price, or `base_price` if no rule applies.
         """
         day = target.weekday()  # 0=Mon, 6=Sun
         hour = target.hour
@@ -163,12 +182,20 @@ class PricingService:
         start: datetime,
         end: datetime,
     ) -> int:
-        """인원 초과 추가 요금 계산
-
-        Rationale:
-            baseCapacity와 extraCharge가 둘 다 존재할 때만 과금합니다.
-            '최소인원 미달 → 예약 불가'는 AvailabilityService가 담당하므로
-            여기서는 people < baseCapacity여도 음수 요금이 발생하지 않도록 max(0, ...)을 사용합니다.
+        """
+        Calculate extra charge for attendees exceeding the base capacity.
+        
+        Charges are applied only when both `base_capacity` and `extra_charge` are provided. The number of exceeded attendees is max(0, people - base_capacity). The duration is computed in hours and rounded up to the nearest whole hour; the total extra charge is exceeded * extra_charge * hours.
+        
+        Parameters:
+            base_capacity (Optional[int]): Configured base capacity; if None, no extra charge is applied.
+            extra_charge (Optional[int]): Charge per extra person per hour; if None, no extra charge is applied.
+            people (int): Total number of attendees for the booking.
+            start (datetime): Booking start time.
+            end (datetime): Booking end time.
+        
+        Returns:
+            int: Total extra charge (0 if none).
         """
         if base_capacity is None or extra_charge is None:
             return 0

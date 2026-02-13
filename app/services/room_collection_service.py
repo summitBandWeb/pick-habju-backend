@@ -245,7 +245,14 @@ class RoomCollectionService:
             self.supabase.table("room").upsert(room_data).execute()
 
     def _extract_price(self, room: Dict) -> Optional[int]:
-        """Extract pricing information."""
+        """
+        Return the room's base price extracted from the room record.
+        
+        Reads the "minMaxPrice" object on the room and returns its "minPrice" when present.
+        
+        Returns:
+            int or None: The `minPrice` value from `minMaxPrice`, or `None` if price information is absent.
+        """
         min_max = room.get("minMaxPrice")
         if not min_max:
             return None
@@ -260,11 +267,20 @@ class RoomCollectionService:
         base_cap: Optional[int],
         extra_charge: Optional[int]
     ) -> List[int]:
-        """추가 요금 유무에 따라 권장 인원 범위 계산
+        """
+        Compute the recommended capacity range for a room.
         
-        1. 파싱된 범위가 있으면 우선 사용 (단, 유효성 검증 필요)
-        2. 추가 요금 발생 시: [base_cap, max_cap]
-        3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
+        Prefers rule-based calculation; uses the parsed range only if it is present and valid. If an extra charge applies and a base capacity is provided, the range is [base_cap, max(base_cap, max_cap)]. Otherwise the range is [rec_cap, min(rec_cap + 2, max_cap)] with the upper bound never below the lower bound.
+        
+        Parameters:
+            parsed_range (Optional[List[int]]): Previously parsed [min, max] capacity range, if available.
+            rec_cap (int): Recommended capacity derived from parsing or defaults.
+            max_cap (int): Observed or parsed maximum capacity for the room.
+            base_cap (Optional[int]): Base capacity used when extra charges apply.
+            extra_charge (Optional[int]): Extra charge amount; treated as present when > 0.
+        
+        Returns:
+            List[int]: Two-element list [min_capacity, max_capacity] representing the recommended capacity range.
         """
         # 1. 파싱된 값이 유효하면 사용 (단, 현재 LLM이 범위를 잘 못 뽑는 경향이 있어 계산 로직 우선 고려)
         # 정책: LLM보다 규칙 기반 계산을 우선시함 (일관성 위해)
@@ -290,10 +306,18 @@ class RoomCollectionService:
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """
-        Export unresolved parsing results to JSON file for manual LLM verification.
-
-        Phase 6: When parsing is incomplete (especially when no capacity info is found),
-        export the original crawled text to a JSON file for later manual verification.
+        Collect unresolved parsing results (rooms missing usable capacity info or flagged for manual review) and append them to a daily JSON export for manual verification.
+        
+        Parameters:
+            business (Dict): Business metadata containing at least `businessId` and `businessDisplayName`.
+            rooms (List[Dict]): List of room records as returned by the crawler; each must contain `bizItemId`, `name`, and optionally `desc` and price fields.
+            parsed_results (Dict): Mapping from `bizItemId` to the parser's result objects; used to determine unresolved items.
+        
+        Behavior:
+            - An item is considered unresolved when its parsed `max_capacity` is missing (`None`) or equals the class-level `MANUAL_REVIEW_FLAG`.
+            - For each unresolved room, writes a record including business identifiers, raw name/description, the parser output, failure reason, price (if available), and export timestamp.
+            - Records are appended to a daily file named `unresolved_YYYYMMDD.json` in the directory specified by the `UNRESOLVED_EXPORT_DIR` environment variable or `scripts/unresolved` under the project root.
+            - Duplicate `biz_item_id` entries already present in the target file are skipped; new records are appended.
         """
         unresolved_items = []
 

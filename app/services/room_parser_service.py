@@ -195,15 +195,22 @@ class RoomParserService:
         return text.strip()
     
     def _validate_parsed_result(self, result: Dict[str, Any]) -> bool:
-        """파싱 결과의 유효성을 검증합니다.
+        """
+        Validate a parsed room dictionary against the expected schema and realistic numeric ranges.
         
-        8B 모델은 오류율이 높으므로 현실적 범위를 검증합니다.
+        Parameters:
+            result (Dict[str, Any]): Parsed room data to validate.
         
-        Args:
-            result: 파싱된 결과 딕셔너리
-            
+        Checks performed:
+            - Presence of required field `clean_name`.
+            - `max_capacity`, if present, must be a number between 1 and 50 inclusive.
+            - `recommend_capacity`, if present, must be a number between 1 and 50 inclusive.
+            - `extra_charge`, if present, must be a number between 0 and 50,000 inclusive.
+            - `day_type`, if present, must be either "weekday" or "weekend".
+            - `recommend_capacity_range`, if present, must be a list of two numbers `[min, max]` with 1 <= min <= max <= 50.
+        
         Returns:
-            유효하면 True, 아니면 False
+            bool: `True` if all checks pass, `False` otherwise.
         """
         # 1. 필수 필드 존재 확인
         if "clean_name" not in result:
@@ -246,14 +253,23 @@ class RoomParserService:
         return True
 
     def _parse_with_regex(self, name: str, desc: str) -> Dict[str, Any]:
-        """정규표현식을 사용한 Fallback 파싱 로직.
-
-        LLM 파싱 실패 시 사용되는 안정적인 Fallback입니다.
-        desc를 우선 검색하고, 실패시 name에서도 capacity 정보를 추출합니다.
+        """
+        정규표현식을 사용해 룸 이름(name)과 설명(desc)에서 구조화된 룸 정보를 추출하는 Fallback 파서입니다.
         
-        Rationale:
-            v2.0.0에서 recommend_capacity_range 필드가 추가되어,
-            범위 정보(4~6인)를 [min, max] 배열로 함께 반환합니다.
+        설명:
+        - LLM 파싱 실패 시 사용하며, 용량 정보는 설명(desc)을 우선적으로 검색하고 없으면 이름(name)에서 추출합니다.
+        - 추출된 용량 정보로 recommend_capacity_range 필드를 구성하며, 범위가 있으면 `[min, max]`, 단일값이면 `[n, n]`으로 변환합니다.
+        
+        Returns:
+            result (dict): 다음 키를 포함하는 딕셔너리
+                - clean_name (str): 용량/주말표시 등 메타 정보를 제거한 정제된 이름
+                - day_type (str|None): "weekday", "weekend" 또는 None
+                - max_capacity (int|None): 추출된 최대 수용 인원
+                - recommend_capacity (int|None): 권장 인원(단일값)
+                - recommend_capacity_range (list|None): [min, max] 형태의 권장 인원 범위
+                - base_capacity (int|None): "기본 X인"으로 추출된 기본 수용 인원
+                - extra_charge (int|None): 추가 요금(원 단위)
+                - requires_call_on_same_day (bool): 당일 예약 시 전화/문의 필요 여부
         """
         desc = desc or ""
 
@@ -400,15 +416,14 @@ class RoomParserService:
         return max_cap, rec_cap, capacity_range
 
     async def parse_room_desc_batch(self, items: List[Dict]) -> Dict[str, Dict]:
-        """여러 룸 정보를 한 번에 파싱합니다.
+        """
+        Parse multiple room entries into structured room metadata, using the LLM and falling back to regex extraction when parsing or validation fails.
         
-        배치 처리로 API 호출 횟수를 줄여 효율성을 높입니다.
+        Parameters:
+            items (List[Dict]): List of room items in the form [{"id": "<id>", "name": "<name>", "desc": "<description>"}]. Each item must contain an "id" and "name"; "desc" may be omitted or None.
         
-        Args:
-            items: [{"id": "...", "name": "...", "desc": "..."}] 형태의 리스트
-            
         Returns:
-            {"id": {파싱결과}, ...}
+            Dict[str, Dict]: Mapping from each input `id` to its parsed room data dictionary. Returns an empty dict when `items` is empty. If LLM parsing fails or an individual result fails validation, that item's value is produced by the regex fallback parser.
         """
         if not items:
             return {}

@@ -166,7 +166,11 @@ class TestDataPreservationLogic:
     # ============== TC: 가격 보존 로직 ==============
     @pytest.mark.asyncio
     async def test_preserve_existing_price(self, service, mock_supabase):
-        """새 가격이 0/None이고 기존 가격이 유효하면 기존 값 유지"""
+        """
+        Preserves existing hourly price when incoming data has no price.
+        
+        Verifies that if the database has a valid `price_per_hour` and the incoming room data contains no price (`minMaxPrice` is `None`), `_save_to_db` retains the existing `price_per_hour`.
+        """
         mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
             data=[{"biz_item_id": "room1", "max_capacity": 5, "recommend_capacity": 4, "price_per_hour": 25000}]
         )
@@ -188,7 +192,16 @@ class TestV2NewFields:
     
     @pytest.fixture
     def mock_supabase(self):
-        """Supabase 클라이언트 Mock"""
+        """
+        Create a MagicMock that mimics a Supabase client with common table query behaviors.
+        
+        The returned mock is configured so that:
+        - .table(...).upsert(...).execute() returns a MagicMock.
+        - .table(...).select(...).eq(...).execute() returns a MagicMock with a `data` attribute set to an empty list.
+        
+        Returns:
+            MagicMock: A mock supabase client with the above call-chain behaviors.
+        """
         mock = MagicMock()
         mock.table.return_value.upsert.return_value.execute.return_value = MagicMock()
         mock.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
@@ -196,7 +209,15 @@ class TestV2NewFields:
     
     @pytest.fixture
     def service(self, mock_supabase):
-        """의존성을 Mock으로 대체한 서비스 인스턴스"""
+        """
+        Create a RoomCollectionService instance with external dependencies patched to use the provided mock Supabase client.
+        
+        Parameters:
+            mock_supabase: A mock or stub supabase client used to replace get_supabase_client and assigned to the returned service's `supabase` attribute.
+        
+        Returns:
+            RoomCollectionService: An instance of RoomCollectionService with NaverMapCrawler, NaverRoomFetcher, RoomParserService patched and using `mock_supabase`.
+        """
         with patch('app.services.room_collection_service.NaverMapCrawler'), \
              patch('app.services.room_collection_service.NaverRoomFetcher'), \
              patch('app.services.room_collection_service.RoomParserService'), \
@@ -209,11 +230,10 @@ class TestV2NewFields:
     # ============== TC: recommend_capacity_range 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_recommend_capacity_range_from_parser(self, service, mock_supabase):
-        """규칙 기반 계산 우선: extra_charge 없으므로 [rec_cap, rec_cap+2]로 계산
+        """
+        Verify that _save_to_db computes and stores a rule-based recommend_capacity_range when `extra_charge` is None.
         
-        Rationale:
-            LLM 파싱 결과보다 규칙 기반 계산을 우선시함 (일관성 위해)
-            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [5, 7]
+        The test supplies parsed results where `recommend_capacity` is 5 and `max_capacity` is 8 but `recommend_capacity_range` from the parser is present; because `extra_charge` is None, the service should prioritize rule-based calculation and store `[recommend_capacity, min(recommend_capacity + 2, max_capacity)]` (i.e., `[5, 7]`). Also asserts that an empty `price_config` from the parser is persisted.
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
@@ -292,7 +312,11 @@ class TestV2NewFields:
     # ============== TC: price_config 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_price_config(self, service, mock_supabase):
-        """복잡한 price_config가 DB에 정상 저장되는지 검증"""
+        """
+        Verify that a complex `price_config` from parsed results is persisted to the database for a room.
+        
+        Asserts that when `_save_to_db` is called with parsed results containing a multi-entry `price_config`, the upsert payload for the room includes the same `price_config` structure.
+        """
         price_cfg = [
             {"day_type": "weekday", "price_per_hour": 15000},
             {"day_type": "weekend", "price_per_hour": 20000}

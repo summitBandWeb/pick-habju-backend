@@ -17,6 +17,12 @@ from app.services.pricing_service import PricingService
 
 @pytest.fixture
 def svc():
+    """
+    Pytest fixture that provides a fresh PricingService instance for tests.
+    
+    Returns:
+        PricingService: A new PricingService instance.
+    """
     return PricingService()
 
 

@@ -17,6 +17,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("DB_Verify")
 
 async def verify_db_integration():
+    """
+    Verify that v2.0.0 room fields are correctly persisted and read back from the database.
+    
+    Saves a synthetic business and room payload containing v2-specific parsed fields to the database, queries for the inserted room, and validates select v2 fields (recommendCapacityRange, priceConfig presence, baseCapacity, extraCharge). Logs detailed errors for any mismatches; leaves test data in the database (cleanup is optional and commented out).
+    """
     logger.info("Starting DB Integration Verification for v2.0.0...")
     
     # 1. Setup Services

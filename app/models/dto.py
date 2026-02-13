@@ -19,7 +19,15 @@ class RoomDetail(BaseModel):
     @field_validator('recommendCapacity', mode='before')
     @classmethod
     def normalize_recommend_capacity(cls, v: Any) -> int:
-        """레거시 데이터 호환: 리스트로 들어올 경우 첫 번째 값을 사용"""
+        """
+        Normalize legacy `recommendCapacity` input by extracting the first element when provided as a list.
+        
+        Parameters:
+            v (Any): Incoming value which may be a list, integer, or other numeric-like value.
+        
+        Returns:
+            int: The first element of `v` if `v` is a non-empty list, `0` if `v` is an empty list, otherwise `v` unchanged.
+        """
         if isinstance(v, list):
             return v[0] if v else 0
         return v
@@ -130,5 +138,4 @@ class AvailabilityResponse(BaseModel):
     
     # 지도 검색을 위한 신규 필드
     branch_summary: Dict[str, BranchStats] = Field(default_factory=dict, description="Summary stats per branch for map markers")
-
 
