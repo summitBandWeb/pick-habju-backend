@@ -6,11 +6,66 @@
 # =============================================================================
 
 import logging
+import uuid
+import re
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from app.core.context import set_trace_id
 
 logger = logging.getLogger(__name__)
+
+# UUID 형식 검증 정규식 (8-4-4-4-12)
+UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    re.IGNORECASE
+)
+
+
+class TraceIDMiddleware(BaseHTTPMiddleware):
+    """
+    HTTP 요청 추적을 위한 Trace ID 관리 미들웨어
+    
+    모든 요청에 대해 고유 식별자(Trace ID)를 부여하고 관리합니다.
+    - 요청 헤더(X-Trace-ID)가 존재하면 해당 값을 사용 (분산 추적 연동)
+    - 없으면 새로운 UUIDv4를 생성하여 할당 (Fallback)
+    - 응답 헤더(X-Trace-ID)에 포함하여 클라이언트에 반환
+
+    Attributes:
+        TRACE_ID_HEADER (str): "X-Trace-ID"
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # 1. 클라이언트가 보낸 Trace ID 확인
+        trace_id = request.headers.get("X-Trace-ID")
+        
+        # 2. UUID 형식 검증 (보안 강화)
+        # 형식이 올바르지 않으면(악성 스크립트 등) 무시하고 새로 발급
+        if trace_id and not UUID_PATTERN.match(trace_id):
+            # NOTE: 악의적인 값 직접 로깅 시 로그 인젝션 위험 → 메타데이터만 기록
+            logger.warning(
+                "Invalid Trace ID format received from client",
+                extra={
+                    "client_ip": request.client.host if request.client else "unknown",
+                    "invalid_format": True,
+                    "trace_id_length": len(trace_id)
+                }
+            )
+            trace_id = None
+
+        # 3. 없으면 신규 생성 (Fallback)
+        if not trace_id:
+            trace_id = str(uuid.uuid4())
+        
+        # 4. 컨텍스트 변수에 설정 (로거에서 참조 가능)
+        set_trace_id(trace_id)
+        request.state.trace_id = trace_id
+        
+        response = await call_next(request)
+        
+        # 4. 응답 헤더에 Trace ID 포함
+        response.headers["X-Trace-ID"] = trace_id
+        return response
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):

@@ -92,38 +92,51 @@ async def global_exception_handler_envelope(request: Request, exc: Exception):
     모든 예외(500 포함)를 ApiResponse 포맷으로 변환
     
     Rationale:
-        예상치 못한 서버 에러가 발생해도 프론트엔드는 항상
-        isSuccess: false 형태의 JSON을 받게 됩니다.
+        예상치 못한 서버 에러 발생 시 상세 스택 트레이스는 로그에만 기록하고,
+        클라이언트에게는 일반적인 메시지만 반환하여 보안을 강화합니다.
     """
+    # 상세 로그 기록 (Trace ID는 로깅 필터에서 자동으로 주입됨)
     logger.exception(
-        "Unhandled Exception",
+        f"Unhandled Exception: {str(exc)}",
         extra={
             "path": request.url.path,
             "method": request.method,
-            "client": request.client.host if request.client else None
+            "client_ip": request.client.host if request.client else None,
         }
     )
     
+    # 보안 강화: 디버그 모드가 아닐 경우 상세 에러 정보(Stack Trace 등)를 노출하지 않음
+    if IS_DEBUG:
+        error_result = {
+            "error_detail": str(exc),
+            "stack_trace": traceback.format_exc()
+        }
+    else:
+        error_result = None
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response(
-            message="서버 내부 오류가 발생했습니다.",
+            message="서버 내부 오류가 발생했습니다. 담당자에게 문의해주세요.",
             code=ErrorCode.INTERNAL_ERROR,
-            result={
-                "error_detail": str(exc),
-                "stack_trace": traceback.format_exc()
-            } if IS_DEBUG else None
+            result=error_result
         ).model_dump()
     )
 
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded):
     """
-    Rate Limit 초과 시 발생하는 예외를 ApiResponse 포맷으로 변환
+    Rate Limit 초과 예외 핸들러
     
-    Rationale:
-        slowapi의 RateLimitExceeded 예외를 비즈니스 예외(RateLimitException)로
-        변환하여 custom_exception_handler를 재사용합니다.
+    slowapi의 RateLimitExceeded 예외를 비즈니스 예외(RateLimitException)로 변환하여
+    일관된 에러 응답 포맷을 유지합니다.
+
+    Args:
+        request (Request): FastAPI Request 객체
+        exc (RateLimitExceeded): 발생한 Rate Limit 예외
+
+    Returns:
+        JSONResponse: 429 Too Many Requests 응답
     """
     rate_limit_exc = RateLimitException()
     return await custom_exception_handler(request, rate_limit_exc)
