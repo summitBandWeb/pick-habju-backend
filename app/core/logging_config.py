@@ -200,8 +200,25 @@ def setup_logging(log_dir: str = "logs"):
     console_handler.addFilter(sensitive_filter)
     root_logger.addHandler(console_handler)
 
+    # NOTE: 로테이션된 파일(app.log.2026-02-13)에도 0600 권한을 적용하기 위해
+    #       doRollover를 오버라이드한 커스텀 핸들러 사용.
+    #       기본 TimedRotatingFileHandler는 새 파일을 umask 기본값으로 생성함.
+    class SecureRotatingFileHandler(TimedRotatingFileHandler):
+        """로테이션 시 모든 로그 파일에 0600 권한을 자동 적용하는 핸들러"""
+
+        def doRollover(self):
+            super().doRollover()
+            # 로테이션 후 현재 로그 파일 권한 설정
+            if self.baseFilename and os.path.exists(self.baseFilename):
+                os.chmod(self.baseFilename, stat.S_IRUSR | stat.S_IWUSR)
+            # 백업 파일들에도 동일한 권한 적용
+            for filename in os.listdir(log_dir):
+                if filename.startswith("app.log"):
+                    filepath = os.path.join(log_dir, filename)
+                    os.chmod(filepath, stat.S_IRUSR | stat.S_IWUSR)
+
     # 일자별 파일 로테이션 핸들러 (자정 기준, 7일 보관)
-    file_handler = TimedRotatingFileHandler(
+    file_handler = SecureRotatingFileHandler(
         filename=os.path.join(log_dir, "app.log"),
         when="midnight",
         backupCount=7,
@@ -212,8 +229,8 @@ def setup_logging(log_dir: str = "logs"):
     file_handler.addFilter(sensitive_filter)
     root_logger.addHandler(file_handler)
 
-    # 파일 권한 설정 (소유자만 읽기/쓰기 가능 - 0600)
-    # 보안상 로그 파일은 다른 사용자가 읽을 수 없어야 함
+    # 초기 파일 권한 설정 (소유자만 읽기/쓰기 가능 - 0600)
     log_file = os.path.join(log_dir, "app.log")
     if os.path.exists(log_file):
         os.chmod(log_file, stat.S_IRUSR | stat.S_IWUSR)
+
