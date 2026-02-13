@@ -65,10 +65,32 @@ class TestDataPreservationLogic:
     
     @pytest.fixture
     def mock_supabase(self):
-        """Supabase 클라이언트 Mock"""
+        """Supabase 클라이언트 Mock (테이블별 분리)
+
+        Rationale:
+            단일 mock.table.return_value로 모든 테이블 호출을 받으면
+            upsert 호출 순서에 의존하는 취약한 assertion이 됨.
+            table('room')과 table('branch')를 별도 Mock으로 분리.
+        """
         mock = MagicMock()
-        mock.table.return_value.upsert.return_value.execute.return_value = MagicMock()
-        mock.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+
+        mock_room_table = MagicMock()
+        mock_room_table.upsert.return_value.execute.return_value = MagicMock()
+        mock_room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+
+        mock_branch_table = MagicMock()
+        mock_branch_table.upsert.return_value.execute.return_value = MagicMock()
+
+        def table_dispatcher(name):
+            if name == "room":
+                return mock_room_table
+            elif name == "branch":
+                return mock_branch_table
+            return MagicMock()
+
+        mock.table.side_effect = table_dispatcher
+        mock._room_table = mock_room_table
+        mock._branch_table = mock_branch_table
         return mock
     
     @pytest.fixture
@@ -188,10 +210,32 @@ class TestV2NewFields:
     
     @pytest.fixture
     def mock_supabase(self):
-        """Supabase 클라이언트 Mock"""
+        """Supabase 클라이언트 Mock (테이블별 분리)
+
+        Rationale:
+            단일 mock.table.return_value로 모든 테이블 호출을 받으면
+            upsert 호출 순서에 의존하는 취약한 assertion이 됨.
+            table('room')과 table('branch')를 별도 Mock으로 분리.
+        """
         mock = MagicMock()
-        mock.table.return_value.upsert.return_value.execute.return_value = MagicMock()
-        mock.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+
+        mock_room_table = MagicMock()
+        mock_room_table.upsert.return_value.execute.return_value = MagicMock()
+        mock_room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+
+        mock_branch_table = MagicMock()
+        mock_branch_table.upsert.return_value.execute.return_value = MagicMock()
+
+        def table_dispatcher(name):
+            if name == "room":
+                return mock_room_table
+            elif name == "branch":
+                return mock_branch_table
+            return MagicMock()
+
+        mock.table.side_effect = table_dispatcher
+        mock._room_table = mock_room_table
+        mock._branch_table = mock_branch_table
         return mock
     
     @pytest.fixture
