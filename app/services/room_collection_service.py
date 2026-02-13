@@ -217,6 +217,19 @@ class RoomCollectionService:
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
 
+            # [v2.0.0] 동적 가격 관련 필드: 파서가 명시적으로 값을 제공한 경우에만 덮어씀
+            # Rationale: parsed.get("price_config", [])는 파싱 실패 시에도 빈 배열을 반환하여
+            #            기존 DB에 저장된 유효한 동적 가격 정책을 덮어쓰는 문제가 있음.
+            #            따라서 파서가 해당 키를 명시적으로 반환했을 때만 새 값을 사용하고,
+            #            그렇지 않으면 기존 DB 레코드의 값을 보존함.
+            existing_price_config = existing.get("price_config", []) if existing else []
+            existing_base_cap = existing.get("base_capacity") if existing else None
+            existing_extra_charge = existing.get("extra_charge") if existing else None
+
+            final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
+            final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
+            final_extra_charge = parsed["extra_charge"] if "extra_charge" in parsed else existing_extra_charge
+
             # Room Data
             room_data = {
                 "business_id": business["businessId"],
@@ -231,12 +244,12 @@ class RoomCollectionService:
                     parsed.get("recommend_capacity_range"),
                     final_rec_cap,
                     final_max_cap,
-                    parsed.get("base_capacity"),
-                    parsed.get("extra_charge")
+                    final_base_cap,
+                    final_extra_charge
                 ),
-                "price_config": parsed.get("price_config", []),
-                "base_capacity": parsed.get("base_capacity"),
-                "extra_charge": parsed.get("extra_charge"),
+                "price_config": final_price_config,
+                "base_capacity": final_base_cap,
+                "extra_charge": final_extra_charge,
                 "requires_call_on_sameday": parsed.get("requires_call_on_same_day") or False,
                 "image_urls": image_urls  # Save to JSONB column
             }
