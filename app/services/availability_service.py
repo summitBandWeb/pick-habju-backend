@@ -286,9 +286,9 @@ class AvailabilityService:
                         people_count=request.capacity
                     )
                     res.estimated_price = price
-                except Exception as e:
+                except ValueError as e:
                     logger.warning(f"Price calculation failed for {room.name}: {e}")
-                    res.estimated_price = None # 계산 실패 시 None
+                    res.estimated_price = None  # 가격 계산 실패 시 None
 
             res.policy_warnings = policy_warnings
             processed.append(res)

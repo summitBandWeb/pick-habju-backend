@@ -307,6 +307,17 @@ class RoomCollectionService:
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
 
+        # --- Sentinel 방어 ---
+        # NOTE: MANUAL_REVIEW_FLAG(100)이 rec_cap/max_cap/base_cap에 들어오면
+        #        [100, 102] 같은 비현실적 범위가 반환되므로, 현실적 상한(50)으로 clamp
+        MAX_REALISTIC_CAP = 50
+        if max_cap >= self.MANUAL_REVIEW_FLAG:
+            max_cap = MAX_REALISTIC_CAP
+        if rec_cap >= self.MANUAL_REVIEW_FLAG:
+            rec_cap = MAX_REALISTIC_CAP
+        if base_cap and base_cap >= self.MANUAL_REVIEW_FLAG:
+            base_cap = MAX_REALISTIC_CAP
+
         # 2. 추가 요금 있는 경우
         if extra_charge and extra_charge > 0 and base_cap:
             # min: base_cap, max: max_cap
