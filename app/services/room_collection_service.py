@@ -291,17 +291,18 @@ class RoomCollectionService:
             3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
         """
         # 1. 파싱된 범위 검증 후 우선 사용
-        # 조건: 2개 정수, min <= max, 합주실 현실적 범위(1~50명) 내
+        # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명) 내
+        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
-            and all(isinstance(v, int) for v in parsed_range)
+            and all(isinstance(v, (int, float)) for v in parsed_range)
             and parsed_range[0] <= parsed_range[1]
             and 1 <= parsed_range[0] and parsed_range[1] <= 50
         ):
-            # 합리적 범위로 clamp: min은 1 이상, max는 max_cap 이하
-            clamped_min = max(parsed_range[0], 1)
-            clamped_max = min(parsed_range[1], max_cap) if max_cap > 0 else parsed_range[1]
+            # float → int 변환 후 합리적 범위로 clamp
+            clamped_min = max(int(parsed_range[0]), 1)
+            clamped_max = min(int(parsed_range[1]), max_cap) if max_cap > 0 else int(parsed_range[1])
             # clamp 후에도 min <= max 보장
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
