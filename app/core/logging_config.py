@@ -68,6 +68,14 @@ class LogMasker:
         re.IGNORECASE
     )
 
+    # PII 형식 패턴: 키워드 매칭으로 잡히지 않는 이메일/전화번호를 직접 탐지
+    _EMAIL_RE = re.compile(
+        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    )
+    _PHONE_RE = re.compile(
+        r'\b\d{2,3}-\d{3,4}-\d{4}\b'
+    )
+
     @classmethod
     def mask_dict(cls, data: Any, depth: int = 0) -> Any:
         # 순환 참조 및 너무 깊은 중첩 방지 (최대 10단계)
@@ -88,9 +96,8 @@ class LogMasker:
         """문자열 내 민감 정보를 마스킹합니다.
 
         Rationale:
-            정규식 패턴은 클래스 로딩 시 한 번만 컴파일(_HEADER_RE, _QUOTED_RE,
-            _UNQUOTED_RE)하여 매 호출마다 재생성하는 CPU 오버헤드를 제거함.
-            마스킹 순서: 1) 헤더 → 2) 따옴표 값 → 3) 비따옴표 값
+            정규식 패턴은 클래스 로딩 시 한 번만 컴파일하여 CPU 오버헤드를 제거함.
+            마스킹 순서: 1) 헤더 → 2) 따옴표 값 → 3) 비따옴표 값 → 4) 이메일 → 5) 전화번호
         """
         if not isinstance(text, str):
             return text
@@ -103,6 +110,12 @@ class LogMasker:
 
         # 3차: Unquoted Value 패턴 (Query String, Form Data 등)
         text = cls._UNQUOTED_RE.sub(cls._replace_unquoted, text)
+
+        # 4차: 이메일 형식 마스킹 (키워드 없이 노출된 이메일 주소 포착)
+        text = cls._EMAIL_RE.sub('***@***.***', text)
+
+        # 5차: 전화번호 형식 마스킹 (010-1234-5678 등)
+        text = cls._PHONE_RE.sub('***-****-****', text)
 
         return text
 
