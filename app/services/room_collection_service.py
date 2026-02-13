@@ -254,7 +254,7 @@ class RoomCollectionService:
 
     def _calculate_capacity_range(
         self,
-        parsed_range: Optional[List[int]],
+        _parsed_range: Optional[List[int]],
         rec_cap: int,
         max_cap: int,
         base_cap: Optional[int],
@@ -262,7 +262,10 @@ class RoomCollectionService:
     ) -> List[int]:
         """추가 요금 유무에 따라 권장 인원 범위 계산
         
-        1. 파싱된 범위가 있으면 우선 사용 (단, 유효성 검증 필요)
+        Args:
+            _parsed_range: LLM이 파싱한 범위 (현재까지는 사용하지 않음, 일관성 문제)
+        
+        1. (미사용) 파싱된 범위가 있으면 우선 사용 (단, 유효성 검증 필요)
         2. 추가 요금 발생 시: [base_cap, max_cap]
         3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
         """
