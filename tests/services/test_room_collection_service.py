@@ -110,7 +110,7 @@ class TestDataPreservationLogic:
     async def test_preserve_existing_valid_value(self, service, mock_supabase):
         """파싱 값이 기본값(1)이고 기존 값이 유효(10)하면 기존 값 유지"""
         # Setup: 기존 DB에 max_capacity=10인 데이터 존재
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
             data=[{"biz_item_id": "room1", "max_capacity": 10, "recommend_capacity": 8, "price_per_hour": 20000}]
         )
         
@@ -121,7 +121,7 @@ class TestDataPreservationLogic:
         await service._save_to_db(business, rooms, parsed_results)
         
         # Verify: upsert 호출 시 max_capacity=10 (기존 값 유지)
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 10
@@ -131,7 +131,7 @@ class TestDataPreservationLogic:
     @pytest.mark.asyncio
     async def test_update_with_new_valid_value(self, service, mock_supabase):
         """파싱 값이 유효(5)하면 새 값으로 업데이트"""
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
             data=[{"biz_item_id": "room1", "max_capacity": 10, "recommend_capacity": 8, "price_per_hour": 20000}]
         )
         
@@ -141,7 +141,7 @@ class TestDataPreservationLogic:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 5
@@ -151,7 +151,7 @@ class TestDataPreservationLogic:
     @pytest.mark.asyncio
     async def test_update_when_existing_is_default(self, service, mock_supabase):
         """기존 값이 기본값(1)이면 새 값으로 업데이트"""
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
             data=[{"biz_item_id": "room1", "max_capacity": 1, "recommend_capacity": 1, "price_per_hour": None}]
         )
         
@@ -161,7 +161,7 @@ class TestDataPreservationLogic:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 8
@@ -171,7 +171,7 @@ class TestDataPreservationLogic:
     @pytest.mark.asyncio
     async def test_use_new_value_when_no_existing(self, service, mock_supabase):
         """기존 데이터가 없으면 새 값 그대로 사용"""
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
         rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
@@ -179,7 +179,7 @@ class TestDataPreservationLogic:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 1
@@ -189,7 +189,7 @@ class TestDataPreservationLogic:
     @pytest.mark.asyncio
     async def test_preserve_existing_price(self, service, mock_supabase):
         """새 가격이 0/None이고 기존 가격이 유효하면 기존 값 유지"""
-        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
             data=[{"biz_item_id": "room1", "max_capacity": 5, "recommend_capacity": 4, "price_per_hour": 25000}]
         )
         
@@ -199,7 +199,7 @@ class TestDataPreservationLogic:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["price_per_hour"] == 25000  # 기존 가격 유지
@@ -276,7 +276,7 @@ class TestV2NewFields:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
         # NOTE: 유효한 parsed_range [4, 6]이 우선 사용됨
@@ -306,7 +306,7 @@ class TestV2NewFields:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
         # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
@@ -327,7 +327,7 @@ class TestV2NewFields:
         await service._save_to_db(business, rooms, parsed_results)
         
         # Branch upsert 호출 확인
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[0]
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
         branch_data = upsert_call[0][0]
         
         assert branch_data["display_name"] == "테스트 합주실 1호점"
@@ -358,7 +358,7 @@ class TestV2NewFields:
         
         await service._save_to_db(business, rooms, parsed_results)
         
-        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
         
         assert room_data["price_config"] == price_cfg
