@@ -267,24 +267,45 @@ class RoomCollectionService:
 
     def _calculate_capacity_range(
         self,
-        _parsed_range: Optional[List[int]],
+        parsed_range: Optional[List[int]],
         rec_cap: int,
         max_cap: int,
         base_cap: Optional[int],
         extra_charge: Optional[int]
     ) -> List[int]:
         """추가 요금 유무에 따라 권장 인원 범위 계산
-        
+
         Args:
-            _parsed_range: LLM이 파싱한 범위 (현재까지는 사용하지 않음, 일관성 문제)
-        
-        1. (미사용) 파싱된 범위가 있으면 우선 사용 (단, 유효성 검증 필요)
-        2. 추가 요금 발생 시: [base_cap, max_cap]
-        3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
+            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
+            rec_cap: 권장 인원 수
+            max_cap: 최대 인원 수
+            base_cap: 기준 인원 수 (추가 요금 계산 기준)
+            extra_charge: 추가 요금 (원)
+
+        Returns:
+            [min, max] 형태의 권장 인원 범위 리스트
+
+        Rationale:
+            1. 파싱된 범위가 유효하면 우선 사용 (단, 합리적 범위로 clamp)
+            2. 추가 요금 발생 시: [base_cap, max_cap]
+            3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
         """
-        # 1. 파싱된 값이 유효하면 사용 (단, 현재 LLM이 범위를 잘 못 뽑는 경향이 있어 계산 로직 우선 고려)
-        # 정책: LLM보다 규칙 기반 계산을 우선시함 (일관성 위해)
-        
+        # 1. 파싱된 범위 검증 후 우선 사용
+        # 조건: 2개 정수, min <= max, 합주실 현실적 범위(1~50명) 내
+        if (
+            isinstance(parsed_range, list)
+            and len(parsed_range) == 2
+            and all(isinstance(v, int) for v in parsed_range)
+            and parsed_range[0] <= parsed_range[1]
+            and 1 <= parsed_range[0] and parsed_range[1] <= 50
+        ):
+            # 합리적 범위로 clamp: min은 1 이상, max는 max_cap 이하
+            clamped_min = max(parsed_range[0], 1)
+            clamped_max = min(parsed_range[1], max_cap) if max_cap > 0 else parsed_range[1]
+            # clamp 후에도 min <= max 보장
+            clamped_max = max(clamped_max, clamped_min)
+            return [clamped_min, clamped_max]
+
         # 2. 추가 요금 있는 경우
         if extra_charge and extra_charge > 0 and base_cap:
             # min: base_cap, max: max_cap
