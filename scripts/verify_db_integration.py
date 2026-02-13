@@ -102,14 +102,14 @@ async def verify_db_integration():
         logger.warning(f"priceConfig check: {target_room.priceConfig} vs {expected_config}")
         # 단순 비교가 실패할 수 있으므로(순서 등), 깊은 비교는 생략하더라도 값 존재 여부 확인
         if not target_room.priceConfig:
-             errors.append("priceConfig is empty")
+            errors.append("priceConfig is empty")
 
     # (3) base_capacity / extra_charge
     if target_room.baseCapacity != 4:
-         errors.append(f"baseCapacity mismatch: expected 4, got {target_room.baseCapacity}")
-         
+        errors.append(f"baseCapacity mismatch: expected 4, got {target_room.baseCapacity}")
+
     if target_room.extraCharge != 5000:
-         errors.append(f"extraCharge mismatch: expected 5000, got {target_room.extraCharge}")
+        errors.append(f"extraCharge mismatch: expected 5000, got {target_room.extraCharge}")
 
     if errors:
         logger.error("Verification FAILED with errors:")
