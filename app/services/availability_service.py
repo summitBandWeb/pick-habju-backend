@@ -272,8 +272,9 @@ class AvailabilityService:
                 try:
                     # 시간 슬롯을 datetime 범위로 변환
                     start_dt = datetime.strptime(f"{request.date} {hour_slots[0]}", "%Y-%m-%d %H:%M")
-                    # 마지막 슬롯 + 1시간 = 종료 시간
-                    end_dt = datetime.strptime(f"{request.date} {hour_slots[-1]}", "%Y-%m-%d %H:%M") + timedelta(hours=1)
+                    # NOTE: generate_time_slots는 end-inclusive이므로 hour_slots[-1]이 이미 종료 시각
+                    #        timedelta(hours=1) 추가 시 1시간 초과 과금 발생
+                    end_dt = datetime.strptime(f"{request.date} {hour_slots[-1]}", "%Y-%m-%d %H:%M")
                     
                     price = self.pricing_service.calculate_total_price(
                         base_price=room.pricePerHour,
