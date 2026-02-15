@@ -47,7 +47,7 @@ app = FastAPI(
 ### 데이터 출처
 - 네이버 예약 GraphQL API (booking.naver.com)
     """,
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",

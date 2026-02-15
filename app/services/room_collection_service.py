@@ -157,6 +157,7 @@ class RoomCollectionService:
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
+            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
         }
@@ -216,6 +217,19 @@ class RoomCollectionService:
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
 
+            # [v2.0.0] 동적 가격 관련 필드: 파서가 명시적으로 값을 제공한 경우에만 덮어씀
+            # Rationale: parsed.get("price_config", [])는 파싱 실패 시에도 빈 배열을 반환하여
+            #            기존 DB에 저장된 유효한 동적 가격 정책을 덮어쓰는 문제가 있음.
+            #            따라서 파서가 해당 키를 명시적으로 반환했을 때만 새 값을 사용하고,
+            #            그렇지 않으면 기존 DB 레코드의 값을 보존함.
+            existing_price_config = existing.get("price_config", []) if existing else []
+            existing_base_cap = existing.get("base_capacity") if existing else None
+            existing_extra_charge = existing.get("extra_charge") if existing else None
+
+            final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
+            final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
+            final_extra_charge = parsed["extra_charge"] if "extra_charge" in parsed else existing_extra_charge
+
             # Room Data
             room_data = {
                 "business_id": business["businessId"],
@@ -225,11 +239,19 @@ class RoomCollectionService:
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap,
                 "recommend_capacity": final_rec_cap,
-                # "created_at": "now()", # Schema does not have created_at
-                "base_capacity": parsed.get("base_capacity"),
-                "extra_charge": parsed.get("extra_charge"),
+                # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
+                "recommend_capacity_range": self._calculate_capacity_range(
+                    parsed.get("recommend_capacity_range"),
+                    final_rec_cap,
+                    final_max_cap,
+                    final_base_cap,
+                    final_extra_charge
+                ),
+                "price_config": final_price_config,
+                "base_capacity": final_base_cap,
+                "extra_charge": final_extra_charge,
                 "requires_call_on_sameday": parsed.get("requires_call_on_same_day") or False,
-                "image_urls": image_urls # Save to JSONB column
+                "image_urls": image_urls  # Save to JSONB column
             }
             
             # Upsert Room
@@ -242,6 +264,78 @@ class RoomCollectionService:
             return None
         # Use minPrice as the base price
         return min_max.get("minPrice")
+
+    def _calculate_capacity_range(
+        self,
+        parsed_range: Optional[List[int]],
+        rec_cap: int,
+        max_cap: int,
+        base_cap: Optional[int],
+        extra_charge: Optional[int]
+    ) -> List[int]:
+        """추가 요금 유무에 따라 권장 인원 범위 계산
+
+        Args:
+            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
+            rec_cap: 권장 인원 수
+            max_cap: 최대 인원 수
+            base_cap: 기준 인원 수 (추가 요금 계산 기준)
+            extra_charge: 추가 요금 (원)
+
+        Returns:
+            [min, max] 형태의 권장 인원 범위 리스트
+
+        Rationale:
+            1. 파싱된 범위가 유효하면 우선 사용 (단, 합리적 범위로 clamp)
+            2. 추가 요금 발생 시: [base_cap, max_cap]
+            3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
+        """
+        # 1. 파싱된 범위 검증 후 우선 사용
+        # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명) 내
+        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
+        if (
+            isinstance(parsed_range, list)
+            and len(parsed_range) == 2
+            and all(isinstance(v, (int, float)) for v in parsed_range)
+            and parsed_range[0] <= parsed_range[1]
+            and 1 <= parsed_range[0] and parsed_range[1] <= 50
+        ):
+            # float → int 변환 후 합리적 범위로 clamp
+            clamped_min = max(int(parsed_range[0]), 1)
+            clamped_max = min(int(parsed_range[1]), max_cap) if max_cap > 0 else int(parsed_range[1])
+            # clamp 후에도 min <= max 보장
+            clamped_max = max(clamped_max, clamped_min)
+            return [clamped_min, clamped_max]
+
+        # --- Sentinel 방어 ---
+        # NOTE: MANUAL_REVIEW_FLAG(100)이 rec_cap/max_cap/base_cap에 들어오면
+        #        [100, 102] 같은 비현실적 범위가 반환되므로, 현실적 상한(50)으로 clamp
+        MAX_REALISTIC_CAP = 50
+        if max_cap >= self.MANUAL_REVIEW_FLAG:
+            max_cap = MAX_REALISTIC_CAP
+        if rec_cap >= self.MANUAL_REVIEW_FLAG:
+            rec_cap = MAX_REALISTIC_CAP
+        if base_cap and base_cap >= self.MANUAL_REVIEW_FLAG:
+            base_cap = MAX_REALISTIC_CAP
+
+        # 2. 추가 요금 있는 경우
+        if extra_charge and extra_charge > 0 and base_cap:
+            # min: base_cap, max: max_cap
+            # 단, max_cap < base_cap인 비정상 데이터 방어
+            real_max = max(max_cap, base_cap)
+            return [base_cap, real_max]
+            
+        # 3. 추가 요금 없는 경우 (기본)
+        # min: rec_cap, max: rec_cap + 2
+        # 단, max_cap을 넘지 않도록 제한
+        min_c = rec_cap
+        max_c = min(rec_cap + 2, max_cap)
+        
+        # 만약 rec_cap + 2 > max_cap 이라서 max_c가 min_c보다 작아지는 경우 방어
+        # (예: rec=5, max=5 -> min=5, max=5)
+        max_c = max(max_c, min_c)
+        
+        return [min_c, max_c]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """

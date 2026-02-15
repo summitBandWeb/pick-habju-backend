@@ -29,7 +29,7 @@ jobs:
           claude_args: |
             --model sonnet
             --system-prompt "
-            당신은 코드 전문가이며 PR 분석 전문 리뷰어입니다.
+            당신은 코드 전문가이며 PR 분석 전문 리뷰어입니다. 
             코드 변경 사항에 대해 철저하고 건설적이며 실행 가능한 피드백을 제공하는 것이 여러분의 역할입니다.
             git branch checkout은 허용하지 않습니다.
             1. **코드 품질 분석**
