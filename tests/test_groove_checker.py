@@ -5,7 +5,6 @@ from unittest.mock import patch, MagicMock
 from app.exception.crawler.groove_exception import GrooveLoginError, GrooveCredentialError
 from app.models.dto import RoomDetail
 from app.crawler.groove_checker import GrooveCrawler
-<<<<<<< HEAD
 
 
 @pytest.fixture(scope="module")
@@ -19,40 +18,17 @@ def sample_groove_rooms():
         환경에 관계없이 항상 동일한 결과를 보장함.
     """
     return [RoomDetail(
-=======
-
-@pytest.fixture(scope="module")
-def sample_groove_rooms():
-    """테스트를 위한 그루브 연습실 RoomDetail 객체 샘플 목록을 제공합니다.
-
-    Rationale:
-        get_rooms_by_criteria(DB 호출)에 의존하면 DB 데이터 유무에 따라
-        테스트가 불안정해짐(IndexError). 하드코딩된 Mock 데이터를 사용하여
-        외부 상태와 무관하게 항상 동일한 결과를 보장.
-    """
-    room = RoomDetail(
->>>>>>> 175426f62639469a895ab6df4f1f5b851003b85a
         name="A룸",
         branch="그루브 사당점",
         business_id="groove_sadang",
         biz_item_id="13",
-<<<<<<< HEAD
-        pricePerHour=15000,
-        max_capacity=6,
-        recommend_capacity=4,
-        can_reserve_one_hour=True,
-        requires_call_on_sameday=False
-    )]
-=======
         imageUrls=[],
+        pricePerHour=15000,
         maxCapacity=6,
         recommendCapacity=4,
-        pricePerHour=15000,
         canReserveOneHour=True,
         requiresCallOnSameDay=False
-    )
-    return [room]
->>>>>>> 175426f62639469a895ab6df4f1f5b851003b85a
+    )]
 
 
 # --- 1. 예외 및 기본 오류 상황 테스트 ---
