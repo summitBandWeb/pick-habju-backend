@@ -9,6 +9,8 @@ lxml~=5.2            # BeautifulSoup 'lxml' 파서
 
 # ==== 크롤러 & LLM ====
 playwright~=1.40     # Naver Map 크롤링
+playwright-stealth~=1.0 # Bot 탐지 회피
+fake-useragent~=1.4  # Random User-Agent
 google-generativeai~=0.3  # Gemini LLM (선택)
 python-dotenv~=1.0   # 환경변수 로드
 
