@@ -31,6 +31,7 @@ def mock_installed_packages():
 
 def test_get_random_ua_installed(mock_installed_packages):
     """fake-useragent 설치 시 랜덤 UA 반환 검증"""
+    _ = mock_installed_packages
     crawler = NaverMapCrawler(headless=True)
     ua = crawler._get_random_ua()
     assert ua == "Mocked/UserAgent 1.0"
@@ -48,6 +49,7 @@ def test_get_random_ua_generic_exception(mock_installed_packages):
 
 def test_get_random_ua_missing(mock_missing_packages):
     """fake-useragent 미설치 시 Fallback UA 반환 검증"""
+    _ = mock_missing_packages
     crawler = NaverMapCrawler(headless=True)
     ua = crawler._get_random_ua()
     assert "Mozilla/5.0" in ua
@@ -65,6 +67,7 @@ def test_apply_stealth_installed(mock_installed_packages):
 
 def test_apply_stealth_missing(mock_missing_packages):
     """playwright-stealth 미설치 시 에러 없이 로그만 남기는지 검증"""
+    _ = mock_missing_packages
     crawler = NaverMapCrawler(headless=True)
     mock_page = MagicMock()
     
