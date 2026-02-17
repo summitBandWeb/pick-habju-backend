@@ -139,13 +139,16 @@ class NaverMapCrawler:
 
     def _get_random_ua(self) -> str:
         """Generates a random User-Agent string."""
+        fallback_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         try:
             from fake_useragent import UserAgent
-            ua = UserAgent(platforms='pc', os='windows', browsers=['chrome', 'edge'])
+            # NOTE: Removed 'platforms' which might be unsupported in some versions.
+            # Using browsers only to ensure compatibility.
+            ua = UserAgent(browsers=['chrome', 'edge'])
             return ua.random
-        except ImportError:
-            logger.warning("fake-useragent not installed. Using fallback UA.")
-            return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        except Exception as e:
+            logger.warning(f"Error generating random UA ({type(e).__name__}: {e}). Using fallback UA.")
+            return fallback_ua
 
     def _apply_stealth(self, page):
         """Applies stealth settings to the page."""

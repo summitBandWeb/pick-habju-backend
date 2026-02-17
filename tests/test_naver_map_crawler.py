@@ -33,6 +33,17 @@ def test_get_random_ua_installed(mock_installed_packages):
     ua = crawler._get_random_ua()
     assert ua == "Mocked/UserAgent 1.0"
 
+def test_get_random_ua_generic_exception(mock_installed_packages):
+    """fake-useragent 사용 중 일반 예외(Exception) 발생 시 Fallback UA 반환 검증"""
+    mock_ua_instance, _ = mock_installed_packages
+    # random 접근 시 예외 발생 시뮬레이션
+    type(mock_ua_instance).random = property(lambda self: (_ for _ in ()).throw(Exception("Random Error")))
+    
+    crawler = NaverMapCrawler(headless=True)
+    ua = crawler._get_random_ua()
+    assert "Mozilla/5.0" in ua
+    assert "Mocked" not in ua
+
 def test_get_random_ua_missing(mock_missing_packages):
     """fake-useragent 미설치 시 Fallback UA 반환 검증"""
     crawler = NaverMapCrawler(headless=True)
