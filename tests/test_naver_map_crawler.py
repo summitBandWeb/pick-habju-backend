@@ -6,26 +6,28 @@ from app.crawler.naver_map_crawler import NaverMapCrawler
 # Fixture to simulate missing dependencies
 @pytest.fixture
 def mock_missing_packages():
-    with patch.dict(sys.modules, {'fake_useragent': None, 'playwright_stealth': None}):
+    with patch('app.crawler.naver_map_crawler.UserAgent', None), \
+         patch('app.crawler.naver_map_crawler.Stealth', None):
         yield
 
 # Fixture to simulate installed dependencies
 @pytest.fixture
 def mock_installed_packages():
-    mock_ua_module = MagicMock()
     mock_ua_class = MagicMock()
     mock_ua_instance = MagicMock()
     mock_ua_instance.random = "Mocked/UserAgent 1.0"
     mock_ua_class.return_value = mock_ua_instance
-    mock_ua_module.UserAgent = mock_ua_class
     
-    mock_stealth_module = MagicMock()
+    mock_stealth_class = MagicMock()
+    mock_stealth_instance = MagicMock()
+    mock_stealth_class.return_value = mock_stealth_instance
     
-    with patch.dict(sys.modules, {
-        'fake_useragent': mock_ua_module, 
-        'playwright_stealth': mock_stealth_module
-    }):
-        yield mock_ua_instance, mock_stealth_module
+    mock_apply = MagicMock()
+    
+    with patch('app.crawler.naver_map_crawler.UserAgent', mock_ua_class), \
+         patch('app.crawler.naver_map_crawler.Stealth', mock_stealth_class), \
+         patch('app.crawler.naver_map_crawler.apply_stealth_sync', mock_apply):
+        yield mock_ua_instance, mock_apply
 
 def test_get_random_ua_installed(mock_installed_packages):
     """fake-useragent 설치 시 랜덤 UA 반환 검증"""
@@ -53,13 +55,13 @@ def test_get_random_ua_missing(mock_missing_packages):
 
 def test_apply_stealth_installed(mock_installed_packages):
     """playwright-stealth 설치 시 stealth() 호출 검증"""
-    _, mock_stealth_module = mock_installed_packages
+    _, mock_apply = mock_installed_packages
     crawler = NaverMapCrawler(headless=True)
     mock_page = MagicMock()
     
     crawler._apply_stealth(mock_page)
     
-    mock_stealth_module.stealth.assert_called_once_with(mock_page)
+    mock_apply.assert_called_once_with(mock_page)
 
 def test_apply_stealth_missing(mock_missing_packages):
     """playwright-stealth 미설치 시 에러 없이 로그만 남기는지 검증"""

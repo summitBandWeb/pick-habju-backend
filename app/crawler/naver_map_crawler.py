@@ -1,11 +1,20 @@
 import os
-import asyncio
 import logging
 from typing import List, Dict, Optional
-from playwright.sync_api import sync_playwright
-# NOTE: playwright_stealth and fake_useragent are imported inside methods
-# to allow optional usage and better testability.
 from concurrent.futures import ThreadPoolExecutor
+
+from playwright.sync_api import sync_playwright
+try:
+    from fake_useragent import UserAgent
+except ImportError:
+    UserAgent = None
+
+try:
+    from playwright_stealth import Stealth, apply_stealth_sync
+except ImportError:
+    Stealth = None
+    apply_stealth_sync = None
+
 from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
 
 
@@ -140,11 +149,14 @@ class NaverMapCrawler:
     def _get_random_ua(self) -> str:
         """Generates a random User-Agent string."""
         fallback_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        if UserAgent is None:
+            logger.warning("fake-useragent not installed. Using fallback UA.")
+            return fallback_ua
+
         try:
-            from fake_useragent import UserAgent
-            # NOTE: Removed 'platforms' which might be unsupported in some versions.
-            # Using browsers only to ensure compatibility.
-            ua = UserAgent(browsers=['chrome', 'edge'])
+            # NOTE: Added fallback argument to handle FakeUserAgentError robustly.
+            ua = UserAgent(browsers=['chrome', 'edge'], fallback=fallback_ua)
             return ua.random
         except Exception as e:
             logger.warning(f"Error generating random UA ({type(e).__name__}: {e}). Using fallback UA.")
@@ -152,11 +164,19 @@ class NaverMapCrawler:
 
     def _apply_stealth(self, page):
         """Applies stealth settings to the page."""
-        try:
-            from playwright_stealth import stealth
-            stealth(page)
-        except ImportError:
+        if Stealth is None:
             logger.warning("playwright-stealth not installed. Stealth mode disabled.")
+            return
+
+        try:
+            # NOTE: Updated to use the newer Stealth API (v2+)
+            if apply_stealth_sync:
+                apply_stealth_sync(page)
+            else:
+                # Fallback to Stealth().use_sync(page) if available
+                Stealth().use_sync(page)
+        except Exception as e:
+            logger.warning(f"Failed to apply stealth ({type(e).__name__}: {e}). Stealth mode disabled.")
 
     def _merge_results(self, target: Dict, source: List[Dict]):
         """중복 제거하며 결과 병합"""
