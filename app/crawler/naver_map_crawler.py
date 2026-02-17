@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor
 
@@ -10,9 +11,13 @@ except ImportError:
     UserAgent = None
 
 try:
-    from playwright_stealth import Stealth, apply_stealth_sync
+    from playwright_stealth import Stealth
 except ImportError:
     Stealth = None
+
+try:
+    from playwright_stealth import apply_stealth_sync
+except ImportError:
     apply_stealth_sync = None
 
 from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
@@ -164,8 +169,8 @@ class NaverMapCrawler:
 
     def _apply_stealth(self, page):
         """Applies stealth settings to the page."""
-        if Stealth is None:
-            logger.warning("playwright-stealth not installed. Stealth mode disabled.")
+        if Stealth is None and apply_stealth_sync is None:
+            logger.warning("playwright-stealth components (Stealth, apply_stealth_sync) both missing. Stealth mode disabled.")
             return
 
         try:
