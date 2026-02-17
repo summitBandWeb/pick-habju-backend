@@ -7,7 +7,8 @@ from app.crawler.naver_map_crawler import NaverMapCrawler
 @pytest.fixture
 def mock_missing_packages():
     with patch('app.crawler.naver_map_crawler.UserAgent', None), \
-         patch('app.crawler.naver_map_crawler.Stealth', None):
+         patch('app.crawler.naver_map_crawler.Stealth', None), \
+        patch('app.crawler.naver_map_crawler.apply_stealth_sync', None):
         yield
 
 # Fixture to simulate installed dependencies

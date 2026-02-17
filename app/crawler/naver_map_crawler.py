@@ -54,6 +54,7 @@ class NaverMapCrawler:
         with sync_playwright() as p:
             # Use channel='chrome' for more realistic browser fingerprint (if installed)
             browser = p.chromium.launch(
+                channel='chrome',
                 headless=self.headless,
                 args=[
                     '--disable-blink-features=AutomationControlled',
@@ -161,7 +162,7 @@ class NaverMapCrawler:
 
         try:
             # NOTE: Added fallback argument to handle FakeUserAgentError robustly.
-            ua = UserAgent(browsers=['chrome', 'edge'], fallback=fallback_ua)
+            ua = UserAgent(os='windows', browsers=['chrome', 'edge'], fallback=fallback_ua)
             return ua.random
         except Exception as e:
             logger.warning(f"Error generating random UA ({type(e).__name__}: {e}). Using fallback UA.")
@@ -178,8 +179,8 @@ class NaverMapCrawler:
             if apply_stealth_sync:
                 apply_stealth_sync(page)
             else:
-                # Fallback to Stealth().use_sync(page) if available
-                Stealth().use_sync(page)
+                # Fallback to instance method if function not available
+                Stealth().apply_stealth_sync(page)
         except Exception as e:
             logger.warning(f"Failed to apply stealth ({type(e).__name__}: {e}). Stealth mode disabled.")
 
