@@ -107,7 +107,15 @@ class AvailabilityRequest(BaseModel):
 
     @model_validator(mode='after')
     def validate_logic(self) -> 'AvailabilityRequest':
-        # 1. Coordinate Logic
+        # 1. Coordinate Range & Logic
+        # Latitude: -90 ~ 90
+        if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
+            raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
+            
+        # Longitude: -180 ~ 180
+        if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):
+            raise ValueError("경도는 -180도에서 180도 사이여야 합니다.")
+
         if self.swLat >= self.neLat:
             raise ValueError("남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
         if self.swLng >= self.neLng:
