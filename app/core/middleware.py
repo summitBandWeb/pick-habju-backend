@@ -42,7 +42,15 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
         # 2. UUID 형식 검증 (보안 강화)
         # 형식이 올바르지 않으면(악성 스크립트 등) 무시하고 새로 발급
         if trace_id and not UUID_PATTERN.match(trace_id):
-            logger.warning(f"Invalid Trace ID received: {trace_id}")
+            # NOTE: 악의적인 값 직접 로깅 시 로그 인젝션 위험 → 메타데이터만 기록
+            logger.warning(
+                "Invalid Trace ID format received from client",
+                extra={
+                    "client_ip": request.client.host if request.client else "unknown",
+                    "invalid_format": True,
+                    "trace_id_length": len(trace_id)
+                }
+            )
             trace_id = None
 
         # 3. 없으면 신규 생성 (Fallback)

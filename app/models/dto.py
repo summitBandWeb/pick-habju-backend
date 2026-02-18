@@ -20,18 +20,29 @@ class RoomDetail(BaseModel):
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
     recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+
+    @field_validator("recommendCapacity", mode="before")
+    @classmethod
+    def normalize_recommend_capacity(cls, v: Any) -> int:
+        """레거시 데이터 호환: 리스트로 들어오면 첫 번째 값을 사용"""
+        if isinstance(v, list):
+            return v[0] if v else 0
+        return v
+
     recommendCapacityRange: Optional[List[int]] = Field(
         default=None,
         alias="recommend_capacity_range",
         description="Recommended capacity range [min, max]",
     )
-    
-    # 신규 필드 추가 (v2.0.0)
     baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
     extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
-    
-    # v2.0.0 유연한 정책 필드
-    priceConfig: Dict[str, Any] = Field(default_factory=dict, alias="price_config", description="Flexible price configuration (JSON)")
+
+    # v2.0.0 유연한 정책 필드 (dict/list 모두 수용)
+    priceConfig: Union[Dict[str, Any], List[Dict[str, Any]]] = Field(
+        default_factory=dict,
+        alias="price_config",
+        description="Flexible price configuration (JSON)",
+    )
     minCapacity: int = Field(default=1, alias="min_capacity", description="Minimum capacity for reservation")
     minHours: int = Field(default=1, alias="min_hours", description="Minimum reservation hours")
     maxHours: Optional[int] = Field(None, alias="max_hours", description="Maximum reservation hours")
@@ -84,8 +95,8 @@ class RoomDetail(BaseModel):
                 return [int(v[0]), int(v[1])]
             return None
         if isinstance(v, str):
-            # Example: [2,5], (2,5], [2,5)
-            match = re.fullmatch(r"[\[\(]\s*(\d+)\s*,\s*(\d+)\s*[\]\)]", v)
+            # NOTE: DB backfill/int4range는 inclusive("[]")만 사용하므로 해당 형식만 허용
+            match = re.fullmatch(r"\[\s*(\d+)\s*,\s*(\d+)\s*\]", v)
             if not match:
                 return None
             lower = int(match.group(1))
@@ -158,6 +169,12 @@ class AvailabilityRequest(BaseModel):
         return value
 
 
+# Policy Warning DTO
+class PolicyWarning(BaseModel):
+    """예약 정책 위반 경고"""
+    type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
+    message: str = Field(..., description="User-friendly warning message")
+
 # Room Info (Response용 평탄화된 모델)
 class RoomInfo(BaseModel):
     """조건에 맞는 개별 룸 정보"""
@@ -187,6 +204,10 @@ class RoomInfo(BaseModel):
     maxHours: Optional[int] = None
     phoneNumber: Optional[str] = None
     displayName: Optional[str] = None
+
+    # [v2.0.0] 계산된 정보
+    estimatedPrice: Optional[int] = None
+    policyWarnings: List[PolicyWarning] = Field(default_factory=list)
     
 # Crawler Result DTO (Internal Logic Use Only)
 class RoomAvailability(BaseModel):
@@ -194,6 +215,10 @@ class RoomAvailability(BaseModel):
     room_detail: RoomDetail = Field(..., description="Room detail information")
     available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
     available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+    
+    # [v2.0.0] 추가 정보
+    estimated_price: Optional[int] = Field(None, description="Calculated total price")
+    policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
 
 # Branch Summary Stat Model
 class BranchStats(BaseModel):

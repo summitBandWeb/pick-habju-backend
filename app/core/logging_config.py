@@ -11,7 +11,6 @@ from app.core.context import get_trace_id
 class LogMasker:
     """민감 정보를 마스킹하는 유틸리티 클래스"""
     # 1. 일반 변수/JSON 키: 공백이나 구분자(&, ,)로 값이 끝남
-    # 1. 일반 변수/JSON 키: 공백이나 구분자(&, ,)로 값이 끝남
     SENSITIVE_KEYS: set[str] = {
         # Credentials - Basic
         "password", "passwd", "pwd", "pass",
@@ -43,6 +42,40 @@ class LogMasker:
     # 통합 체크용 (dict 마스킹 시 사용)
     ALL_SENSITIVE = SENSITIVE_KEYS | SENSITIVE_HEADERS
 
+    # --- 클래스 로딩 시 한 번만 컴파일하는 정규식 패턴 ---
+    # NOTE: 매 mask_string() 호출마다 패턴을 재생성하면 고부하 환경에서
+    #       심각한 CPU 오버헤드 발생. 클래스 변수로 한 번만 컴파일.
+    _KEYS_PATTERN = '|'.join(re.escape(k) for k in SENSITIVE_KEYS)
+
+    _HEADER_RE = re.compile(
+        r'({})\s*:\s*(?P<value>[^;\n]+)'.format(
+            '|'.join(re.escape(k) for k in SENSITIVE_HEADERS)
+        ),
+        re.IGNORECASE
+    )
+
+    _QUOTED_RE = re.compile(
+        r'(["\']?)({keys})\1\s*[:=]\s*(?P<quote>["\'])(?P<value>.*?)(?P=quote)'.format(
+            keys=_KEYS_PATTERN
+        ),
+        re.IGNORECASE
+    )
+
+    _UNQUOTED_RE = re.compile(
+        r'(["\']?)({keys})\1\s*[:=]\s*(?P<value>[^"\',\s;&]+)'.format(
+            keys=_KEYS_PATTERN
+        ),
+        re.IGNORECASE
+    )
+
+    # PII 형식 패턴: 키워드 매칭으로 잡히지 않는 이메일/전화번호를 직접 탐지
+    _EMAIL_RE = re.compile(
+        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+    )
+    _PHONE_RE = re.compile(
+        r'\b\d{2,3}-\d{3,4}-\d{4}\b'
+    )
+
     @classmethod
     def mask_dict(cls, data: Any, depth: int = 0) -> Any:
         # 순환 참조 및 너무 깊은 중첩 방지 (최대 10단계)
@@ -60,57 +93,46 @@ class LogMasker:
 
     @classmethod
     def mask_string(cls, text: str) -> str:
+        """문자열 내 민감 정보를 마스킹합니다.
+
+        Rationale:
+            정규식 패턴은 클래스 로딩 시 한 번만 컴파일하여 CPU 오버헤드를 제거함.
+            마스킹 순서: 1) 헤더 → 2) 따옴표 값 → 3) 비따옴표 값 → 4) 이메일 → 5) 전화번호
+        """
         if not isinstance(text, str):
             return text
         
-        # SENSITIVE_KEYS 패턴 미리 컴파일 (성능 최적화)
-        keys_pattern = '|'.join(re.escape(k) for k in cls.SENSITIVE_KEYS)
-
         # 1차: 헤더 마스킹 (값에 공백 포함 가능, ; 또는 줄바꿈 등으로 종료)
-        # 패턴: (헤더명)[:] (값...) -> 헤더는 보통 콜론(:) 사용
-        header_pattern = r'({})\s*:\s*(?P<value>[^;\n]+)'.format(
-            '|'.join(re.escape(k) for k in cls.SENSITIVE_HEADERS)
-        )
-        text = re.sub(header_pattern, r'\1: ***', text, flags=re.IGNORECASE)
+        text = cls._HEADER_RE.sub(r'\1: ***', text)
 
         # 2차: Quoted Value 패턴 (JSON, Key="Value" 등)
-        # 키: 따옴표가 있거나 없을 수 있음
-        # 구분자: [:=] (JSON은 :, 쿼리스트링은 =)
-        # 값: 따옴표(" 또는 ')로 감싸져 있음. 내부의 이스케이프 문자(\") 처리
-        # 정규식 설명:
-        #   (["']?): 키 앞의 따옴표 (선택)
-        #   ({keys}): 민감 키
-        #   \2: 키 뒤의 따옴표 (앞과 매칭되어야 함 -> \2로 참조? 아니면 ["']? 로 유연하게?)
-        #   \s*[:=]\s*: 구분자
-        #   (?P<quote>["']): 값의 시작 따옴표 (캡처)
-        #   (?P<value>(?:(?=(\\?))\6.)*?): 값 내용 (이스케이프 문자 처리 포함)
-        #   (?P=quote): 값의 종료 따옴표 (시작 따옴표와 동일)
-        
-        # 간단한 버전 (이스케이프 처리는 복잡하므로 비탐욕적 매칭 사용)
-        quoted_pattern = r'(["\']?)({keys})\1\s*[:=]\s*(?P<quote>["\'])(?P<value>.*?)(?P=quote)'.format(keys=keys_pattern)
-        
-        def replace_quoted(match):
-            full_match = match.group(0)
-            quote = match.group('quote')
-            value = match.group('value')
-            # 값 부분을 ***로 대체 (따옴표는 유지)
-            return full_match.replace(f"{quote}{value}{quote}", f"{quote}***{quote}")
-
-        text = re.sub(quoted_pattern, replace_quoted, text, flags=re.IGNORECASE)
+        text = cls._QUOTED_RE.sub(cls._replace_quoted, text)
 
         # 3차: Unquoted Value 패턴 (Query String, Form Data 등)
-        # 키: 따옴표가 있거나 없을 수 있음
-        # 값: 따옴표, 공백, 구분자(&, ;, ,)를 제외한 문자열
-        unquoted_pattern = r'(["\']?)({keys})\1\s*[:=]\s*(?P<value>[^"\',\s;&]+)'.format(keys=keys_pattern)
-        
-        def replace_unquoted(match):
-            full_match = match.group(0)
-            value = match.group('value')
-            return full_match.replace(value, "***")
+        text = cls._UNQUOTED_RE.sub(cls._replace_unquoted, text)
 
-        text = re.sub(unquoted_pattern, replace_unquoted, text, flags=re.IGNORECASE)
+        # 4차: 이메일 형식 마스킹 (키워드 없이 노출된 이메일 주소 포착)
+        text = cls._EMAIL_RE.sub('***@***.***', text)
+
+        # 5차: 전화번호 형식 마스킹 (010-1234-5678 등)
+        text = cls._PHONE_RE.sub('***-****-****', text)
 
         return text
+
+    @staticmethod
+    def _replace_quoted(match):
+        """따옴표로 감싸진 민감 값을 ***로 대체 (따옴표 구조는 유지)"""
+        full_match = match.group(0)
+        quote = match.group('quote')
+        value = match.group('value')
+        return full_match.replace(f"{quote}{value}{quote}", f"{quote}***{quote}")
+
+    @staticmethod
+    def _replace_unquoted(match):
+        """따옴표 없는 민감 값을 ***로 대체"""
+        full_match = match.group(0)
+        value = match.group('value')
+        return full_match.replace(value, "***")
 
 
 class SensitiveDataFilter(logging.Filter):
@@ -191,8 +213,25 @@ def setup_logging(log_dir: str = "logs"):
     console_handler.addFilter(sensitive_filter)
     root_logger.addHandler(console_handler)
 
+    # NOTE: 로테이션된 파일(app.log.2026-02-13)에도 0600 권한을 적용하기 위해
+    #       doRollover를 오버라이드한 커스텀 핸들러 사용.
+    #       기본 TimedRotatingFileHandler는 새 파일을 umask 기본값으로 생성함.
+    class SecureRotatingFileHandler(TimedRotatingFileHandler):
+        """로테이션 시 모든 로그 파일에 0600 권한을 자동 적용하는 핸들러"""
+
+        def doRollover(self):
+            super().doRollover()
+            # 로테이션 후 현재 로그 파일 권한 설정
+            if self.baseFilename and os.path.exists(self.baseFilename):
+                os.chmod(self.baseFilename, stat.S_IRUSR | stat.S_IWUSR)
+            # 백업 파일들에도 동일한 권한 적용
+            for filename in os.listdir(log_dir):
+                if filename.startswith("app.log"):
+                    filepath = os.path.join(log_dir, filename)
+                    os.chmod(filepath, stat.S_IRUSR | stat.S_IWUSR)
+
     # 일자별 파일 로테이션 핸들러 (자정 기준, 7일 보관)
-    file_handler = TimedRotatingFileHandler(
+    file_handler = SecureRotatingFileHandler(
         filename=os.path.join(log_dir, "app.log"),
         when="midnight",
         backupCount=7,
@@ -203,8 +242,8 @@ def setup_logging(log_dir: str = "logs"):
     file_handler.addFilter(sensitive_filter)
     root_logger.addHandler(file_handler)
 
-    # 파일 권한 설정 (소유자만 읽기/쓰기 가능 - 0600)
-    # 보안상 로그 파일은 다른 사용자가 읽을 수 없어야 함
+    # 초기 파일 권한 설정 (소유자만 읽기/쓰기 가능 - 0600)
     log_file = os.path.join(log_dir, "app.log")
     if os.path.exists(log_file):
         os.chmod(log_file, stat.S_IRUSR | stat.S_IWUSR)
+
