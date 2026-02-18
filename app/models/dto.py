@@ -73,20 +73,19 @@ class AvailabilityRequest(BaseModel):
         import re
         from datetime import datetime, date
         
-        # 1. Format Check
+        # 1. Regex Format Check
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
             raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
         
-        # 2. Logic Check (Past Date)
-        # NOTE: DTO 생성 시점이 '오늘' 기준 과거인지 체크
+        # 2. Calendar Validity Check (e.g., 2024-02-30)
         try:
             input_date = datetime.strptime(v, "%Y-%m-%d").date()
-            if input_date < date.today():
-                raise ValueError("과거 날짜는 예약할 수 없습니다.")
-        except ValueError as e:
-            if "과거 날짜" in str(e):
-                raise e
-            pass # 포맷 에러는 위에서 처리됨
+        except ValueError:
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
+            
+        # 3. Logic Check (Past Date)
+        if input_date < date.today():
+            raise ValueError("과거 날짜는 예약할 수 없습니다.")
             
         return v
     
