@@ -52,6 +52,35 @@ def test_ping():
 from datetime import datetime, timedelta
 
 
+def test_get_availability_api_invalid_date_regex():
+    """date 형식이 YYYY-MM-DD가 아니면 422 validation envelope을 반환해야 함"""
+    response = client.get(
+        "/api/rooms/availability"
+        "?date=2026/02/20&capacity=3&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
+def test_get_availability_api_invalid_capacity_range():
+    """capacity가 1~50 범위를 벗어나면 422 validation envelope을 반환해야 함"""
+    target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+    response = client.get(
+        "/api/rooms/availability"
+        f"?date={target_date}&capacity=0&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
 def test_get_availability_api():
     # GET 요청 테스트 - Mock 크롤러를 통해 동작 검증
     url = "/api/rooms/availability"

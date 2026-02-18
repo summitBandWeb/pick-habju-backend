@@ -180,3 +180,27 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["price_per_hour"] == 25000  # 기존 가격 유지
+
+    @pytest.mark.asyncio
+    async def test_preserve_existing_price_config(self, service, mock_supabase):
+        """새 price_config가 비어있으면 기존 price_config를 보존"""
+        mock_supabase.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{
+                "biz_item_id": "room1",
+                "max_capacity": 5,
+                "recommend_capacity": 4,
+                "price_per_hour": 25000,
+                "price_config": {"default": 25000, "overrides": [], "surcharges": []},
+            }]
+        )
+
+        business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
+        rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 20000}}]
+        parsed_results = {"room1": {"max_capacity": 5, "recommend_capacity": 4, "price_config": None}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase.table.return_value.upsert.call_args_list[-1]
+        upsert_data = upsert_call[0][0]
+
+        assert upsert_data["price_config"]["default"] == 25000

@@ -36,15 +36,15 @@ ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false, "price_config": {{"default": null, "overrides": [{{"day_type": "weekday", "start_hour": "18:00", "end_hour": "24:00", "price": 15000}}], "surcharges": []}}}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false, "price_config": null}}
 
 Example 3:
 Input: "[주말] 스튜디오A", "당일 예약은 전화 문의"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true}}
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true, "price_config": {{"default": null, "overrides": [], "surcharges": [{{"day_type": "weekend", "amount": 2000}}]}}}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
@@ -54,6 +54,7 @@ Rules:
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- price_config: Optional pricing config extracted from text. Use null when no signal.
 
 Now extract:
 Input: "{name}", "{desc}"
@@ -72,6 +73,7 @@ Rules:
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- price_config: Optional pricing config object or null
 
 Rooms:
 {rooms_text}
@@ -227,8 +229,65 @@ class RoomParserService:
         day_type = result.get("day_type")
         if day_type is not None and day_type not in ["weekday", "weekend"]:
             return False
+
+        # 6. price_config 구조 검증
+        price_config = result.get("price_config")
+        if price_config is not None and not self._validate_price_config(price_config):
+            return False
         
         return True
+
+    def _validate_price_config(self, config: Any) -> bool:
+        """price_config JSON 구조 유효성 검증"""
+        if not isinstance(config, dict):
+            return False
+
+        default_price = config.get("default")
+        if default_price is not None and (
+            not isinstance(default_price, (int, float)) or default_price < 0
+        ):
+            return False
+
+        overrides = config.get("overrides", [])
+        if not isinstance(overrides, list):
+            return False
+        for item in overrides:
+            if not isinstance(item, dict):
+                return False
+            if item.get("day_type") not in ["weekday", "weekend"]:
+                return False
+            if not isinstance(item.get("price"), (int, float)) or item.get("price") < 0:
+                return False
+            if not self._is_hour_label(item.get("start_hour")):
+                return False
+            if not self._is_hour_label(item.get("end_hour")):
+                return False
+
+        surcharges = config.get("surcharges", [])
+        if not isinstance(surcharges, list):
+            return False
+        for item in surcharges:
+            if not isinstance(item, dict):
+                return False
+            if item.get("day_type") not in ["weekday", "weekend"]:
+                return False
+            if not isinstance(item.get("amount"), (int, float)) or item.get("amount") < 0:
+                return False
+        return True
+
+    def _is_hour_label(self, value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        match = re.fullmatch(r"(\d{2}):(\d{2})", value)
+        if not match:
+            return False
+        hour = int(match.group(1))
+        minute = int(match.group(2))
+        if minute != 0:
+            return False
+        if hour < 0 or hour > 24:
+            return False
+        return not (hour == 24 and minute != 0)
 
     def _parse_with_regex(self, name: str, desc: str) -> Dict[str, Any]:
         """정규표현식을 사용한 Fallback 파싱 로직.
@@ -287,6 +346,7 @@ class RoomParserService:
 
         # 4. Same day call
         requires_call = "당일" in desc and ("전화" in desc or "문의" in desc)
+        price_config = self._extract_price_config_from_text(desc, day_type)
 
         return {
             "clean_name": clean_name,
@@ -295,7 +355,83 @@ class RoomParserService:
             "recommend_capacity": rec_cap,
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
-            "requires_call_on_same_day": requires_call
+            "requires_call_on_same_day": requires_call,
+            "price_config": price_config,
+        }
+
+    def _extract_price_config_from_text(
+        self, desc: str, day_type_hint: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """설명 텍스트에서 요일/시간대별 가격 규칙을 추출"""
+        desc = desc or ""
+        overrides: List[Dict[str, Any]] = []
+        surcharges: List[Dict[str, Any]] = []
+
+        # Example: "평일 18시 이후 15000원", "주말 20시부터 20000원"
+        for match in re.finditer(
+            r"(평일|주말|공휴일)\s*(\d{1,2})\s*시\s*(?:이후|부터)\s*(\d+(?:,\d+)?)\s*원",
+            desc,
+        ):
+            day_text = match.group(1)
+            day = "weekday" if day_text == "평일" else "weekend"
+            hour = int(match.group(2))
+            if hour < 0 or hour > 24:
+                continue
+            price = int(match.group(3).replace(",", ""))
+            overrides.append(
+                {
+                    "day_type": day,
+                    "start_hour": f"{hour:02d}:00",
+                    "end_hour": "24:00",
+                    "price": price,
+                }
+            )
+
+        # Example: "주말 2000원 추가", "공휴일 3000원 추가"
+        for match in re.finditer(
+            r"(주말|공휴일|평일)\D{0,8}?(\d+(?:,\d+)?)\s*원\s*추가",
+            desc,
+        ):
+            day_text = match.group(1)
+            day = "weekday" if day_text == "평일" else "weekend"
+            amount = int(match.group(2).replace(",", ""))
+            surcharges.append({"day_type": day, "amount": amount})
+
+        # Example: "평일 15000원", "주말 18000원"
+        for match in re.finditer(
+            r"(평일|주말|공휴일)\s*(\d+(?:,\d+)?)\s*원",
+            desc,
+        ):
+            if re.search(
+                rf"{match.group(1)}\s*\d{{1,2}}\s*시\s*(?:이후|부터)\s*{match.group(2)}\s*원",
+                desc,
+            ):
+                continue
+            day_text = match.group(1)
+            day = "weekday" if day_text == "평일" else "weekend"
+            price = int(match.group(2).replace(",", ""))
+            overrides.append(
+                {
+                    "day_type": day,
+                    "start_hour": "00:00",
+                    "end_hour": "24:00",
+                    "price": price,
+                }
+            )
+
+        if not overrides and not surcharges:
+            return None
+
+        default_price = None
+        if day_type_hint in ["weekday", "weekend"]:
+            day_overrides = [o for o in overrides if o["day_type"] == day_type_hint]
+            if day_overrides:
+                default_price = day_overrides[0]["price"]
+
+        return {
+            "default": default_price,
+            "overrides": overrides,
+            "surcharges": surcharges,
         }
 
     def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int]]:

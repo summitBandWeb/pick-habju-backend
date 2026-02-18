@@ -192,11 +192,13 @@ class RoomCollectionService:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
+            new_price_config = parsed.get("price_config")
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
             final_max_cap = new_max_cap
             final_rec_cap = new_rec_cap
             final_price = new_price
+            final_price_config = new_price_config
 
             if existing:
                 existing_max = existing.get("max_capacity", 0)
@@ -216,6 +218,11 @@ class RoomCollectionService:
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
 
+                # price_config 파싱 실패/누락 시 기존 유효 JSON 보존
+                existing_price_config = existing.get("price_config")
+                if not new_price_config and existing_price_config:
+                    final_price_config = existing_price_config
+
             # Room Data
             room_data = {
                 "business_id": business["businessId"],
@@ -228,6 +235,7 @@ class RoomCollectionService:
                 # "created_at": "now()", # Schema does not have created_at
                 "base_capacity": parsed.get("base_capacity"),
                 "extra_charge": parsed.get("extra_charge"),
+                "price_config": final_price_config,
                 "requires_call_on_sameday": parsed.get("requires_call_on_same_day") or False,
                 "image_urls": image_urls # Save to JSONB column
             }
