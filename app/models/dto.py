@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional
+import re
+from datetime import datetime, date
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -70,9 +72,6 @@ class AvailabilityRequest(BaseModel):
     @field_validator('date')
     @classmethod
     def validate_date_format(cls, v: str) -> str:
-        import re
-        from datetime import datetime, date
-        
         # 1. Regex Format Check
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
             raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
@@ -92,7 +91,6 @@ class AvailabilityRequest(BaseModel):
     @field_validator('start_hour', 'end_hour')
     @classmethod
     def validate_time_format(cls, v: str) -> str:
-        import re
         # HH:MM 형식 확인 (00:00 ~ 23:59)
         if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", v):
             raise ValueError(f"시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59): {v}")
@@ -122,10 +120,6 @@ class AvailabilityRequest(BaseModel):
             raise ValueError("남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")
             
         # 2. Time Logic (Start < End & Past Time)
-        from datetime import datetime, date
-        # 2. Time Logic (Start < End & Past Time)
-        from datetime import datetime, date
-        
         # NOTE: field_validator에서 정규식으로 형식을 보장하므로 strptime은 실패하지 않음
         start = datetime.strptime(self.start_hour, "%H:%M")
         end = datetime.strptime(self.end_hour, "%H:%M")
