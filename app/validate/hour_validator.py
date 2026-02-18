@@ -16,6 +16,7 @@ def validate_hour_slot_format(slot: str):
 
 def validate_hour_slot_not_past(slot: str, now_time):
     """슬롯이 과거 시간인지 검증"""
+    validate_hour_slot_format(slot)
     slot_minutes = _slot_to_minutes(slot)
 
     # now_time이 문자열(날짜)인 경우와 time 객체인 경우를 구분
@@ -61,9 +62,12 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
     # 인접한 시간 간격이 1시간(60분)인지 확인
     for i in range(len(slots) - 1):
         if slots[i + 1] - slots[i] != 60:
-            raise HourDiscontinuousError(f"시간 슬롯이 1시간 단위로 연속적이지 않습니다.")
+            raise HourDiscontinuousError("시간 슬롯이 1시간 단위로 연속적이지 않습니다.")
 
 
 def _slot_to_minutes(slot: str) -> int:
-    hour, minute = slot.split(":")
-    return int(hour) * 60 + int(minute)
+    try:
+        hour, minute = slot.split(":")
+        return int(hour) * 60 + int(minute)
+    except (ValueError, AttributeError) as exc:
+        raise InvalidHourSlotError(f"시간 형식이 잘못되었습니다: {slot}") from exc

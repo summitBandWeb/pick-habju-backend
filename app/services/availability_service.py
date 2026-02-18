@@ -117,9 +117,14 @@ class AvailabilityService:
 
     def _is_slot_in_range(self, slot: str, start_hour: str, end_hour: str) -> bool:
         """slot이 [start_hour, end_hour) 범위에 포함되는지 판단."""
-        slot_min = self._slot_to_minutes(slot)
-        start_min = self._slot_to_minutes(start_hour)
-        end_min = self._slot_to_minutes(end_hour)
+        try:
+            slot_min = self._slot_to_minutes(slot)
+            start_min = self._slot_to_minutes(start_hour)
+            end_min = self._slot_to_minutes(end_hour)
+        except ValueError:
+            return False
+        if start_min >= end_min:
+            return False
         return start_min <= slot_min < end_min
 
     def _resolve_slot_price(self, room_detail, date_str: str, slot: str) -> int:

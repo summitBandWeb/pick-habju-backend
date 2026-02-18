@@ -53,3 +53,26 @@ def test_calculate_total_price_with_override_and_surcharge():
     total = service.calculate_total_price(room, "2026-02-22", ["17:00", "18:00", "19:00"])
     # 17시: 10000+2000, 18/19시: 15000+2000 each
     assert total == 46000
+
+
+def test_calculate_total_price_skips_invalid_override_hours():
+    service = AvailabilityService(crawlers_map={})
+    room = _room_detail(
+        price_per_hour=10000,
+        price_config={
+            "default": 10000,
+            "overrides": [
+                {
+                    "day_type": "weekday",
+                    "start_hour": "18:30",
+                    "end_hour": "24:00",
+                    "price": 15000,
+                }
+            ],
+            "surcharges": [],
+        },
+    )
+
+    # invalid override는 무시되어 default 가격을 사용해야 함
+    total = service.calculate_total_price(room, "2026-02-20", ["18:00", "19:00"])
+    assert total == 20000

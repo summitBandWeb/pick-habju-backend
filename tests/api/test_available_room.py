@@ -66,6 +66,20 @@ def test_get_availability_api_invalid_date_regex():
     assert body["code"] == "VALIDATION-001"
 
 
+def test_get_availability_api_invalid_calendar_date():
+    """YYYY-MM-DD 형식이어도 존재하지 않는 날짜면 422 validation envelope을 반환해야 함"""
+    response = client.get(
+        "/api/rooms/availability"
+        "?date=2026-02-31&capacity=3&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
 def test_get_availability_api_invalid_capacity_range():
     """capacity가 1~50 범위를 벗어나면 422 validation envelope을 반환해야 함"""
     target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")

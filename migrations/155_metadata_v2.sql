@@ -23,6 +23,7 @@ SET recommend_capacity_range = int4range(
     '[]'
 )
 WHERE recommend_capacity IS NOT NULL
+  AND recommend_capacity >= 1
   AND recommend_capacity_range IS NULL;
 
 -- 3) Backfill: legacy price_per_hour -> price_config

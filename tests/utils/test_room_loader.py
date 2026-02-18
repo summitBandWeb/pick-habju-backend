@@ -51,5 +51,5 @@ def test_get_rooms_by_criteria_keeps_room_when_branch_missing(monkeypatch):
 
     assert len(rooms) == 2
     assert {r.biz_item_id for r in rooms} == {"item-1", "item-3"}
-    missing_branch = [r for r in rooms if r.biz_item_id == "item-1"][0]
+    missing_branch = next(r for r in rooms if r.biz_item_id == "item-1")
     assert missing_branch.branch == "지점 정보 없음"

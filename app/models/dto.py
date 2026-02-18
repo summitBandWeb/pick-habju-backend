@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional, ClassVar
@@ -139,9 +140,13 @@ class AvailabilityRequest(BaseModel):
     @field_validator("date")
     @classmethod
     def validate_date_regex(cls, value: str) -> str:
-        """YYYY-MM-DD 형식의 날짜 문자열만 허용"""
+        """YYYY-MM-DD 형식 + 실제 달력 유효 날짜를 검증"""
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("date must match YYYY-MM-DD")
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError("date must be a valid YYYY-MM-DD calendar date") from exc
         return value
 
     @field_validator("capacity")
