@@ -36,8 +36,12 @@ def test_validate_hour_slots_future_date():
 
 def test_validate_hour_slots_past_time_today():
     now = datetime.now()
-    slot = f"{(now.hour - 1) % 24:02d}:00"
-    today = now.strftime("%Y-%m-%d")
+    if now.hour == 0:
+        slot = "23:00"
+        today = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    else:
+        slot = f"{(now.hour - 1):02d}:00"
+        today = now.strftime("%Y-%m-%d")
     with pytest.raises(PastHourSlotNotAllowedError):
         validate_hour_slot_not_past(slot, today)
 

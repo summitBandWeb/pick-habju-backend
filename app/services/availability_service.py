@@ -32,7 +32,7 @@ from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.utils.room_loader import get_rooms_by_criteria
 from fastapi import HTTPException
 from app.services.pricing_service import PricingService
@@ -85,7 +85,7 @@ class AvailabilityService:
         end_min = self._slot_to_minutes(end_str)
 
         if start_min > end_min:
-            raise ValueError("?쒖옉 ?쒓컙??醫낅즺 ?쒓컙蹂대떎 ??쓣 ???놁뒿?덈떎.")
+            raise ValueError("시작 시간이 종료 시간보다 늦을 수 없습니다.")
         if (end_min - start_min) % 60 != 0:
             raise ValueError("?쒖옉/醫낅즺 ?쒓컙? 1?쒓컙 ?⑥쐞?ъ빞 ?⑸땲??")
 
@@ -177,9 +177,12 @@ class AvailabilityService:
 
     def calculate_total_price(self, room_detail, date_str: str, hour_slots: List[str]) -> int:
         """?붿껌 ?щ’ ?꾩껜??珥?媛寃?怨꾩궛."""
-        if not hour_slots:
+        if len(hour_slots) < 2:
             return 0
-        return sum(self._resolve_slot_price(room_detail, date_str, slot) for slot in hour_slots)
+        # `hour_slots` is end-inclusive boundaries (e.g. ["14:00","15:00"] => 1 hour),
+        # so only slots except the last boundary are billable.
+        billable_slots = hour_slots[:-1]
+        return sum(self._resolve_slot_price(room_detail, date_str, slot) for slot in billable_slots)
         
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
@@ -389,9 +392,15 @@ class AvailabilityService:
                         start_dt = datetime.strptime(
                             f"{request.date} {hour_slots[0]}", "%Y-%m-%d %H:%M"
                         )
-                        end_dt = datetime.strptime(
-                            f"{request.date} {hour_slots[-1]}", "%Y-%m-%d %H:%M"
-                        )
+                        end_slot = hour_slots[-1]
+                        if end_slot == "24:00":
+                            end_dt = datetime.strptime(
+                                f"{request.date} 00:00", "%Y-%m-%d %H:%M"
+                            ) + timedelta(days=1)
+                        else:
+                            end_dt = datetime.strptime(
+                                f"{request.date} {end_slot}", "%Y-%m-%d %H:%M"
+                            )
                         price = self.pricing_service.calculate_total_price(
                             base_price=room.pricePerHour,
                             price_config=normalized_rules,

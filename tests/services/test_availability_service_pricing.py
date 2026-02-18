@@ -4,8 +4,8 @@ from app.services.availability_service import AvailabilityService
 
 def _room_detail(**overrides) -> RoomDetail:
     payload = {
-        "name": "가격테스트룸",
-        "branch": "테스트지점",
+        "name": "price-test-room",
+        "branch": "test-branch",
         "business_id": "biz-price",
         "biz_item_id": "room-price",
         "image_urls": [],
@@ -29,7 +29,7 @@ def test_calculate_total_price_with_fallback_default_price():
     service = AvailabilityService(crawlers_map={})
     room = _room_detail(price_per_hour=12000, price_config=None)
     total = service.calculate_total_price(room, "2026-02-20", ["18:00", "19:00"])
-    assert total == 24000
+    assert total == 12000
 
 
 def test_calculate_total_price_with_override_and_surcharge():
@@ -49,10 +49,9 @@ def test_calculate_total_price_with_override_and_surcharge():
             "surcharges": [{"day_type": "weekend", "amount": 2000}],
         },
     )
-    # 2026-02-22 is Sunday
+    # 2026-02-22 is Sunday; billable slots are 17:00 and 18:00.
     total = service.calculate_total_price(room, "2026-02-22", ["17:00", "18:00", "19:00"])
-    # 17시: 10000+2000, 18/19시: 15000+2000 each
-    assert total == 46000
+    assert total == 29000
 
 
 def test_calculate_total_price_skips_invalid_override_hours():
@@ -73,6 +72,5 @@ def test_calculate_total_price_skips_invalid_override_hours():
         },
     )
 
-    # invalid override는 무시되어 default 가격을 사용해야 함
     total = service.calculate_total_price(room, "2026-02-20", ["18:00", "19:00"])
-    assert total == 20000
+    assert total == 10000
