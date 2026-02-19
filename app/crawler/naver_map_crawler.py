@@ -1,27 +1,11 @@
 import os
-import logging
 import asyncio
+import logging
 from typing import List, Dict, Optional
-from concurrent.futures import ThreadPoolExecutor
-
 from playwright.sync_api import sync_playwright
-try:
-    from fake_useragent import UserAgent
-except ImportError:
-    UserAgent = None
-
-try:
-    from playwright_stealth import Stealth
-except ImportError:
-    Stealth = None
-
-try:
-    from playwright_stealth import apply_stealth_sync
-except ImportError:
-    apply_stealth_sync = None
-
+from concurrent.futures import ThreadPoolExecutor
 from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
-
+from fake_useragent import UserAgent
 
 logger = logging.getLogger(__name__)
 
@@ -48,49 +32,81 @@ class NaverMapCrawler:
         return await loop.run_in_executor(self._executor, self._search_sync, query)
 
     def _search_sync(self, query: str) -> List[Dict[str, str]]:
-        """Synchronous search implementation using Stealth techniques."""
+        """Synchronous search implementation."""
+        # Optional dependencies import with fallback
+        try:
+            ua = UserAgent(fallback="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            user_agent_str = ua.random
+        except ImportError:
+            logger.warning("fake-useragent not found. Using default user agent.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        except Exception as e:
+            logger.warning(f"Error generating user agent: {e}. Using default.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
         results = {}
         
         with sync_playwright() as p:
-            # Use channel='chrome' for more realistic browser fingerprint (if installed)
-            browser = p.chromium.launch(
-                channel='chrome',
-                headless=self.headless,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                ]
-            )
-            
-            # Generate Random User-Agent
-            random_ua = self._get_random_ua()
-            logger.info(f"🕵️ Using Stealth Mode with UA: {random_ua}")
-            
+            browser = None
+            try:
+                # 1. Try launching with 'chrome' channel (more realistic)
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    channel="chrome",
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-sandbox',
+                    ]
+                )
+            except Exception as e:
+                logger.warning(f"Failed to launch Chrome channel: {e}. Falling back to bundled Chromium.")
+                try:
+                    # 2. Fallback to bundled chromium
+                    browser = p.chromium.launch(
+                        headless=self.headless,
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--no-sandbox',
+                        ]
+                    )
+                except Exception as e2:
+                    logger.error(f"Failed to launch bundled Chromium: {e2}")
+                    return []
+
             context = browser.new_context(
-                user_agent=random_ua,
+                user_agent=user_agent_str,
                 extra_http_headers={"Referer": "https://map.naver.com/"},
-                viewport={"width": 1920, "height": 1080}, # Standard PC resolution
+                viewport={"width": 1920, "height": 1080},
                 locale="ko-KR",
                 timezone_id="Asia/Seoul"
             )
             
-            # 1. Apply Playwright Stealth (Replaces manual navigator.webdriver override)
+            # Apply stealth if available
+            try:
+                from playwright_stealth import stealth_sync
+                stealth_sync(context)
+            except ImportError:
+                logger.warning("playwright-stealth not found. Skipping stealth mode.")
+            except Exception as e:
+                logger.warning(f"Failed to apply stealth: {e}")
+
+            # Override navigator.webdriver to avoid detection (redundant if stealth used, but safe)
+            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             page = context.new_page()
-            self._apply_stealth(page)
             
             try:
-                # 2. 첫 페이지 이동
+                # 1. 첫 페이지 이동
                 url = f"{self.BASE_URL}?query={query}&display=70"
                 logger.info(f"Searching: {query} -> {url}")
                 page.goto(url)
                 page.wait_for_load_state("networkidle")
                 page.wait_for_timeout(self.PAGE_WAIT_MS)  # Wait for JS initialization
                 
-                # 3. 첫 페이지 데이터 추출
+                # 2. 첫 페이지 데이터 추출
                 initial_data = self._extract_apollo_state_sync(page)
                 self._merge_results(results, initial_data)
                 
-                # 4. 페이지네이션 처리 (최대 MAX_PAGES 페이지)
+                # 3. 페이지네이션 처리 (최대 MAX_PAGES 페이지)
                 for i in range(2, self.MAX_PAGES + 1):
                     next_btn = page.get_by_role("link", name=str(i), exact=True)
                     
@@ -98,7 +114,6 @@ class NaverMapCrawler:
                         logger.info(f"Navigating to page {i}")
                         next_btn.click()
                         page.wait_for_timeout(1000)
-
                         page.wait_for_load_state("networkidle")
                         
                         page_data = self._extract_apollo_state_sync(page)
@@ -151,38 +166,6 @@ class NaverMapCrawler:
                 return places;
             }
         """)
-
-    def _get_random_ua(self) -> str:
-        """Generates a random User-Agent string."""
-        fallback_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
-        if UserAgent is None:
-            logger.warning("fake-useragent not installed. Using fallback UA.")
-            return fallback_ua
-
-        try:
-            # NOTE: Added fallback argument to handle FakeUserAgentError robustly.
-            ua = UserAgent(os='windows', browsers=['chrome', 'edge'], fallback=fallback_ua)
-            return ua.random
-        except Exception as e:
-            logger.warning(f"Error generating random UA ({type(e).__name__}: {e}). Using fallback UA.")
-            return fallback_ua
-
-    def _apply_stealth(self, page):
-        """Applies stealth settings to the page."""
-        if Stealth is None and apply_stealth_sync is None:
-            logger.warning("playwright-stealth components (Stealth, apply_stealth_sync) both missing. Stealth mode disabled.")
-            return
-
-        try:
-            # NOTE: Updated to use the newer Stealth API (v2+)
-            if apply_stealth_sync:
-                apply_stealth_sync(page)
-            else:
-                # Fallback to instance method if function not available
-                Stealth().apply_stealth_sync(page)
-        except Exception as e:
-            logger.warning(f"Failed to apply stealth ({type(e).__name__}: {e}). Stealth mode disabled.")
 
     def _merge_results(self, target: Dict, source: List[Dict]):
         """중복 제거하며 결과 병합"""
