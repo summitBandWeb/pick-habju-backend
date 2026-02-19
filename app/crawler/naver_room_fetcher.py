@@ -79,7 +79,12 @@ class NaverRoomFetcher:
             "query": query
         }
 
-        resp = await client.post(self.GRAPHQL_URL, json=payload, headers=self.HEADERS, timeout=10.0)
+        resp = await client.post(
+            self.GRAPHQL_URL,
+            json=payload,
+            headers=self.HEADERS,
+            timeout=self.REQUEST_TIMEOUT,
+        )
         if resp.status_code != 200:
             logger.error(f"Business Error: {resp.status_code}, Body: {resp.text}")
         resp.raise_for_status()
@@ -128,7 +133,12 @@ class NaverRoomFetcher:
             "query": query
         }
         
-        resp = await client.post(self.GRAPHQL_URL, json=payload, headers=self.HEADERS, timeout=10.0)
+        resp = await client.post(
+            self.GRAPHQL_URL,
+            json=payload,
+            headers=self.HEADERS,
+            timeout=self.REQUEST_TIMEOUT,
+        )
         if resp.status_code != 200:
             logger.error(f"BizItems Error: {resp.status_code}, Body: {resp.text}")
         resp.raise_for_status()
@@ -171,7 +181,12 @@ class NaverRoomFetcher:
         }
         
         try:
-            resp = await client.post(self.GRAPHQL_URL, json=payload, headers=self.HEADERS, timeout=5.0)
+            resp = await client.post(
+                self.GRAPHQL_URL,
+                json=payload,
+                headers=self.HEADERS,
+                timeout=self.REQUEST_TIMEOUT,
+            )
             if resp.status_code != 200:
                 return None
             data = resp.json()
