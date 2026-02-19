@@ -20,7 +20,10 @@ def validate_availability_request(
     validate_hour_slots(hour_slots, date)
 
     # RoomKey 관련 모든 검증을 한 번에 처리
-    validate_room_detail_list(target_rooms)
+    # NOTE:
+    # 빈 target_rooms는 "검색 결과 없음" 정상 시나리오이므로 예외로 처리하지 않는다.
+    if target_rooms:
+        validate_room_detail_list(target_rooms)
 
 def validate_map_coordinates(swLat: float, swLng: float, neLat: float, neLng: float):
     """
