@@ -26,6 +26,7 @@ from app.models.dto import (
     AvailabilityRequest, AvailabilityResponse,
     RoomAvailability, BranchStats, PolicyWarning
 )
+from app.validate.request_validator import validate_availability_request, validate_map_coordinates
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
@@ -34,8 +35,6 @@ from datetime import datetime, timedelta
 from app.utils.room_loader import get_rooms_by_criteria
 from fastapi import HTTPException
 from app.services.pricing_service import PricingService
-from app.validate.request_validator import validate_availability_request
-from app.validate.room_detail_validator import validate_room_detail_list
 
 logger = logging.getLogger("app")
 
@@ -108,7 +107,8 @@ class AvailabilityService:
             logger.error(f"Time slot generation error: {e}")
             raise HTTPException(status_code=400, detail=str(e))
         
-        # 1.5. 지도 좌표 유효성 검증 (필수) -> DTO model_validator로 이관됨
+        # 1.5. 지도 좌표 유효성 검증 (필수)
+        validate_map_coordinates(request.swLat, request.swLng, request.neLat, request.neLng)
 
         # 2. 인원수 및 지도 범위에 맞는 룸 필터링 (DB)
         target_rooms = get_rooms_by_criteria(
@@ -118,7 +118,7 @@ class AvailabilityService:
             neLat=request.neLat,
             neLng=request.neLng
         )
-        
+
         validate_availability_request(request.date, hour_slots, target_rooms)
 
         # 3. 크롤러 작업 준비 및 실행

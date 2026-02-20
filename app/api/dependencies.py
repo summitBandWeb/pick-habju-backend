@@ -42,7 +42,7 @@ def get_favorite_repository() -> IFavoriteRepository:
 
 
 def validate_device_id(
-    x_device_id: str = Header(..., alias="X-Device-Id")
+    x_device_id: str | None = Header(default=None, alias="X-Device-Id")
 ) -> str:
     """
     X-Device-Id 헤더 검증 및 반환 Dependency
