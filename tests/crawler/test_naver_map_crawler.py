@@ -4,11 +4,13 @@ NaverMapCrawler 단위 테스트
 
 테스트 대상:
 - _merge_results: 중복 제거하며 결과 병합
+- Browser Launch Fallback: 크롬 채널 실패 시 번들 크로미움 재시도 확인
 
 실행: pytest tests/crawler/test_naver_map_crawler.py -v
 """
 
 import pytest
+from unittest.mock import MagicMock, patch
 from app.crawler.naver_map_crawler import NaverMapCrawler
 
 
@@ -89,20 +91,46 @@ class TestMergeResults:
         assert target["1"]["name"] == "Room A"  # 첫 번째 값 유지
 
 
-class TestRegionList:
-    """전국 지역 목록 테스트"""
-    
+class TestCrawlerRobustness:
+    """크롤러 안정성 및 Fallback 테스트"""
+
     @pytest.fixture
     def crawler(self):
         return NaverMapCrawler(headless=True)
-    
-    def test_region_count(self, crawler):
-        """서울 25개 구 + 광역시 10개 = 35개 지역"""
-        # crawl_all_regions 메서드 내부의 all_queries 확인
-        # (직접 접근이 어려우므로 코드 리뷰 차원에서만 확인)
-        # 현재 구현에서는 35개 지역이 정의됨
-        seoul_count = 25
-        major_cities_count = 10
-        expected_total = seoul_count + major_cities_count
+
+    @patch("app.crawler.naver_map_crawler.sync_playwright")
+    def test_browser_launch_fallback(self, mock_playwright, crawler):
+        """Chrome 채널 launch 실패 시 번들 chromium으로 재시도하는지 검증"""
+        # Mock Playwright & Browser objects
+        mock_p = MagicMock()
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
+
+        # Context manager setup
+        mock_playwright.return_value.__enter__.return_value = mock_p
         
-        assert expected_total == 35
+        # Browser/Context/Page chain setup
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+
+        # Side effect: First call raises Exception, Second call returns mock_browser
+        mock_p.chromium.launch.side_effect = [Exception("Chrome channel not found"), mock_browser]
+
+        # Act
+        crawler._search_sync("test_query")
+
+        # Assert
+        # launch가 총 2번 호출되었는지 확인
+        assert mock_p.chromium.launch.call_count == 2
+        
+        # 호출 인자 검증
+        calls = mock_p.chromium.launch.call_args_list
+        
+        # 첫 번째 호출: channel='chrome' 포함 -> 실패 유도
+        first_call_kwargs = calls[0].kwargs
+        assert first_call_kwargs.get("channel") == "chrome"
+        
+        # 두 번째 호출: channel 없음 -> 성공 (Fallback)
+        second_call_kwargs = calls[1].kwargs
+        assert "channel" not in second_call_kwargs
