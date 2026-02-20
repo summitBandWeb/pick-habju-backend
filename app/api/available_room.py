@@ -23,13 +23,13 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
 async def check_room_availability(
     request: Request,
     date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
-    capacity: int = Query(..., description="사용 인원 수"),
-    start_hour: str = Query(..., description="시작 시간 (HH:MM)"),
-    end_hour: str = Query(..., description="종료 시간 (HH:MM)"),
-    swLat: float = Query(..., description="남서쪽 위도 (필수)"),
-    swLng: float = Query(..., description="남서쪽 경도 (필수)"),
-    neLat: float = Query(..., description="북동쪽 위도 (필수)"),
-    neLng: float = Query(..., description="북동쪽 경도 (필수)"),
+    capacity: int = Query(..., description="사용 인원 수", json_schema_extra={"example": 10}),
+    start_hour: str = Query(..., description="시작 시간 (HH:MM)", json_schema_extra={"example": "14:00"}),
+    end_hour: str = Query(..., description="종료 시간 (HH:MM)", json_schema_extra={"example": "16:00"}),
+    swLat: float = Query(..., description="남서쪽 위도 (필수)", json_schema_extra={"example": 37.551153}),
+    swLng: float = Query(..., description="남서쪽 경도 (필수)", json_schema_extra={"example": 126.932890}),
+    neLat: float = Query(..., description="북동쪽 위도 (필수)", json_schema_extra={"example": 37.559153}),
+    neLng: float = Query(..., description="북동쪽 경도 (필수)", json_schema_extra={"example": 126.940890}),
     service: AvailabilityService = Depends(get_availability_service)
 ):
 

@@ -24,7 +24,7 @@ class MockCrawler(BaseCrawler):
             slots = {slot: True for slot in hour_slots}
             results.append(
                 RoomAvailability(
-                    room_detail=room, available=True, available_slots=slots
+                    **room.model_dump(), available=True, available_slots=slots
                 )
             )
         return results
@@ -105,7 +105,7 @@ def test_get_availability_api():
         assert result.get("hour_slots") == ["18:00", "19:00", "20:00", "21:00"]
         assert "available_biz_item_ids" in result
         # MockCrawler는 항상 True를 반환하므로 결과가 있어야 함
-        assert len(result["results"]) == 2
+        assert len(result["rooms"]) == 2
         # branch_summary가 있어야 함 (지도 기능 확장)
         assert "branch_summary" in result
 
@@ -222,11 +222,11 @@ def test_get_availability_api_with_crawler_error():
         # Naver(Error) 결과는 제외되고, Dream(Normal) 결과만 있어야 함
         # NormalCrawler가 반환한 결과 1개 (room 1개)
 
-        assert len(result["results"]) == 1
+        assert len(result["rooms"]) == 1
         assert (
-            result["results"][0]["room_detail"]["business_id"] == "dream_sadang"
-        )  # business_id field (actual DB column)
-        assert result["results"][0]["available"] is True
+            result["rooms"][0]["business_id"] == "dream_sadang"
+        )  # NOTE: 평탄화된 구조이므로 room_detail 중첩 없이 직접 접근
+        assert result["rooms"][0]["available"] is True
 
     finally:
         # 복원
@@ -270,20 +270,17 @@ def test_get_availability_with_real_db():
 
         # 기본 응답 구조 확인
         assert result.get("date") == target_date
-        assert "results" in result
-        assert isinstance(result["results"], list)
+        assert "rooms" in result
+        assert isinstance(result["rooms"], list)
 
         # 실제 데이터가 조회되었는지 확인
-        if len(result["results"]) > 0:
-            first_room = result["results"][0]
-            assert "room_detail" in first_room
-            assert "available" in first_room
+        if len(result["rooms"]) > 0:
+            first_room = result["rooms"][0]
+            # NOTE: 평탄화된 구조이므로 room_detail 중첩 없이 직접 접근
+            assert "business_id" in first_room
+            assert "name" in first_room
 
-            # 필드 확인
-            assert "business_id" in first_room["room_detail"]
-            assert "name" in first_room["room_detail"]
-
-            print(f"✅ Real DB Test Success: Found {len(result['results'])} rooms")
+            print(f"✅ Real DB Test Success: Found {len(result['rooms'])} rooms")
         else:
             print("⚠️ Real DB Test Warning: No rooms found (check DB data)")
 

@@ -7,10 +7,10 @@ class RoomDetail(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
-    name: str = Field(description="Rehearsal room name")
-    branch: str = Field(description="Branch name (extracted from join)")
-    business_id: str = Field(description="Naver Booking Business ID")
-    biz_item_id: str = Field(description="Naver Booking Room ID")
+    name: str = Field(description="합주실 룸 이름 (예: 블랙룸, A룸)")
+    branch: str = Field(description="지점명 (예: 홍대점, 사당점)")
+    business_id: str = Field(description="네이버 플레이스 비즈니스 ID (업체 식별자)")
+    biz_item_id: str = Field(description="네이버 예약 상품 ID (룸 식별자)")
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
@@ -95,15 +95,38 @@ class RoomInfo(BaseModel):
     policyWarnings: List[PolicyWarning] = Field(default_factory=list)
     
 # Crawler Result DTO (Internal Logic Use Only)
-class RoomAvailability(BaseModel):
-    """Availability information for a single room (Internal Use)"""
-    room_detail: RoomDetail = Field(..., description="Room detail information")
-    available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+class RoomAvailability(RoomDetail):
+    """Availability information for a single room (Flattened Structure)"""
+    model_config = ConfigDict(
+        title="RoomAvailabilityInfo",
+        populate_by_name=True,
+        json_schema_extra={
+            "example": {
+                "name": "A룸",
+                "branch": "그라운드합주실 신촌1호점",
+                "business_id": "1182602",
+                "biz_item_id": "5979448",
+                "imageUrls": ["https://example.com/ground_a_room.jpg"],
+                "maxCapacity": 10,
+                "recommendCapacity": 5,
+                "pricePerHour": 15000,
+                "canReserveOneHour": True,
+                "requiresCallOnSameDay": False,
+                "available": True,
+                "available_slots": {"18:00": True, "19:00": True},
+                "estimated_price": 30000,
+                "policy_warnings": []
+            }
+        }
+    )
+
+    # RoomDetail 필드들은 상속받음
+    available: Union[bool, str] = Field(..., description="예약 가능 여부 (true: 가능, false: 불가, unknown: 확인 필요)")
+    available_slots: Dict[str, Union[bool, str]] = Field(..., description="시간대별 예약 가능 여부 (Key: HH:MM)")
     
     # [v2.0.0] 추가 정보
-    estimated_price: Optional[int] = Field(None, description="Calculated total price")
-    policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
+    estimated_price: Optional[int] = Field(None, description="예상 결제 금액 (옵션/인원 추가 요금 포함)")
+    policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="예약 정책 위반 경고 (1시간 예약 불가, 당일 전화 문의 등)")
 
 # Branch Summary Stat Model
 class BranchStats(BaseModel):
@@ -119,6 +142,63 @@ class AvailabilityResponse(BaseModel):
     
     기존 응답 구조를 유지하면서, 지도 검색을 위한 branch_summary를 추가했습니다.
     """
+    model_config = ConfigDict(
+        title="MapAvailabilityResponse",
+        json_schema_extra={
+            "example": {
+                "date": "2025-08-23",
+                "start_hour": "18:00",
+                "end_hour": "20:00",
+                "rooms": [
+                    {
+                        "name": "A룸",
+                        "branch": "그라운드합주실 신촌1호점",
+                        "business_id": "1182602",
+                        "biz_item_id": "5979448",
+                        "imageUrls": [
+                            "https://example.com/ground_a_room.jpg"
+                        ],
+                        "maxCapacity": 10,
+                        "recommendCapacity": 5,
+                        "baseCapacity": 4,
+                        "extraCharge": 2000,
+                        "pricePerHour": 15000,
+                        "canReserveOneHour": True,
+                        "requiresCallOnSameDay": False,
+                        "available": True,
+                        "available_slots": {"18:00": True, "19:00": True}
+                    },
+                    {
+                        "name": "B룸",
+                        "branch": "그라운드합주실 신촌1호점",
+                        "business_id": "1182602",
+                        "biz_item_id": "5979471",
+                        "imageUrls": [
+                            "https://example.com/ground_b_room.jpg"
+                        ],
+                        "maxCapacity": 8,
+                        "recommendCapacity": 4,
+                        "baseCapacity": None,
+                        "extraCharge": None,
+                        "pricePerHour": 12000,
+                        "canReserveOneHour": True,
+                        "requiresCallOnSameDay": False,
+                        "available": True,
+                        "available_slots": {"18:00": True, "19:00": True}
+                    }
+                ],
+                "branch_summary": {
+                    "1182602": {
+                        "min_price": 12000,
+                        "available_count": 3,
+                        "lat": 37.5560505,
+                        "lng": 126.9409629
+                    }
+                }
+            }
+        }
+    )
+
     date: str = Field(..., description="Checked date")
     start_hour: str = Field(..., description="Checked start time")
     end_hour: str = Field(..., description="Checked end time")
@@ -126,7 +206,7 @@ class AvailabilityResponse(BaseModel):
     # 기존 필드 유지
     hour_slots: List[str] = Field(default_factory=list, description="List of checked hour slots")
     available_biz_item_ids: List[str] = Field(default_factory=list, description="List of available biz_item_ids")
-    results: List[RoomAvailability] = Field(..., description="List of rooms with availability info")
+    rooms: List[RoomAvailability] = Field(..., description="List of rooms with availability info")
     
     # 지도 검색을 위한 신규 필드
     branch_summary: Dict[str, BranchStats] = Field(default_factory=dict, description="Summary stats per branch for map markers")

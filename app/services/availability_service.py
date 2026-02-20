@@ -152,35 +152,34 @@ class AvailabilityService:
         branch_summary = {}
 
         for res in processed_results:
-            # 룸 정보 추출
-            room_detail = res.room_detail
             
             # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
             if res.available is True or res.available == "unknown":
                 available_results.append(res)
 
                 # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
-                bid = room_detail.business_id
+                # NOTE: RoomAvailability는 RoomDetail을 상속받으므로 직접 접근
+                bid = res.business_id
                 if bid not in branch_summary:
                     branch_summary[bid] = BranchStats(
-                        min_price=room_detail.pricePerHour,
+                        min_price=res.pricePerHour,
                         available_count=1,
-                        lat=room_detail.lat,
-                        lng=room_detail.lng
+                        lat=res.lat,
+                        lng=res.lng
                     )
                 else:
                     stats = branch_summary[bid]
                     stats.available_count += 1
-                    if room_detail.pricePerHour < stats.min_price:
-                        stats.min_price = room_detail.pricePerHour
+                    if res.pricePerHour < stats.min_price:
+                        stats.min_price = res.pricePerHour
 
         return AvailabilityResponse(
             date=request.date,
             start_hour=request.start_hour,
             end_hour=request.end_hour,
             hour_slots=hour_slots,
-            available_biz_item_ids=[r.room_detail.biz_item_id for r in available_results],
-            results=available_results,
+            available_biz_item_ids=[r.biz_item_id for r in available_results],
+            rooms=available_results,
             branch_summary=branch_summary
         )
 
@@ -240,7 +239,7 @@ class AvailabilityService:
         processed = []
         
         for res in results:
-            room = res.room_detail
+            # NOTE: RoomAvailability는 RoomDetail을 상속받으므로 직접 접근
             policy_warnings = []
             
             # --- 정책 체크 ---
@@ -249,21 +248,21 @@ class AvailabilityService:
             # NOTE: generate_time_slots는 end-inclusive이므로 14:00~15:00 → ["14:00", "15:00"] (2개)
             #        따라서 슬롯 개수가 아닌 실제 시간 차이로 판단해야 함
             booking_duration_hours = len(hour_slots) - 1  # 슬롯 간격 = 실제 예약 시간
-            if booking_duration_hours == 1 and not room.canReserveOneHour:
+            if booking_duration_hours == 1 and not res.canReserveOneHour:
                 policy_warnings.append(PolicyWarning(
                     type="call_required_1h",
                     message="1시간 예약은 전화 문의가 필요합니다."
                 ))
 
             # 2. 당일 예약 제한
-            if request.date == today and room.requiresCallOnSameDay:
+            if request.date == today and res.requiresCallOnSameDay:
                 policy_warnings.append(PolicyWarning(
                     type="call_required_today",
                     message="당일 예약은 전화 문의가 필요합니다."
                 ))
 
             # 3. 오픈 대기 (standby_days) - 현재 DB에 데이터가 없어서 로직만 구현
-            # TODO: room_detail 또는 branch 정보에 standby_days가 있어야 함
+            # TODO: RoomDetail 또는 branch 정보에 standby_days가 있어야 함
             # 현재 RoomDetail에는 없으므로 추후 추가 필요. 일단 Skip.
 
             # --- 가격 계산 ---
@@ -277,17 +276,17 @@ class AvailabilityService:
                     end_dt = datetime.strptime(f"{request.date} {hour_slots[-1]}", "%Y-%m-%d %H:%M")
                     
                     price = self.pricing_service.calculate_total_price(
-                        base_price=room.pricePerHour,
-                        price_config=room.priceConfig or [],
-                        base_capacity=room.baseCapacity,
-                        extra_charge=room.extraCharge,
+                        base_price=res.pricePerHour,
+                        price_config=res.priceConfig or [],
+                        base_capacity=res.baseCapacity,
+                        extra_charge=res.extraCharge,
                         start_dt=start_dt,
                         end_dt=end_dt,
                         people_count=request.capacity
                     )
                     res.estimated_price = price
                 except ValueError as e:
-                    logger.warning(f"Price calculation failed for {room.name}: {e}")
+                    logger.warning(f"Price calculation failed for {res.name}: {e}")
                     res.estimated_price = None  # 가격 계산 실패 시 None
 
             res.policy_warnings = policy_warnings

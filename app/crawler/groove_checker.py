@@ -26,8 +26,9 @@ class GrooveCrawler(BaseCrawler):
             unknown_results = []
             for room in target_rooms:
                 slots = {hour_str: "unknown" for hour_str in hour_slots}
+                # NOTE: RoomAvailability는 RoomDetail을 상속받으므로 스프레드 적용
                 result = RoomAvailability(
-                    room_detail=room,
+                    **room.model_dump(),
                     available="unknown",
                     available_slots=slots,
                 )
@@ -85,8 +86,9 @@ class GrooveCrawler(BaseCrawler):
         slots = {hour_str: self._check_hour_slot(soup, rm_ix, hour_str) for hour_str in hour_slots}
         overall = all(slots.values())
 
+        # NOTE: RoomAvailability는 RoomDetail을 상속받으므로 스프레드 적용
         return RoomAvailability(
-            room_detail=room,
+            **room.model_dump(),
             available=overall,
             available_slots=slots,
         )

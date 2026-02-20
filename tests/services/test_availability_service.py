@@ -35,7 +35,7 @@ class TestApplyPolicies:
             pricePerHour=10000, can_reserve_one_hour=False, requires_call_on_sameday=False,
             max_capacity=10, recommend_capacity=5
         )
-        avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
+        avail = RoomAvailability(**room.model_dump(), available=True, available_slots={"14:00": True})
 
         results = service._apply_policies([avail], req, slots)
 
@@ -57,7 +57,7 @@ class TestApplyPolicies:
             pricePerHour=10000, can_reserve_one_hour=True, requires_call_on_sameday=True,
             max_capacity=10, recommend_capacity=5
         )
-        avail = RoomAvailability(room_detail=room, available=True, available_slots={})
+        avail = RoomAvailability(**room.model_dump(), available=True, available_slots={})
 
         results = service._apply_policies([avail], req, slots)
 
@@ -78,7 +78,7 @@ class TestApplyPolicies:
             price_config=[], base_capacity=4, extra_charge=5000,
             can_reserve_one_hour=True, requires_call_on_sameday=False
         )
-        avail = RoomAvailability(room_detail=room, available=True, available_slots={})
+        avail = RoomAvailability(**room.model_dump(), available=True, available_slots={})
 
         mock_pricing_service.calculate_total_price.return_value = 30000
 
@@ -100,7 +100,7 @@ class TestApplyPolicies:
             pricePerHour=10000, max_capacity=10, recommend_capacity=5,
             can_reserve_one_hour=True, requires_call_on_sameday=False
         )
-        avail = RoomAvailability(room_detail=room, available=True, available_slots={})
+        avail = RoomAvailability(**room.model_dump(), available=True, available_slots={})
 
         mock_pricing_service.calculate_total_price.side_effect = ValueError("Calc Failed")
 
@@ -148,7 +148,7 @@ class TestCheckAvailabilityFlow:
         # NOTE: RoomResult = Union[RoomAvailability, Exception] (타입 alias)
         # 크롤러 성공 시 RoomAvailability를 반환하므로 그대로 사용
         mock_crawler_result = RoomAvailability(
-            room_detail=mock_room,
+            **mock_room.model_dump(),
             available=True,
             available_slots={"14:00": True, "15:00": True}
         )
@@ -165,11 +165,11 @@ class TestCheckAvailabilityFlow:
             response = await service.check_availability(req)
 
         # Then
-        assert len(response.results) == 1
-        res = response.results[0]
+        assert len(response.rooms) == 1
+        res = response.rooms[0]
 
         # 1. 크롤러 결과가 잘 들어왔는지
-        assert res.room_detail.name == "MockRoom"
+        assert res.name == "MockRoom"
         assert res.available is True
 
         # 2. PricingService가 연동되었는지 (Phase 3 검증)
