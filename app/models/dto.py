@@ -12,9 +12,9 @@ class RoomDetail(BaseModel):
     business_id: str = Field(description="네이버 플레이스 비즈니스 ID (업체 식별자)")
     biz_item_id: str = Field(description="네이버 예약 상품 ID (룸 식별자)")
 
-    imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
-    maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
-    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
+    imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="룸 이미지 URL 목록 (네이버 예약 페이지에서 수집, 빈 배열일 수 있음)")
+    maxCapacity: int = Field(alias="max_capacity", description="최대 수용 인원 (이 인원을 초과하면 예약 불가)")
+    recommendCapacity: int = Field(alias="recommend_capacity", description="권장 인원 (쾌적하게 합주할 수 있는 적정 인원)")
 
     @field_validator('recommendCapacity', mode='before')
     @classmethod
@@ -25,17 +25,17 @@ class RoomDetail(BaseModel):
         return v
 
     # 신규 필드 추가 (v2.0.0 Metadata)
-    recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="Recommended capacity range [min, max]")
-    priceConfig: Optional[List[Dict[str, Any]]] = Field(None, alias="price_config", description="Dynamic price configuration")
+    recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="권장 인원 범위 [최소, 최대] (예: [3, 5])")
+    priceConfig: Optional[List[Dict[str, Any]]] = Field(None, alias="price_config", description="시간대별 차등 요금 설정 (야간/주말 할증 등, null이면 단일 요금제)")
     
-    baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
-    extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
-    lat: Optional[float] = Field(None, description="Branch latitude")
-    lng: Optional[float] = Field(None, description="Branch longitude")
+    baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="기본 인원 (이 인원까지는 추가 요금 없음, null이면 추가 요금 정책 없음)")
+    extraCharge: Optional[int] = Field(None, alias="extra_charge", description="기본 인원 초과 시 1인당 추가 요금 (원 단위, null이면 추가 요금 없음)")
+    lat: Optional[float] = Field(None, description="지점 위도 (지도 마커 표시용)")
+    lng: Optional[float] = Field(None, description="지점 경도 (지도 마커 표시용)")
 
-    pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
-    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
-    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="Whether same-day reservation requires a call")
+    pricePerHour: int = Field(alias="price_per_hour", description="시간당 기본 요금 (원 단위, 예: 15000)")
+    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="1시간 단위 예약 가능 여부 (false면 최소 2시간 이상 예약 필요, 1시간 예약 시 전화 문의 필요)")
+    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="당일 예약 시 전화 문의 필요 여부 (true면 당일 온라인 예약 불가, 전화로만 가능)")
 
     @field_validator('branch', mode='before')
     @classmethod
@@ -70,9 +70,25 @@ class AvailabilityRequest(BaseModel):
 
 # Policy Warning DTO
 class PolicyWarning(BaseModel):
-    """예약 정책 위반 경고"""
-    type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
-    message: str = Field(..., description="User-friendly warning message")
+    """예약 정책 위반 경고
+
+    FE에서 이 경고가 존재하면 사용자에게 안내 메시지를 표시해야 합니다.
+    예약 자체는 가능하지만, 추가 조건(전화 문의 등)이 필요한 경우에 발생합니다.
+
+    Rationale:
+        합주실마다 예약 정책이 다르므로(1시간 예약 불가, 당일 전화 예약만 가능 등),
+        크롤링 시점에 해당 정책을 감지하여 FE에 전달합니다.
+    """
+    type: str = Field(
+        ...,
+        description="경고 유형 코드. 가능한 값: "
+                    "'call_required_1h' (1시간 예약 시 전화 문의 필요), "
+                    "'call_required_today' (당일 예약 시 전화 문의 필요)"
+    )
+    message: str = Field(
+        ...,
+        description="사용자에게 직접 노출 가능한 안내 메시지 (예: '1시간 예약은 전화 문의가 필요합니다.')"
+    )
 
 # Room Info (Response용 평탄화된 모델)
 class RoomInfo(BaseModel):
@@ -131,10 +147,10 @@ class RoomAvailability(RoomDetail):
 # Branch Summary Stat Model
 class BranchStats(BaseModel):
     """지점별 요약 정보"""
-    min_price: int = Field(..., description="Minimum price in this branch")
-    available_count: int = Field(..., description="Number of available rooms")
-    lat: Optional[float] = Field(None, description="Branch latitude")
-    lng: Optional[float] = Field(None, description="Branch longitude")
+    min_price: int = Field(..., description="해당 지점 내 최저 시간당 요금 (원 단위, 지도 마커에 표시)")
+    available_count: int = Field(..., description="해당 지점에서 예약 가능한 룸 수")
+    lat: Optional[float] = Field(None, description="지점 위도 (지도 마커 좌표)")
+    lng: Optional[float] = Field(None, description="지점 경도 (지도 마커 좌표)")
 
 # Full Response DTO (Legacy + Map Extension)
 class AvailabilityResponse(BaseModel):
