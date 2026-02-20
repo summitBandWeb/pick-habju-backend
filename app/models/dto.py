@@ -123,12 +123,18 @@ class RoomAvailability(BaseModel):
                     "branch": "그라운드합주실 신촌1호점",
                     "business_id": "1182602",
                     "biz_item_id": "5979448",
-                    "imageUrls": ["https://example.com/ground_a_room.jpg"],
-                    "maxCapacity": 10,
-                    "recommendCapacity": 5,
-                    "pricePerHour": 15000,
-                    "canReserveOneHour": True,
-                    "requiresCallOnSameDay": False
+                    "image_urls": ["https://example.com/ground_a_room.jpg"],
+                    "max_capacity": 10,
+                    "recommend_capacity": 5,
+                    "recommend_capacity_range": [3, 5],
+                    "price_config": [],
+                    "base_capacity": 4,
+                    "extra_charge": 2000,
+                    "lat": 37.5560505,
+                    "lng": 126.9409629,
+                    "price_per_hour": 15000,
+                    "can_reserve_one_hour": True,
+                    "requires_call_on_sameday": False
                 },
                 "available": True,
                 "available_slots": {"18:00": True, "19:00": True},
@@ -165,8 +171,16 @@ class AvailabilityResponse(BaseModel):
         json_schema_extra={
             "example": {
                 "date": "2025-08-23",
-                "start_hour": "18:00",
-                "end_hour": "20:00",
+                "start_hour": "14:00",
+                "end_hour": "16:00",
+                "hour_slots": [
+                    "14:00",
+                    "15:00"
+                ],
+                "available_biz_item_ids": [
+                    "5979448",
+                    "5979471"
+                ],
                 "rooms": [
                     {
                         "room_detail": {
@@ -174,19 +188,28 @@ class AvailabilityResponse(BaseModel):
                             "branch": "그라운드합주실 신촌1호점",
                             "business_id": "1182602",
                             "biz_item_id": "5979448",
-                            "imageUrls": [
+                            "image_urls": [
                                 "https://example.com/ground_a_room.jpg"
                             ],
-                            "maxCapacity": 10,
-                            "recommendCapacity": 5,
-                            "baseCapacity": 4,
-                            "extraCharge": 2000,
-                            "pricePerHour": 15000,
-                            "canReserveOneHour": True,
-                            "requiresCallOnSameDay": False
+                            "max_capacity": 10,
+                            "recommend_capacity": 5,
+                            "recommend_capacity_range": [3, 5],
+                            "price_config": [],
+                            "base_capacity": 4,
+                            "extra_charge": 2000,
+                            "lat": 37.5560505,
+                            "lng": 126.9409629,
+                            "price_per_hour": 15000,
+                            "can_reserve_one_hour": True,
+                            "requires_call_on_sameday": False
                         },
                         "available": True,
-                        "available_slots": {"18:00": True, "19:00": True}
+                        "available_slots": {
+                            "14:00": True,
+                            "15:00": True
+                        },
+                        "estimated_price": 30000,
+                        "policy_warnings": []
                     },
                     {
                         "room_detail": {
@@ -194,19 +217,28 @@ class AvailabilityResponse(BaseModel):
                             "branch": "그라운드합주실 신촌1호점",
                             "business_id": "1182602",
                             "biz_item_id": "5979471",
-                            "imageUrls": [
+                            "image_urls": [
                                 "https://example.com/ground_b_room.jpg"
                             ],
-                            "maxCapacity": 8,
-                            "recommendCapacity": 4,
-                            "baseCapacity": None,
-                            "extraCharge": None,
-                            "pricePerHour": 12000,
-                            "canReserveOneHour": True,
-                            "requiresCallOnSameDay": False
+                            "max_capacity": 8,
+                            "recommend_capacity": 4,
+                            "recommend_capacity_range": [3, 4],
+                            "price_config": [],
+                            "base_capacity": None,
+                            "extra_charge": None,
+                            "lat": 37.5560505,
+                            "lng": 126.9409629,
+                            "price_per_hour": 12000,
+                            "can_reserve_one_hour": True,
+                            "requires_call_on_sameday": False
                         },
                         "available": True,
-                        "available_slots": {"18:00": True, "19:00": True}
+                        "available_slots": {
+                            "14:00": True,
+                            "15:00": True
+                        },
+                        "estimated_price": 24000,
+                        "policy_warnings": []
                     }
                 ],
                 "branch_summary": {
