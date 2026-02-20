@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import re
 
 # Room Information DTO (DB Query Result)
@@ -75,6 +77,31 @@ class AvailabilityRequest(BaseModel):
         end_h = int(self.end_hour.split(':')[0])
         if start_h >= end_h:
             raise ValueError(f"종료 시간({self.end_hour})은 시작 시간({self.start_hour})보다 최소 1시간 이후여야 합니다.")
+        
+        # 날짜 및 과거/미래 제한 로직 검증 (KST 기준)
+        try:
+            req_date = datetime.strptime(self.date, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})")
+        
+        kst = ZoneInfo("Asia/Seoul")
+        now_kst = datetime.now(kst)
+        today = now_kst.date()
+        
+        if req_date < today:
+            raise ValueError(f"과거 날짜({self.date})는 예약할 수 없습니다.")
+        
+        # 오늘 날짜인데 지나간 시간 예약 방지
+        current_hour = now_kst.hour
+        if req_date == today and start_h <= current_hour:
+            raise ValueError(f"오늘({self.date}) 예약 시, 시작 시간({self.start_hour})은 현재 시간({current_hour}시) 이후여야 합니다.")
+        
+        # 최대 60일 미래까지만 허용
+        MAX_Future_Days = 60
+        delta_days = (req_date - today).days
+        if delta_days > MAX_Future_Days:
+            raise ValueError(f"예약 가능일은 최대 {MAX_Future_Days}일 이내입니다. (요청일: {self.date}, {delta_days}일 후)")
+            
         return self
     
     # 지도 영역 좌표 (필수)
