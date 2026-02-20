@@ -105,10 +105,10 @@ async def test_map_search_success(
         assert response.status_code == 200
         data = response.json()["result"]
         
-        # 평탄화된 구조 검증 (room_detail 중첩 제거됨)
+        # 중첩 구조 검증
         assert "branch_summary" in data
         assert "hour_slots" in data
-        assert data["rooms"][0]["name"] == "Refactored Room"
+        assert data["rooms"][0]["room_detail"]["name"] == "Refactored Room"
         
         # Mock 호출 파라미터 검증
         called_arg = mock_method.call_args[1]['request']

@@ -111,23 +111,25 @@ class RoomInfo(BaseModel):
     policyWarnings: List[PolicyWarning] = Field(default_factory=list)
     
 # Crawler Result DTO (Internal Logic Use Only)
-class RoomAvailability(RoomDetail):
-    """Availability information for a single room (Flattened Structure)"""
+class RoomAvailability(BaseModel):
+    """Availability information for a single room (Nested Structure)"""
     model_config = ConfigDict(
         title="RoomAvailabilityInfo",
         populate_by_name=True,
         json_schema_extra={
             "example": {
-                "name": "A룸",
-                "branch": "그라운드합주실 신촌1호점",
-                "business_id": "1182602",
-                "biz_item_id": "5979448",
-                "imageUrls": ["https://example.com/ground_a_room.jpg"],
-                "maxCapacity": 10,
-                "recommendCapacity": 5,
-                "pricePerHour": 15000,
-                "canReserveOneHour": True,
-                "requiresCallOnSameDay": False,
+                "room_detail": {
+                    "name": "A룸",
+                    "branch": "그라운드합주실 신촌1호점",
+                    "business_id": "1182602",
+                    "biz_item_id": "5979448",
+                    "imageUrls": ["https://example.com/ground_a_room.jpg"],
+                    "maxCapacity": 10,
+                    "recommendCapacity": 5,
+                    "pricePerHour": 15000,
+                    "canReserveOneHour": True,
+                    "requiresCallOnSameDay": False
+                },
                 "available": True,
                 "available_slots": {"18:00": True, "19:00": True},
                 "estimated_price": 30000,
@@ -136,7 +138,7 @@ class RoomAvailability(RoomDetail):
         }
     )
 
-    # RoomDetail 필드들은 상속받음
+    room_detail: RoomDetail = Field(..., description="Room detail information")
     available: Union[bool, str] = Field(..., description="예약 가능 여부 (true: 가능, false: 불가, unknown: 확인 필요)")
     available_slots: Dict[str, Union[bool, str]] = Field(..., description="시간대별 예약 가능 여부 (Key: HH:MM)")
     
@@ -167,38 +169,42 @@ class AvailabilityResponse(BaseModel):
                 "end_hour": "20:00",
                 "rooms": [
                     {
-                        "name": "A룸",
-                        "branch": "그라운드합주실 신촌1호점",
-                        "business_id": "1182602",
-                        "biz_item_id": "5979448",
-                        "imageUrls": [
-                            "https://example.com/ground_a_room.jpg"
-                        ],
-                        "maxCapacity": 10,
-                        "recommendCapacity": 5,
-                        "baseCapacity": 4,
-                        "extraCharge": 2000,
-                        "pricePerHour": 15000,
-                        "canReserveOneHour": True,
-                        "requiresCallOnSameDay": False,
+                        "room_detail": {
+                            "name": "A룸",
+                            "branch": "그라운드합주실 신촌1호점",
+                            "business_id": "1182602",
+                            "biz_item_id": "5979448",
+                            "imageUrls": [
+                                "https://example.com/ground_a_room.jpg"
+                            ],
+                            "maxCapacity": 10,
+                            "recommendCapacity": 5,
+                            "baseCapacity": 4,
+                            "extraCharge": 2000,
+                            "pricePerHour": 15000,
+                            "canReserveOneHour": True,
+                            "requiresCallOnSameDay": False
+                        },
                         "available": True,
                         "available_slots": {"18:00": True, "19:00": True}
                     },
                     {
-                        "name": "B룸",
-                        "branch": "그라운드합주실 신촌1호점",
-                        "business_id": "1182602",
-                        "biz_item_id": "5979471",
-                        "imageUrls": [
-                            "https://example.com/ground_b_room.jpg"
-                        ],
-                        "maxCapacity": 8,
-                        "recommendCapacity": 4,
-                        "baseCapacity": None,
-                        "extraCharge": None,
-                        "pricePerHour": 12000,
-                        "canReserveOneHour": True,
-                        "requiresCallOnSameDay": False,
+                        "room_detail": {
+                            "name": "B룸",
+                            "branch": "그라운드합주실 신촌1호점",
+                            "business_id": "1182602",
+                            "biz_item_id": "5979471",
+                            "imageUrls": [
+                                "https://example.com/ground_b_room.jpg"
+                            ],
+                            "maxCapacity": 8,
+                            "recommendCapacity": 4,
+                            "baseCapacity": None,
+                            "extraCharge": None,
+                            "pricePerHour": 12000,
+                            "canReserveOneHour": True,
+                            "requiresCallOnSameDay": False
+                        },
                         "available": True,
                         "available_slots": {"18:00": True, "19:00": True}
                     }

@@ -83,10 +83,9 @@ class NaverCrawler(BaseCrawler):
 
         available = all(val for hour, val in available_slots.items() if hour in hour_slots)
 
-        # NOTE: RoomAvailability는 RoomDetail을 상속받으므로, 
-        # RoomDetail 필드를 스프레드하여 평탄화된 구조로 직접 전달함
+        # NOTE: RoomAvailability는 중첩 구조를 사용하므로 room_detail 전달
         return RoomAvailability(
-            **room.model_dump(),
+            room_detail=room,
             available=available,
             available_slots=available_slots
         )

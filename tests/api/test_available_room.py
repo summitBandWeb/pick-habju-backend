@@ -24,7 +24,7 @@ class MockCrawler(BaseCrawler):
             slots = {slot: True for slot in hour_slots}
             results.append(
                 RoomAvailability(
-                    **room.model_dump(), available=True, available_slots=slots
+                    room_detail=room, available=True, available_slots=slots
                 )
             )
         return results
@@ -224,8 +224,8 @@ def test_get_availability_api_with_crawler_error():
 
         assert len(result["rooms"]) == 1
         assert (
-            result["rooms"][0]["business_id"] == "dream_sadang"
-        )  # NOTE: 평탄화된 구조이므로 room_detail 중첩 없이 직접 접근
+            result["rooms"][0]["room_detail"]["business_id"] == "dream_sadang"
+        )
         assert result["rooms"][0]["available"] is True
 
     finally:
@@ -275,8 +275,7 @@ def test_get_availability_with_real_db():
 
         # 실제 데이터가 조회되었는지 확인
         if len(result["rooms"]) > 0:
-            first_room = result["rooms"][0]
-            # NOTE: 평탄화된 구조이므로 room_detail 중첩 없이 직접 접근
+            first_room = result["rooms"][0]["room_detail"]
             assert "business_id" in first_room
             assert "name" in first_room
 

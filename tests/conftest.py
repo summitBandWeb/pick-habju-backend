@@ -49,9 +49,9 @@ def mock_room_info_factory(mock_room_detail_factory):
     """ RoomAvailability 객체를 동적으로 생성하는 Factory Fixture (평탄화된 구조) """
     def _create(name="Test Room", price=15000, available=True, **kwargs):
         room_detail = mock_room_detail_factory(name=name, price=price, **kwargs)
-        # NOTE: RoomAvailability는 RoomDetail을 상속받으므로 스프레드 적용
+        # NOTE: RoomAvailability는 중첩 구조를 가지므로 room_detail을 통해 접근
         return RoomAvailability(
-            **room_detail.model_dump(),
+            room_detail=room_detail,
             available=available,
             available_slots={"12:00": True, "13:00": True}
         )

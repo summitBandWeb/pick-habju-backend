@@ -29,6 +29,8 @@ def test_validate_hour_slots_future_date():
 def test_validate_hour_slots_past_time_today():
     """오늘 날짜인데 과거 시간대를 포함하면 PastHourSlotNotAllowedError 예외가 발생해야 한다."""
     now = datetime.now()
+    if now.hour < 1:
+        pytest.skip("새벽 1시 이전에는 과거 시간 계산 문제로 테스트를 건너뜁니다.")
     # 현재 시간보다 1시간 전
     slot = (now - timedelta(hours=1)).strftime("%H:%M")
     today = now.strftime("%Y-%m-%d")
