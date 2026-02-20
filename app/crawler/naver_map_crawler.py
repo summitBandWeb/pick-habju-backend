@@ -133,8 +133,12 @@ class NaverMapCrawler:
             if not isinstance(item, dict):
                 logger.warning(f"Skipping non-dict item: {item}")
                 continue
-            if item["id"] not in target:
-                target[item["id"]] = item
+            item_id = item.get("id")
+            if not item_id:
+                logger.warning(f"Skipping item without 'id': {list(item.keys())[:3]}")
+                continue
+            if item_id not in target:
+                target[item_id] = item
 
     async def crawl_all_regions(self) -> List[Dict]:
         """
