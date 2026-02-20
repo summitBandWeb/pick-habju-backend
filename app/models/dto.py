@@ -79,10 +79,12 @@ class AvailabilityRequest(BaseModel):
             raise ValueError(f"종료 시간({self.end_hour})은 시작 시간({self.start_hour})보다 최소 1시간 이후여야 합니다.")
         
         # 날짜 및 과거/미래 제한 로직 검증 (KST 기준)
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])", self.date):
+            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})")
         try:
             req_date = datetime.strptime(self.date, "%Y-%m-%d").date()
-        except ValueError:
-            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})")
+        except ValueError as err:
+            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})") from err
         
         kst = ZoneInfo("Asia/Seoul")
         now_kst = datetime.now(kst)
