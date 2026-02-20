@@ -30,12 +30,8 @@ async def test_map_search_validation_error(async_client: AsyncClient, future_dat
     response = await async_client.get("/api/rooms/availability", params=params)
 
     # then
-    assert response.status_code == 422
-    data = response.json()
-    assert data['message'] == '입력값을 확인해주세요.'
-    # model_validator 에러는 result에 필드별로 들어감
-    result_str = str(data.get('result', {}))
-    assert "남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다" in result_str
+    assert response.status_code == 400
+    assert "남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다" in response.json()['message']
 
 
 @pytest.mark.asyncio
@@ -60,11 +56,8 @@ async def test_map_search_coordinate_range_error(async_client: AsyncClient, futu
     response = await async_client.get("/api/rooms/availability", params=params)
 
     # then
-    assert response.status_code == 422
-    data = response.json()
-    assert data['message'] == '입력값을 확인해주세요.'
-    result_str = str(data.get('result', {}))
-    assert "위도는 -90도에서 90도 사이여야 합니다" in result_str
+    assert response.status_code == 400
+    assert "위도는 -90도에서 90도 사이여야 합니다" in response.json()['message']
 
 
 @pytest.mark.asyncio

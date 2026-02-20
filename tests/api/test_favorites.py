@@ -105,21 +105,21 @@ def test_delete_favorite_idempotency(client, api_endpoint, headers, target_busin
     assert data["isSuccess"] is True
     assert data["result"] == {"deleted": True}
 
-@pytest.mark.parametrize("invalid_headers, expected_status, expected_detail", [
-    ({}, 422, None),                                                                  # 헤더 누락 → FastAPI 422
-    ({"X-Device-Id": ""}, 400, "X-Device-Id header is required and cannot be empty"),  # 빈 헤더
-    ({"X-Device-Id": "   "}, 400, "X-Device-Id header is required and cannot be empty"),  # 공백 헤더
-    ({"X-Device-Id": "not-a-uuid"}, 400, "Invalid X-Device-Id format"),                # 잘못된 형식
+@pytest.mark.parametrize("invalid_headers, expected_detail", [
+    ({}, "X-Device-Id header is required and cannot be empty"),                      # 헤더 누락
+    ({"X-Device-Id": ""}, "X-Device-Id header is required and cannot be empty"),     # 빈 헤더
+    ({"X-Device-Id": "   "}, "X-Device-Id header is required and cannot be empty"),  # 공백 헤더
+    ({"X-Device-Id": "not-a-uuid"}, "Invalid X-Device-Id format"), # 잘못된 형식
 ])
-def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_status, expected_detail, target_business_id):
-    """잘못된 헤더 요청에 대해 적절한 에러를 반환해야 한다."""
+def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_detail, target_business_id):
+    """잘못된 헤더 요청에 대해 적절한 400 에러를 반환해야 한다."""
     # Act
+    # business_id를 제공하여 422 Validation Error가 아닌 Header Check 로직까지 도달하도록 함
     response = client.put(api_endpoint, headers=invalid_headers, params={"business_id": target_business_id})
 
     # Assert
-    assert response.status_code == expected_status
-    if expected_detail:
-        assert response.json()["message"] == expected_detail
+    assert response.status_code == 400
+    assert response.json()["message"] == expected_detail
 
 
 # --------------------------------------------------------------------------
@@ -176,7 +176,8 @@ def test_get_favorites_isolation(client, headers, target_business_id):
     assert len(result["biz_item_ids"]) == 1
 
 def test_get_favorites_error_cases(client):
-    """GET 요청 시에도 잘못된 헤더에 대해 에러를 반환해야 한다."""
-    # 헤더 누락 → Header(...)이므로 FastAPI가 422 반환
+    """GET 요청 시에도 잘못된 헤더에 대해 400 에러를 반환해야 한다."""
+    # 헤더 누락
     response = client.get("/api/favorites", headers={})
-    assert response.status_code == 422
+    assert response.status_code == 400
+    assert response.json()["message"] == "X-Device-Id header is required and cannot be empty"
