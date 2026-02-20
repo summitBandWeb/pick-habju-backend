@@ -70,7 +70,7 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
 @router.get("", response_model=ApiResponse[AvailabilityResponse], include_in_schema=False)
 @limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute")  # Rate Limit 적용
 async def check_room_availability(
-    request: Request,
+    request: Request,  # noqa: ARG001
     date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
     capacity: int = Query(..., description="사용 인원 수", json_schema_extra={"example": 10}),
     start_hour: str = Query(..., description="시작 시간 (HH:MM)", json_schema_extra={"example": "14:00"}),
