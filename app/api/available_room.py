@@ -17,6 +17,55 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
 지정된 날짜와 시간대에 대해 인원수에 맞는 합주실을 **지도 영역** 내에서 검색하고 예약 가능 여부를 확인합니다.
 모든 검색은 지도 기반이므로 좌표 정보가 필수입니다.
 """,
+    responses={
+        200: {
+            "description": "검색 성공",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "isSuccess": True,
+                        "code": "COMMON200",
+                        "message": "성공입니다.",
+                        "result": {
+                            "date": "2025-08-23",
+                            "start_hour": "14:00",
+                            "end_hour": "16:00",
+                            "hour_slots": ["14:00", "15:00", "16:00"],
+                            "available_biz_item_ids": ["5979448", "5979471"],
+                            "rooms": [
+                                {
+                                    "name": "A룸",
+                                    "branch": "그라운드합주실 신촌1호점",
+                                    "business_id": "1182602",
+                                    "biz_item_id": "5979448",
+                                    "image_urls": ["https://example.com/ground_a_room.jpg"],
+                                    "max_capacity": 10,
+                                    "recommend_capacity": 5,
+                                    "base_capacity": 4,
+                                    "extra_charge": 2000,
+                                    "price_per_hour": 15000,
+                                    "can_reserve_one_hour": True,
+                                    "requires_call_on_sameday": False,
+                                    "available": True,
+                                    "available_slots": {"14:00": True, "15:00": True},
+                                    "estimated_price": 30000,
+                                    "policy_warnings": []
+                                }
+                            ],
+                            "branch_summary": {
+                                "1182602": {
+                                    "min_price": 15000,
+                                    "available_count": 3,
+                                    "lat": 37.5560505,
+                                    "lng": 126.9409629
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
 )
 @router.get("", response_model=ApiResponse[AvailabilityResponse], include_in_schema=False)
 @limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute")  # Rate Limit 적용
