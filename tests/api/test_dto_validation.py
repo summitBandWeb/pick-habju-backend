@@ -4,8 +4,15 @@ import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-# Rate Limiter 비활성화 (검증 로직 테스트에서 429 방지)
-app.state.limiter.enabled = False
+from app.core.limiter import limiter
+
+@pytest.fixture(autouse=True)
+def disable_limiter():
+    """Rate Limiter 비활성화 (검증 로직 테스트에서 429 방지)"""
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
+
 client = TestClient(app)
 
 def test_availability_request_validation_error():
