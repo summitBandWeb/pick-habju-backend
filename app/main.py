@@ -24,6 +24,7 @@ from app.exception.envelope_handlers import (
     validation_exception_handler,
 )
 from app.utils.client_loader import close_global_client, set_global_client
+from pydantic import ValidationError
 
 
 @asynccontextmanager
@@ -104,6 +105,7 @@ app.add_exception_handler(BaseCustomException, custom_exception_handler)
 
 # 3. 검증 예외
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(ValidationError, validation_exception_handler)
 
 # 4. HTTP 예외
 app.add_exception_handler(HTTPException, http_exception_handler)
