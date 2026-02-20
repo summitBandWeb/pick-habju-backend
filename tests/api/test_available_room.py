@@ -153,6 +153,29 @@ def test_get_availability_api():
         assert "branch_summary" in result
 
 
+def test_get_availability_api_no_result_returns_empty_success():
+    """검색 조건에 맞는 room이 없으면 200 + empty result를 반환해야 한다."""
+    url = "/api/rooms/availability"
+    target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+
+    with patch(
+        "app.services.availability_service.get_rooms_by_criteria",
+        return_value=[],
+    ):
+        response = client.get(
+            f"{url}?date={target_date}&capacity=3&start_hour=18:00&end_hour=19:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("isSuccess") is True
+
+    result = body.get("result", {})
+    assert result.get("results") == []
+    assert result.get("available_biz_item_ids") == []
+    assert result.get("branch_summary") == {}
+
+
 def test_preflight_request():
     # CORS Preflight 요청 시뮬레이션
     habju = "https://www.pickhabju.com"
