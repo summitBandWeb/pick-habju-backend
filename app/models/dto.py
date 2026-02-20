@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional
+import re
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -60,6 +61,21 @@ class AvailabilityRequest(BaseModel):
     capacity: int = Field(..., description="Number of users")
     start_hour: str = Field(..., description="Start time (HH:MM)")
     end_hour: str = Field(..., description="End time (HH:MM)")
+    
+    @field_validator('start_hour', 'end_hour')
+    @classmethod
+    def validate_hour_format(cls, v: str) -> str:
+        if not re.match(r"^(0[0-9]|1[0-9]|2[0-4]):00$", v):
+            raise ValueError(f"시간은 'HH:00' 포맷(정각)으로 입력해야 합니다. (잘못된 입력: {v})")
+        return v
+
+    @model_validator(mode='after')
+    def validate_time_range(self) -> 'AvailabilityRequest':
+        start_h = int(self.start_hour.split(':')[0])
+        end_h = int(self.end_hour.split(':')[0])
+        if start_h >= end_h:
+            raise ValueError(f"종료 시간({self.end_hour})은 시작 시간({self.start_hour})보다 최소 1시간 이후여야 합니다.")
+        return self
     
     # 지도 영역 좌표 (필수)
     swLat: float = Field(..., description="South-West Latitude")
