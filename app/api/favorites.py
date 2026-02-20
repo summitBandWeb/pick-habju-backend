@@ -13,18 +13,11 @@ router = APIRouter(
 @router.put(
     "/{biz_item_id}",
     status_code=status.HTTP_200_OK,
-    response_model=ApiResponse[Dict[str, bool]],
-    openapi_extra={
-        "x-example-params": {
-            "biz_item_id": "5979448",
-            "business_id": "1182602",
-            "X-Device-Id": "550e8400-e29b-41d4-a716-446655440000"
-        }
-    }
+    response_model=ApiResponse[Dict[str, bool]]
 )
 def add_favorite(
-    biz_item_id: str = Path(..., description="합주실 룸 구별 ID (예: 5979448 - 그라운드합주실 신촌1호점 A룸)"),
-    business_id: str = Query(..., description="합주실 지점 구별 ID (예: 1182602 - 그라운드합주실 신촌1호점)"),
+    biz_item_id: str = Path(..., description="합주실 룸 구별 ID (예: 5979448 - 그라운드합주실 신촌1호점 A룸)", json_schema_extra={"example": "5979448"}),
+    business_id: str = Query(..., description="합주실 지점 구별 ID (예: 1182602 - 그라운드합주실 신촌1호점)", json_schema_extra={"example": "1182602"}),
     x_device_id: str = Depends(validate_device_id),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> ApiResponse[Dict[str, bool]]:
@@ -45,18 +38,11 @@ def add_favorite(
 @router.delete(
     "/{biz_item_id}",
     status_code=status.HTTP_200_OK,
-    response_model=ApiResponse[Dict[str, bool]],
-    openapi_extra={
-        "x-example-params": {
-            "biz_item_id": "5979448",
-            "business_id": "1182602",
-            "X-Device-Id": "550e8400-e29b-41d4-a716-446655440000"
-        }
-    }
+    response_model=ApiResponse[Dict[str, bool]]
 )
 def delete_favorite(
-    biz_item_id: str = Path(..., description="합주실 룸 구별 ID (예: 5979448 - 그라운드합주실 신촌1호점 A룸)"),
-    business_id: str = Query(..., description="합주실 지점 구별 ID (예: 1182602 - 그라운드합주실 신촌1호점)"),
+    biz_item_id: str = Path(..., description="합주실 룸 구별 ID (예: 5979448 - 그라운드합주실 신촌1호점 A룸)", json_schema_extra={"example": "5979448"}),
+    business_id: str = Query(..., description="합주실 지점 구별 ID (예: 1182602 - 그라운드합주실 신촌1호점)", json_schema_extra={"example": "1182602"}),
     x_device_id: str = Depends(validate_device_id),
     repo: IFavoriteRepository = Depends(get_favorite_repository)
 ) -> ApiResponse[Dict[str, bool]]:
