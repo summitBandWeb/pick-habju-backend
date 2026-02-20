@@ -42,8 +42,8 @@ def get_favorite_repository() -> IFavoriteRepository:
 
 
 def validate_device_id(
-    x_device_id: str | None = Header(
-        default=None, 
+    x_device_id: str = Header(
+        ...,
         alias="X-Device-Id", 
         description="사용자 기기 식별 ID (UUID 형식 필수)",
         json_schema_extra={"example": "550e8400-e29b-41d4-a716-446655440000"}
