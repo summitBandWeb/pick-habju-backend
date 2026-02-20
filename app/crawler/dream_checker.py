@@ -14,10 +14,6 @@ from app.exception.crawler.dream_exception import DreamAvailabilityError
 from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
 
-
-
-sys.stdout.reconfigure(encoding='utf-8')
-
 class DreamCrawler(BaseCrawler):
     _URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
     HEADERS = {

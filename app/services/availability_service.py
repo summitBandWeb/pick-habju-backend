@@ -245,7 +245,7 @@ class AvailabilityService:
             room_detail = res.room_detail
 
             # ?덉빟 媛?ν븳 猷몃쭔 寃곌낵 由ъ뒪?몄뿉 ?ы븿 (unknown ?ы븿)
-            if res.available is True or res.available == "unknown":
+            if res.available in [True, "unknown", "partial"]:
                 # v2.0.0: ?쒖떆??沅뚯옣 ?몄썝 踰붿쐞 怨꾩궛 (鍮꾩젙??max/base 議고빀 諛⑹뼱)
                 rec_min: Optional[int] = None
                 rec_max: Optional[int] = None

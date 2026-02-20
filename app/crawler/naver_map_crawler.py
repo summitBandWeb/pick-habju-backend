@@ -97,7 +97,7 @@ class NaverMapCrawler:
                 const state = window.__APOLLO_STATE__;
                 // Debug: Return useful message if state is missing
                 if (!state) {
-                     return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY:" + document.body.innerHTML.substring(0, 500)];
+                     return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY_HIDDEN_FOR_SECURITY"];
                 }
                 
                 const places = [];
@@ -120,7 +120,7 @@ class NaverMapCrawler:
                 
                 // If no places found, return some keys to help debugging
                 if (places.length === 0) {
-                    return keys.slice(0, 10).map(k => "DEBUG_KEY:" + k);
+                    return ["NO_PLACES_FOUND_IN_APOLLO_STATE"];
                 }
                 
                 return places;
