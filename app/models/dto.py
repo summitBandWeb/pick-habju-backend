@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional, ClassVar
@@ -155,9 +155,18 @@ class AvailabilityRequest(BaseModel):
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("date must match YYYY-MM-DD")
         try:
-            datetime.strptime(value, "%Y-%m-%d")
+            input_date = datetime.strptime(value, "%Y-%m-%d").date()
         except ValueError as exc:
             raise ValueError("date must be a valid YYYY-MM-DD calendar date") from exc
+        if input_date < date.today():
+            raise ValueError("past dates are not allowed")
+        return value
+
+    @field_validator("start_hour", "end_hour")
+    @classmethod
+    def validate_time_format(cls, value: str) -> str:
+        if not re.fullmatch(r"^([01]\d|2[0-3]):([0-5]\d)$", value):
+            raise ValueError("time must match HH:MM (00:00~23:59)")
         return value
 
     @field_validator("capacity")
@@ -167,6 +176,28 @@ class AvailabilityRequest(BaseModel):
         if not 1 <= value <= 50:
             raise ValueError("capacity must be between 1 and 50")
         return value
+
+    @model_validator(mode="after")
+    def validate_logic(self) -> "AvailabilityRequest":
+        if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
+            raise ValueError("latitude must be between -90 and 90")
+        if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):
+            raise ValueError("longitude must be between -180 and 180")
+        if self.swLat >= self.neLat:
+            raise ValueError("swLat must be less than neLat")
+        if self.swLng >= self.neLng:
+            raise ValueError("swLng must be less than neLng")
+
+        start = datetime.strptime(self.start_hour, "%H:%M")
+        end = datetime.strptime(self.end_hour, "%H:%M")
+        if start >= end:
+            raise ValueError("start_hour must be earlier than end_hour")
+
+        input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
+        if input_date == date.today() and start.time() <= datetime.now().time():
+            raise ValueError("past time is not allowed for today")
+
+        return self
 
 
 # Policy Warning DTO

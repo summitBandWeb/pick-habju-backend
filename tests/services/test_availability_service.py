@@ -1,8 +1,12 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.services.availability_service import AvailabilityService
 from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail
+
+
+# 미래 날짜를 사용하여 DTO 날짜 검증을 통과시킴
+FUTURE_DATE = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 @pytest.fixture
@@ -23,8 +27,8 @@ class TestApplyPolicies:
     def test_1hour_reservation_warning(self, service):
         """1시간 예약인데 canReserveOneHour=False면 경고 발생"""
         req = AvailabilityRequest(
-            date="2024-01-01", capacity=2, start_hour="14:00", end_hour="15:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="15:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
         # NOTE: generate_time_slots("14:00", "15:00") → ["14:00", "15:00"] (end-inclusive)
         #        len(slots) - 1 == 1 → 1시간 예약으로 감지
@@ -45,12 +49,16 @@ class TestApplyPolicies:
 
     def test_sameday_reservation_warning(self, service):
         """당일 예약인데 requiresCallOnSameDay=True면 경고 발생"""
-        today = datetime.now().strftime("%Y-%m-%d")
-        req = AvailabilityRequest(
-            date=today, capacity=2, start_hour="14:00", end_hour="16:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+        # 테스트 시점에 따라 과거 시간 유효성 검사 실패가 발생하지 않도록 시간을 명시적으로 고정
+        now = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        date = now.strftime("%Y-%m-%d")
+        
+        # model_construct를 통해 DTO의 과거 시간 밸리데이션(예: 12:00이 현재보다 과거인지)을 바이패스
+        req = AvailabilityRequest.model_construct(
+            date=date, capacity=2, start_hour="12:00", end_hour="13:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
-        slots = ["14:00", "15:00"]
+        slots = ["12:00", "13:00"]
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
@@ -67,8 +75,8 @@ class TestApplyPolicies:
     def test_price_calculation_integration(self, service, mock_pricing_service):
         """PricingService가 호출되어 estimated_price가 설정되는지 검증"""
         req = AvailabilityRequest(
-            date="2024-01-01", capacity=4, start_hour="14:00", end_hour="16:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+            date=FUTURE_DATE, capacity=4, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
         slots = ["14:00", "15:00"]
 
@@ -90,8 +98,8 @@ class TestApplyPolicies:
     def test_price_calculation_error_handling(self, service, mock_pricing_service):
         """가격 계산 중 에러 발생 시 estimated_price는 None"""
         req = AvailabilityRequest(
-            date="2024-01-01", capacity=4, start_hour="14:00", end_hour="16:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+            date=FUTURE_DATE, capacity=4, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
         slots = ["14:00", "15:00"]
 
@@ -160,8 +168,8 @@ class TestCheckAvailabilityFlow:
         """DB 데이터가 없어도 Mock으로 전체 흐름 검증"""
         # Given
         req = AvailabilityRequest(
-            date="2026-02-14", capacity=3, start_hour="14:00", end_hour="16:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
 
         mock_room = RoomDetail(
@@ -184,7 +192,6 @@ class TestCheckAvailabilityFlow:
 
         # When
         with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
-             patch("app.services.availability_service.validate_map_coordinates"), \
              patch("app.services.availability_service.filter_rooms_by_type", return_value=[mock_room]), \
              patch("app.services.availability_service.validate_availability_request"):
             mock_db.return_value = [mock_room]

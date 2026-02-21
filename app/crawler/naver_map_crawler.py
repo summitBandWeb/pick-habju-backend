@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
 from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
+from fake_useragent import UserAgent
 
 logger = logging.getLogger(__name__)
 
@@ -32,25 +33,64 @@ class NaverMapCrawler:
 
     def _search_sync(self, query: str) -> List[Dict[str, str]]:
         """Synchronous search implementation."""
+        # Optional dependencies import with fallback
+        try:
+            ua = UserAgent(fallback="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            user_agent_str = ua.random
+        except ImportError:
+            logger.warning("fake-useragent not found. Using default user agent.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        except Exception as e:
+            logger.warning(f"Error generating user agent: {e}. Using default.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
         results = {}
         
         with sync_playwright() as p:
-            # Use channel='chrome' for more realistic browser fingerprint
-            browser = p.chromium.launch(
-                headless=self.headless,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--no-sandbox',
-                ]
-            )
+            browser = None
+            try:
+                # 1. Try launching with 'chrome' channel (more realistic)
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    channel="chrome",
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--no-sandbox',
+                    ]
+                )
+            except Exception as e:
+                logger.warning(f"Failed to launch Chrome channel: {e}. Falling back to bundled Chromium.")
+                try:
+                    # 2. Fallback to bundled chromium
+                    browser = p.chromium.launch(
+                        headless=self.headless,
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--no-sandbox',
+                        ]
+                    )
+                except Exception as e2:
+                    logger.error(f"Failed to launch bundled Chromium: {e2}")
+                    return []
+
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                user_agent=user_agent_str,
                 extra_http_headers={"Referer": "https://map.naver.com/"},
                 viewport={"width": 1920, "height": 1080},
                 locale="ko-KR",
                 timezone_id="Asia/Seoul"
             )
-            # Override navigator.webdriver to avoid detection
+            
+            # Apply stealth if available
+            try:
+                from playwright_stealth import stealth_sync
+                stealth_sync(context)
+            except ImportError:
+                logger.warning("playwright-stealth not found. Skipping stealth mode.")
+            except Exception as e:
+                logger.warning(f"Failed to apply stealth: {e}")
+
+            # Override navigator.webdriver to avoid detection (redundant if stealth used, but safe)
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             page = context.new_page()
             

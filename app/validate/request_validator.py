@@ -1,44 +1,31 @@
 from typing import List
-from fastapi import HTTPException
+
 from app.models.dto import RoomDetail
-from app.validate.date_validator import validate_date
 from app.validate.hour_validator import validate_hour_slots
 from app.validate.room_detail_validator import validate_room_detail_list
 
+
 def validate_availability_request(
-        date: str,
-        hour_slots: List[str],
-        target_rooms: List[RoomDetail],
+    date: str,
+    hour_slots: List[str],
+    target_rooms: List[RoomDetail],
 ):
     """
-    요청의 유효성을 검사합니다.
-    • 날짜 포맷 및 유효성 검증
-    • 시간 슬롯 포맷 및 과거/연속성 검증
-    • room detail 리스트 및 개별 room detail 검증
+    요청의 비즈니스 로직 유효성을 검증합니다.
+    (DTO에서 처리하지 못한 복합 검증을 수행)
+
+    1. 시간 슬롯 연속성 검증(1시간 단위)
+    2. RoomDetail 리스트 검증
     """
-    validate_date(date)
+    # NOTE:
+    # - 날짜/시간 형식: AvailabilityRequest DTO에서 이미 검증됨
+    # - 좌표 유효성: AvailabilityRequest DTO에서 이미 검증됨
+
+    # 시간 슬롯 연속성 검증(13:00, 14:00, 15:00...)
+    # DTO는 개별 필드 검증에 집중하므로 슬롯 간 관계 검증은 여기서 수행
     validate_hour_slots(hour_slots, date)
 
     # RoomKey 관련 모든 검증을 한 번에 처리
-    # NOTE:
     # 빈 target_rooms는 "검색 결과 없음" 정상 시나리오이므로 예외로 처리하지 않는다.
     if target_rooms:
         validate_room_detail_list(target_rooms)
-
-def validate_map_coordinates(swLat: float, swLng: float, neLat: float, neLng: float):
-    """
-    지도 좌표의 유효성을 검증합니다.
-    """
-    # 1. 위도 경도 범위 체크
-    if not (-90 <= swLat <= 90) or not (-90 <= neLat <= 90):
-        raise HTTPException(status_code=400, detail="위도는 -90도에서 90도 사이여야 합니다.")
-    
-    if not (-180 <= swLng <= 180) or not (-180 <= neLng <= 180):
-        raise HTTPException(status_code=400, detail="경도는 -180도에서 180도 사이여야 합니다.")
-
-    # 2. 영역 논리 체크 (SW < NE)
-    if swLat >= neLat:
-        raise HTTPException(status_code=400, detail="남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
-
-    if swLng >= neLng:
-        raise HTTPException(status_code=400, detail="남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")

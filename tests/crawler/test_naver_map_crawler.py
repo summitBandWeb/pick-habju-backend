@@ -1,10 +1,12 @@
 # tests/crawler/test_naver_map_crawler.py
 """
-NaverMapCrawler unit tests
+NaverMapCrawler unit tests.
 
 Run:
     pytest tests/crawler/test_naver_map_crawler.py -v
 """
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -92,14 +94,26 @@ class TestMergeResults:
         assert target["1"]["name"] == "Room A"
 
 
-class TestRegionList:
+class TestCrawlerRobustness:
     @pytest.fixture
     def crawler(self):
         return NaverMapCrawler(headless=True)
 
-    def test_region_count(self, crawler):
-        seoul_count = 25
-        major_cities_count = 10
-        expected_total = seoul_count + major_cities_count
+    @patch("app.crawler.naver_map_crawler.sync_playwright")
+    def test_browser_launch_fallback(self, mock_playwright, crawler):
+        mock_p = MagicMock()
+        mock_browser = MagicMock()
+        mock_context = MagicMock()
+        mock_page = MagicMock()
 
-        assert expected_total == 35
+        mock_playwright.return_value.__enter__.return_value = mock_p
+        mock_browser.new_context.return_value = mock_context
+        mock_context.new_page.return_value = mock_page
+        mock_p.chromium.launch.side_effect = [Exception("Chrome channel not found"), mock_browser]
+
+        crawler._search_sync("test_query")
+
+        assert mock_p.chromium.launch.call_count == 2
+        calls = mock_p.chromium.launch.call_args_list
+        assert calls[0].kwargs.get("channel") == "chrome"
+        assert "channel" not in calls[1].kwargs
