@@ -63,6 +63,23 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("레드룸", "당일 예약은 전화 문의 바랍니다")
         
         assert result["requires_call_on_same_day"] is True
+        
+    # ============== TC: 최소 2시간 예약 감지 ==============
+    def test_cannot_reserve_one_hour(self, parser):
+        """1시간 예약 불가 감지 ("최소 2시간" 등)"""
+        result = parser._parse_with_regex("블루룸", "최소 2시간부터 예약 가능합니다")
+        assert result["can_reserve_one_hour"] is False
+
+    def test_cannot_reserve_one_hour_alternative(self, parser):
+        """1시간 예약 불가 대체 표현 감지"""
+        result = parser._parse_with_regex("그린룸", "1시간 단위 예약 불가")
+        assert result["can_reserve_one_hour"] is False
+
+    # ============== TC: 기본 1시간 예약 가능 ==============
+    def test_can_reserve_one_hour_default(self, parser):
+        """특별한 언급이 없으면 기본적으로 1시간 예약 가능"""
+        result = parser._parse_with_regex("옐로우룸", "쾌적한 합주 공간")
+        assert result.get("can_reserve_one_hour") is True
     
     # ============== TC05: 빈 설명 처리 ==============
     def test_empty_description(self, parser):
