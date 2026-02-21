@@ -173,6 +173,14 @@ jobs:
       # -----------------------------------------------------------------
       - name: 테스트 실패 시 Discord 알림
         if: always() && steps.pytest_run.outcome == 'failure'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           if [ -f test_results.json ]; then
             FAILED_TESTS=$(jq -r '.summary.failed // 0' test_results.json)
@@ -192,17 +200,17 @@ jobs:
             \"embeds\": [
               {
                 \"title\": \"실패한 워크플로우 바로가기\",
-                \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+                \"url\": \"${WORKFLOW_URL}\",
                 \"color\": 15158332,
                 \"fields\": [
-                  { \"name\": \"PR\", \"value\": \"#${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}\", \"inline\": false },
-                  { \"name\": \"Branch\", \"value\": \"\`${{ github.head_ref }}\` → \`${{ github.base_ref }}\`\", \"inline\": true },
-                  { \"name\": \"Author\", \"value\": \"${{ github.event.pull_request.user.login }}\", \"inline\": true },
+                  { \"name\": \"PR\", \"value\": \"#${PR_NUMBER} ${PR_TITLE}\", \"inline\": false },
+                  { \"name\": \"Branch\", \"value\": \"\`${HEAD_REF}\` → \`${BASE_REF}\`\", \"inline\": true },
+                  { \"name\": \"Author\", \"value\": \"${PR_AUTHOR}\", \"inline\": true },
                   { \"name\": \"실패 상세\", \"value\": \"${DETAILS_MESSAGE}\", \"inline\": false }
                 ]
               }
             ]
-          }" ${{ secrets.DISCORD_WEBHOOK_URL }}
+          }" "${WEBHOOK_URL}"
 
       # -----------------------------------------------------------------
       # 최종 상태 체크 (PR 체크 실패 반영)
