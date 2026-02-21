@@ -52,6 +52,49 @@ def test_ping():
 from datetime import datetime, timedelta
 
 
+def test_get_availability_api_invalid_date_regex():
+    """date 형식이 YYYY-MM-DD가 아니면 422 validation envelope을 반환해야 함"""
+    response = client.get(
+        "/api/rooms/availability"
+        "?date=2026/02/20&capacity=3&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
+def test_get_availability_api_invalid_calendar_date():
+    """YYYY-MM-DD 형식이어도 존재하지 않는 날짜면 422 validation envelope을 반환해야 함"""
+    response = client.get(
+        "/api/rooms/availability"
+        "?date=2026-02-31&capacity=3&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
+def test_get_availability_api_invalid_capacity_range():
+    """capacity가 1~50 범위를 벗어나면 422 validation envelope을 반환해야 함"""
+    target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+    response = client.get(
+        "/api/rooms/availability"
+        f"?date={target_date}&capacity=0&start_hour=18:00&end_hour=19:00"
+        "&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["isSuccess"] is False
+    assert body["code"] == "VALIDATION-001"
+
+
 def test_get_availability_api():
     # GET 요청 테스트 - Mock 크롤러를 통해 동작 검증
     url = "/api/rooms/availability"
@@ -108,6 +151,29 @@ def test_get_availability_api():
         assert len(result["results"]) == 2
         # branch_summary가 있어야 함 (지도 기능 확장)
         assert "branch_summary" in result
+
+
+def test_get_availability_api_no_result_returns_empty_success():
+    """검색 조건에 맞는 room이 없으면 200 + empty result를 반환해야 한다."""
+    url = "/api/rooms/availability"
+    target_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+
+    with patch(
+        "app.services.availability_service.get_rooms_by_criteria",
+        return_value=[],
+    ):
+        response = client.get(
+            f"{url}?date={target_date}&capacity=3&start_hour=18:00&end_hour=19:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("isSuccess") is True
+
+    result = body.get("result", {})
+    assert result.get("results") == []
+    assert result.get("available_biz_item_ids") == []
+    assert result.get("branch_summary") == {}
 
 
 def test_preflight_request():

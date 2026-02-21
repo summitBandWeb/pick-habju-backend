@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import asyncio
 import json
 import os
@@ -21,7 +21,7 @@ class RoomCollectionService:
     MAX_CONCURRENT_BATCHES = 3  # Number of parallel LLM calls
     
     # Capacity value indicating LLM parsing failure - flags for manual review
-    # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 항목으로 식별 가능
+    # Rationale: 100紐낆쓣 ?섏슜?섎뒗 ?⑹＜?ㅼ? ?꾩떎?곸쑝濡??놁쑝誘濡??섎룞 寃???꾩슂 ??ぉ?쇰줈 ?앸퀎 媛??
     MANUAL_REVIEW_FLAG = 100
 
     def __init__(self):
@@ -42,7 +42,7 @@ class RoomCollectionService:
         """
         logger.info(f"Starting collection for query: {query}")
         
-        # 1. 지도 검색으로 ID 확보
+        # 1. 吏??寃?됱쑝濡?ID ?뺣낫
         search_results = await self.map_crawler.search_rehearsal_rooms(query)
         logger.info(f"Found {len(search_results)} businesses for {query}")
         
@@ -157,7 +157,7 @@ class RoomCollectionService:
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
-            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
+            "display_name": business.get("businessDisplayName"),  # v2.0.0: ?몄텧???대쫫
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
         }
@@ -193,18 +193,20 @@ class RoomCollectionService:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
+            new_price_config = parsed.get("price_config")
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
             final_max_cap = new_max_cap
             final_rec_cap = new_rec_cap
             final_price = new_price
+            final_price_config = new_price_config
 
             if existing:
                 existing_max = existing.get("max_capacity", 0)
                 existing_rec = existing.get("recommend_capacity", 0)
 
-                # [Logic] 기존 값이 유효하고(>1), 새 값이 기본값(1)이거나 수동검토플래그(100)인 경우 기존 값 보존
-                # 단, 기존 값 자체가 100인 경우는 제외
+                # [Logic] 湲곗〈 媛믪씠 ?좏슚?섍퀬(>1), ??媛믪씠 湲곕낯媛?1)?닿굅???섎룞寃?좏뵆?섍렇(100)??寃쎌슦 湲곗〈 媛?蹂댁〈
+                # ?? 湲곗〈 媛??먯껜媛 100??寃쎌슦???쒖쇅
                 if (new_max_cap <= 1 or new_max_cap == self.MANUAL_REVIEW_FLAG) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
                     final_max_cap = existing_max
                 
@@ -217,16 +219,14 @@ class RoomCollectionService:
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
 
-            # [v2.0.0] 동적 가격 관련 필드: 파서가 명시적으로 값을 제공한 경우에만 덮어씀
-            # Rationale: parsed.get("price_config", [])는 파싱 실패 시에도 빈 배열을 반환하여
-            #            기존 DB에 저장된 유효한 동적 가격 정책을 덮어쓰는 문제가 있음.
-            #            따라서 파서가 해당 키를 명시적으로 반환했을 때만 새 값을 사용하고,
-            #            그렇지 않으면 기존 DB 레코드의 값을 보존함.
+            # Preserve existing JSON values unless parser explicitly provides replacements.
             existing_price_config = existing.get("price_config", []) if existing else []
             existing_base_cap = existing.get("base_capacity") if existing else None
             existing_extra_charge = existing.get("extra_charge") if existing else None
 
             final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
+            if not final_price_config and existing_price_config:
+                final_price_config = existing_price_config
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
             final_extra_charge = parsed["extra_charge"] if "extra_charge" in parsed else existing_extra_charge
 
@@ -273,26 +273,26 @@ class RoomCollectionService:
         base_cap: Optional[int],
         extra_charge: Optional[int]
     ) -> List[int]:
-        """추가 요금 유무에 따라 권장 인원 범위 계산
+        """異붽? ?붽툑 ?좊Т???곕씪 沅뚯옣 ?몄썝 踰붿쐞 怨꾩궛
 
         Args:
-            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
-            rec_cap: 권장 인원 수
-            max_cap: 최대 인원 수
-            base_cap: 기준 인원 수 (추가 요금 계산 기준)
-            extra_charge: 추가 요금 (원)
+            parsed_range: LLM/?뺢퇋?앹씠 ?뚯떛??踰붿쐞 ([min, max] ?뺥깭)
+            rec_cap: 沅뚯옣 ?몄썝 ??
+            max_cap: 理쒕? ?몄썝 ??
+            base_cap: 湲곗? ?몄썝 ??(異붽? ?붽툑 怨꾩궛 湲곗?)
+            extra_charge: 異붽? ?붽툑 (??
 
         Returns:
-            [min, max] 형태의 권장 인원 범위 리스트
+            [min, max] ?뺥깭??沅뚯옣 ?몄썝 踰붿쐞 由ъ뒪??
 
         Rationale:
-            1. 파싱된 범위가 유효하면 우선 사용 (단, 합리적 범위로 clamp)
-            2. 추가 요금 발생 시: [base_cap, max_cap]
-            3. 추가 요금 없을 시: [rec_cap, rec_cap + 2] (최대 max_cap)
+            1. ?뚯떛??踰붿쐞媛 ?좏슚?섎㈃ ?곗꽑 ?ъ슜 (?? ?⑸━??踰붿쐞濡?clamp)
+            2. 異붽? ?붽툑 諛쒖깮 ?? [base_cap, max_cap]
+            3. 異붽? ?붽툑 ?놁쓣 ?? [rec_cap, rec_cap + 2] (理쒕? max_cap)
         """
-        # 1. 파싱된 범위 검증 후 우선 사용
-        # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명) 내
-        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
+        # 1. ?뚯떛??踰붿쐞 寃利????곗꽑 ?ъ슜
+        # 議곌굔: 2媛??レ옄(int ?먮뒗 float), min <= max, ?⑹＜???꾩떎??踰붿쐞(1~50紐? ??
+        # NOTE: LLM ?뚯꽌媛 float(?? 4.0)??諛섑솚?????덉쑝誘濡?int/float 紐⑤몢 ?덉슜
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
@@ -300,16 +300,16 @@ class RoomCollectionService:
             and parsed_range[0] <= parsed_range[1]
             and 1 <= parsed_range[0] and parsed_range[1] <= 50
         ):
-            # float → int 변환 후 합리적 범위로 clamp
+            # float ??int 蹂?????⑸━??踰붿쐞濡?clamp
             clamped_min = max(int(parsed_range[0]), 1)
             clamped_max = min(int(parsed_range[1]), max_cap) if max_cap > 0 else int(parsed_range[1])
-            # clamp 후에도 min <= max 보장
+            # clamp ?꾩뿉??min <= max 蹂댁옣
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
 
-        # --- Sentinel 방어 ---
-        # NOTE: MANUAL_REVIEW_FLAG(100)이 rec_cap/max_cap/base_cap에 들어오면
-        #        [100, 102] 같은 비현실적 범위가 반환되므로, 현실적 상한(50)으로 clamp
+        # --- Sentinel 諛⑹뼱 ---
+        # NOTE: MANUAL_REVIEW_FLAG(100)??rec_cap/max_cap/base_cap???ㅼ뼱?ㅻ㈃
+        #        [100, 102] 媛숈? 鍮꾪쁽?ㅼ쟻 踰붿쐞媛 諛섑솚?섎?濡? ?꾩떎???곹븳(50)?쇰줈 clamp
         MAX_REALISTIC_CAP = 50
         if max_cap >= self.MANUAL_REVIEW_FLAG:
             max_cap = MAX_REALISTIC_CAP
@@ -318,21 +318,21 @@ class RoomCollectionService:
         if base_cap and base_cap >= self.MANUAL_REVIEW_FLAG:
             base_cap = MAX_REALISTIC_CAP
 
-        # 2. 추가 요금 있는 경우
+        # 2. 異붽? ?붽툑 ?덈뒗 寃쎌슦
         if extra_charge and extra_charge > 0 and base_cap:
             # min: base_cap, max: max_cap
-            # 단, max_cap < base_cap인 비정상 데이터 방어
+            # ?? max_cap < base_cap??鍮꾩젙???곗씠??諛⑹뼱
             real_max = max(max_cap, base_cap)
             return [base_cap, real_max]
             
-        # 3. 추가 요금 없는 경우 (기본)
+        # 3. 異붽? ?붽툑 ?녿뒗 寃쎌슦 (湲곕낯)
         # min: rec_cap, max: rec_cap + 2
-        # 단, max_cap을 넘지 않도록 제한
+        # ?? max_cap???섏? ?딅룄濡??쒗븳
         min_c = rec_cap
         max_c = min(rec_cap + 2, max_cap)
         
-        # 만약 rec_cap + 2 > max_cap 이라서 max_c가 min_c보다 작아지는 경우 방어
-        # (예: rec=5, max=5 -> min=5, max=5)
+        # 留뚯빟 rec_cap + 2 > max_cap ?대씪??max_c媛 min_c蹂대떎 ?묒븘吏??寃쎌슦 諛⑹뼱
+        # (?? rec=5, max=5 -> min=5, max=5)
         max_c = max(max_c, min_c)
         
         return [min_c, max_c]
@@ -376,7 +376,7 @@ class RoomCollectionService:
 
         # If there are unresolved items, export them
         if unresolved_items:
-            # 환경변수로 경로 설정 가능, 기본값은 프로젝트 루트/scripts/unresolved
+            # ?섍꼍蹂?섎줈 寃쎈줈 ?ㅼ젙 媛?? 湲곕낯媛믪? ?꾨줈?앺듃 猷⑦듃/scripts/unresolved
             default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
             export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
             export_dir.mkdir(parents=True, exist_ok=True)
@@ -401,17 +401,17 @@ class RoomCollectionService:
             if new_items:
                 existing_data.extend(new_items)
 
-                # Atomic write: temp file → rename으로 중간 상태 방지
+                # Atomic write: temp file ??rename?쇰줈 以묎컙 ?곹깭 諛⑹?
                 tmp_fd, tmp_path = tempfile.mkstemp(
                     dir=str(export_dir), suffix=".tmp"
                 )
                 try:
                     with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
                         json.dump(existing_data, f, ensure_ascii=False, indent=2)
-                    # os.replace는 원자적 (같은 파일시스템 내)
+                    # os.replace???먯옄??(媛숈? ?뚯씪?쒖뒪????
                     os.replace(tmp_path, str(export_file))
                 except Exception:
-                    # 실패 시 임시 파일 정리
+                    # ?ㅽ뙣 ???꾩떆 ?뚯씪 ?뺣━
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
                     raise
@@ -419,3 +419,5 @@ class RoomCollectionService:
                 logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
             else:
                 logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
+
+
