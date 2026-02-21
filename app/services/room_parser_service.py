@@ -326,7 +326,12 @@ class RoomParserService:
 
         # 5. One hour reservation
         can_reserve_1h = True
-        if "최소 2시간" in desc or "최소2시간" in desc or "1시간 불가" in desc or "1시간 예약 불가" in desc or ("1시간" in desc and "불가" in desc):
+        if (
+            "최소 2시간" in desc or "최소2시간" in desc or 
+            "2시간 이상" in desc or "2시간 이상만" in desc or 
+            "1시간 불가" in desc or "1시간 예약 불가" in desc or 
+            ("1시간" in desc and "불가" in desc)
+        ):
             can_reserve_1h = False
 
         # [v2.0.0] recommend_capacity_range 구성
