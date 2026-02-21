@@ -1,8 +1,13 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional
+<<<<<<< HEAD
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import re
+=======
+import re
+from datetime import datetime, date
+>>>>>>> a126c76e7a07a49c3bbe4218e8613aee9b9d4aef
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -111,6 +116,74 @@ class AvailabilityRequest(BaseModel):
     swLng: float = Field(..., description="South-West Longitude")
     neLat: float = Field(..., description="North-East Latitude")
     neLng: float = Field(..., description="North-East Longitude")
+
+    @field_validator('date')
+    @classmethod
+    def validate_date_format(cls, v: str) -> str:
+        # 1. Regex Format Check
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
+        
+        # 2. Calendar Validity Check (e.g., 2024-02-30)
+        try:
+            input_date = datetime.strptime(v, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
+            
+        # 3. Logic Check (Past Date)
+        if input_date < date.today():
+            raise ValueError("과거 날짜는 예약할 수 없습니다.")
+            
+        return v
+    
+    @field_validator('start_hour', 'end_hour')
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        # HH:MM 형식 확인 (00:00 ~ 23:59)
+        if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", v):
+            raise ValueError(f"시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59): {v}")
+        return v
+
+    @field_validator('capacity')
+    @classmethod
+    def validate_capacity_range(cls, v: int) -> int:
+        if not (1 <= v <= 100):
+            raise ValueError("인원은 1명 이상 100명 이하여야 합니다.")
+        return v
+
+    @model_validator(mode='after')
+    def validate_logic(self) -> 'AvailabilityRequest':
+        # 1. Coordinate Range & Logic
+        # Latitude: -90 ~ 90
+        if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
+            raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
+            
+        # Longitude: -180 ~ 180
+        if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):
+            raise ValueError("경도는 -180도에서 180도 사이여야 합니다.")
+
+        if self.swLat >= self.neLat:
+            raise ValueError("남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
+        if self.swLng >= self.neLng:
+            raise ValueError("남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")
+            
+        # 2. Time Logic (Start < End & Past Time)
+        # NOTE: field_validator에서 정규식으로 형식을 보장하므로 strptime은 실패하지 않음
+        start = datetime.strptime(self.start_hour, "%H:%M")
+        end = datetime.strptime(self.end_hour, "%H:%M")
+        
+        if start >= end:
+            raise ValueError("시작 시간은 종료 시간보다 빨라야 합니다.")
+        
+        # 과거 시간 체크 (오늘인 경우)
+        input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
+        if input_date == date.today():
+            now_time = datetime.now().time()
+            # 시작 시간이 현재 시간보다 이전이면 에러
+            if start.time() <= now_time:
+                raise ValueError("이미 지나간 시간은 예약할 수 없습니다.")
+                
+        return self
 
 
 # Policy Warning DTO
