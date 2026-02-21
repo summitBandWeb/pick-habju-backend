@@ -135,7 +135,7 @@ class AvailabilityService:
                 end_hour=request.end_hour,
                 hour_slots=hour_slots,
                 available_biz_item_ids=[],
-                results=[],
+                rooms=[],
                 branch_summary={}
             )
 
