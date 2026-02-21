@@ -249,6 +249,11 @@ class RoomParserService:
         can_reserve_1h = result.get("can_reserve_one_hour")
         if can_reserve_1h is not None and not isinstance(can_reserve_1h, bool):
             return False
+            
+        # 8. requires_call_on_same_day 검증
+        requires_call_today = result.get("requires_call_on_same_day")
+        if requires_call_today is not None and not isinstance(requires_call_today, bool):
+            return False
         
         return True
 
