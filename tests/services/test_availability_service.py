@@ -49,12 +49,16 @@ class TestApplyPolicies:
 
     def test_sameday_reservation_warning(self, service):
         """당일 예약인데 requiresCallOnSameDay=True면 경고 발생"""
-        today = datetime.now().strftime("%Y-%m-%d")
-        req = AvailabilityRequest(
-            date=today, capacity=2, start_hour="23:00", end_hour="23:59",
+        # 테스트 시점에 따라 과거 시간 유효성 검사 실패가 발생하지 않도록 시간을 명시적으로 고정
+        now = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        date = now.strftime("%Y-%m-%d")
+        
+        # model_construct를 통해 DTO의 과거 시간 밸리데이션(예: 12:00이 현재보다 과거인지)을 바이패스
+        req = AvailabilityRequest.model_construct(
+            date=date, capacity=2, start_hour="12:00", end_hour="13:00",
             swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
-        slots = ["14:00", "15:00"]
+        slots = ["12:00", "13:00"]
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
