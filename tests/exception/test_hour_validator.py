@@ -34,7 +34,7 @@ def test_validate_hour_slots_past_time_today():
         # 여기서는 단순히 00:00 슬롯이 현재(00:xx)보다 과거임을 테스트합니다.
         slot = "00:00"
         if now.minute == 0:
-             pytest.skip("00:00 정각에는 과거 시간 테스트가 어려워 건너뜁니다.")
+            pytest.skip("00:00 정각에는 과거 시간 테스트가 어려워 건너뜁니다.")
     else:
         # 현재 시간보다 1시간 전
         slot = (now - timedelta(hours=1)).strftime("%H:%M")
