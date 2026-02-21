@@ -66,8 +66,8 @@ class AvailabilityRequest(BaseModel):
     @field_validator('start_hour', 'end_hour')
     @classmethod
     def validate_hour_format(cls, v: str) -> str:
-        if not re.match(r"^(0[0-9]|1[0-9]|2[0-4]):00$", v):
-            raise ValueError(f"시간은 'HH:00' 포맷(정각)으로 입력해야 합니다. (잘못된 입력: {v})")
+        if not re.match(r"^(0[0-9]|1[0-9]|2[0-3]):00$", v):
+            raise ValueError(f"시간은 'HH:00' 포맷(정각)으로 입력해야 합니다. 00:00~23:00 (잘못된 입력: {v})")
         return v
 
     @model_validator(mode='after')
