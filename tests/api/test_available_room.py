@@ -6,8 +6,15 @@ from app.main import app
 from app.crawler.base import BaseCrawler, RoomResult
 from app.models.dto import RoomAvailability, RoomDetail
 from app.api.dependencies import get_crawlers_map
+from app.core.limiter import limiter
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def disable_limiter():
+    limiter.enabled = False
+    yield
+    limiter.enabled = True
 
 
 # --- Mock Crawler Definition ---
