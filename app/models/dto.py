@@ -1,13 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional
-<<<<<<< HEAD
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, date, timezone, timedelta
 import re
-=======
-import re
-from datetime import datetime, date
->>>>>>> a126c76e7a07a49c3bbe4218e8613aee9b9d4aef
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -91,7 +85,7 @@ class AvailabilityRequest(BaseModel):
         except ValueError as err:
             raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})") from err
         
-        kst = ZoneInfo("Asia/Seoul")
+        kst = timezone(timedelta(hours=9))
         now_kst = datetime.now(kst)
         today = now_kst.date()
         
@@ -102,12 +96,6 @@ class AvailabilityRequest(BaseModel):
         current_hour = now_kst.hour
         if req_date == today and start_h <= current_hour:
             raise ValueError(f"오늘({self.date}) 예약 시, 시작 시간({self.start_hour})은 현재 시간({current_hour}시) 이후여야 합니다.")
-        
-        # 최대 60일 미래까지만 허용
-        MAX_Future_Days = 60
-        delta_days = (req_date - today).days
-        if delta_days > MAX_Future_Days:
-            raise ValueError(f"예약 가능일은 최대 {MAX_Future_Days}일 이내입니다. (요청일: {self.date}, {delta_days}일 후)")
             
         return self
     
@@ -127,8 +115,8 @@ class AvailabilityRequest(BaseModel):
         # 2. Calendar Validity Check (e.g., 2024-02-30)
         try:
             input_date = datetime.strptime(v, "%Y-%m-%d").date()
-        except ValueError:
-            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
+        except ValueError as err:
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)") from err
             
         # 3. Logic Check (Past Date)
         if input_date < date.today():
