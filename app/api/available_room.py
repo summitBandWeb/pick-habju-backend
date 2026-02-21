@@ -55,6 +55,8 @@ async def check_room_availability(
         HTTPException: 유효하지 않은 파라미터 시 400 에러
     """
     
+    from fastapi.exceptions import RequestValidationError
+
     try:
         svc_request = AvailabilityRequest(
             date = date,
@@ -67,9 +69,8 @@ async def check_room_availability(
             neLng = neLng
         )
     except ValidationError as e:
-        # Extract the first error message to show
-        err_msg = e.errors()[0].get('msg', '입력값이 올바르지 않습니다.')
-        raise HTTPException(status_code=400, detail=err_msg)
+        # FastAPI의 전역 validation 핸들러가 처리하도록 RequestValidationError 발생
+        raise RequestValidationError(e.errors()) from e
 
     result = await service.check_availability(request=svc_request)
     return ApiResponse.success(result=result)
