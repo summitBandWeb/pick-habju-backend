@@ -153,20 +153,27 @@ class AvailabilityRequest(BaseModel):
     def validate_date_regex(cls, value: str) -> str:
         """YYYY-MM-DD 형식 + 실제 달력 유효 날짜를 검증"""
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-            raise ValueError("date must match YYYY-MM-DD")
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
         try:
             input_date = datetime.strptime(value, "%Y-%m-%d").date()
         except ValueError as exc:
-            raise ValueError("date must be a valid YYYY-MM-DD calendar date") from exc
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)") from exc
         if input_date < date.today():
-            raise ValueError("past dates are not allowed")
+            raise ValueError("과거 날짜는 예약할 수 없습니다.")
         return value
 
-    @field_validator("start_hour", "end_hour")
+    @field_validator("start_hour")
     @classmethod
-    def validate_time_format(cls, value: str) -> str:
+    def validate_start_time_format(cls, value: str) -> str:
         if not re.fullmatch(r"^([01]\d|2[0-3]):([0-5]\d)$", value):
-            raise ValueError("time must match HH:MM (00:00~23:59)")
+            raise ValueError("시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59)")
+        return value
+
+    @field_validator("end_hour")
+    @classmethod
+    def validate_end_time_format(cls, value: str) -> str:
+        if not re.fullmatch(r"^(([01]\d|2[0-3]):([0-5]\d)|24:00)$", value):
+            raise ValueError("종료 시간 형식이 올바르지 않습니다. (HH:MM, 00:00~24:00)")
         return value
 
     @field_validator("capacity")
@@ -174,28 +181,31 @@ class AvailabilityRequest(BaseModel):
     def validate_capacity_range(cls, value: int) -> int:
         """합주실 요청 인원수는 1~50 범위만 허용"""
         if not 1 <= value <= 50:
-            raise ValueError("capacity must be between 1 and 50")
+            raise ValueError("인원은 1명 이상 50명 이하여야 합니다.")
         return value
 
     @model_validator(mode="after")
     def validate_logic(self) -> "AvailabilityRequest":
         if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
-            raise ValueError("latitude must be between -90 and 90")
+            raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
         if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):
-            raise ValueError("longitude must be between -180 and 180")
+            raise ValueError("경도는 -180도에서 180도 사이여야 합니다.")
         if self.swLat >= self.neLat:
-            raise ValueError("swLat must be less than neLat")
+            raise ValueError("남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
         if self.swLng >= self.neLng:
-            raise ValueError("swLng must be less than neLng")
+            raise ValueError("남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")
 
-        start = datetime.strptime(self.start_hour, "%H:%M")
-        end = datetime.strptime(self.end_hour, "%H:%M")
-        if start >= end:
-            raise ValueError("start_hour must be earlier than end_hour")
+        start_minutes = int(self.start_hour[:2]) * 60 + int(self.start_hour[3:])
+        end_minutes = 1440 if self.end_hour == "24:00" else int(self.end_hour[:2]) * 60 + int(self.end_hour[3:])
+        if start_minutes >= end_minutes:
+            raise ValueError("시작 시간은 종료 시간보다 빨라야 합니다.")
 
         input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
-        if input_date == date.today() and start.time() <= datetime.now().time():
-            raise ValueError("past time is not allowed for today")
+        if input_date == date.today():
+            now_time = datetime.now()
+            now_minutes = now_time.hour * 60 + now_time.minute
+            if start_minutes <= now_minutes:
+                raise ValueError("이미 지나간 시간은 예약할 수 없습니다.")
 
         return self
 

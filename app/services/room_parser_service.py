@@ -318,6 +318,54 @@ class RoomParserService:
         if not rec_range and rec_cap:
             rec_range = [rec_cap, rec_cap]  # 단일값은 [n, n]으로 디폴트
 
+        def _map_day_type(keyword: Optional[str]) -> str:
+            if keyword == "평일":
+                return "weekday"
+            if keyword in {"주말", "공휴일"}:
+                return "weekend"
+            return day_type or "weekday"
+
+        price_config = None
+
+        time_override_match = re.search(
+            r"(평일|주말|공휴일)?\s*(\d{1,2})시\s*이후\s*(\d+(?:,\d+)?)\s*원",
+            desc,
+        )
+        if time_override_match:
+            override_day = _map_day_type(time_override_match.group(1))
+            start_hour_num = int(time_override_match.group(2))
+            override_price = int(time_override_match.group(3).replace(",", ""))
+            if 0 <= start_hour_num <= 23:
+                price_config = {
+                    "default": None,
+                    "overrides": [
+                        {
+                            "day_type": override_day,
+                            "start_hour": f"{start_hour_num:02d}:00",
+                            "end_hour": "24:00",
+                            "price": override_price,
+                        }
+                    ],
+                    "surcharges": [],
+                }
+
+        surcharge_match = re.search(
+            r"(평일|주말|공휴일)?\s*(\d+(?:,\d+)?)\s*원\s*추가",
+            desc,
+        )
+        if surcharge_match:
+            surcharge_day = _map_day_type(surcharge_match.group(1))
+            surcharge_amount = int(surcharge_match.group(2).replace(",", ""))
+            if price_config is None:
+                price_config = {
+                    "default": None,
+                    "overrides": [],
+                    "surcharges": [],
+                }
+            price_config["surcharges"].append(
+                {"day_type": surcharge_day, "amount": surcharge_amount}
+            )
+
         return {
             "clean_name": clean_name,
             "day_type": day_type,
@@ -326,6 +374,7 @@ class RoomParserService:
             "recommend_capacity_range": rec_range,
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
+            "price_config": price_config,
             "requires_call_on_same_day": requires_call
         }
 

@@ -120,8 +120,8 @@ class TestApplyPolicies:
     def test_price_calculation_list_config_supports_24h_end(self, service, mock_pricing_service):
         """list price_config 경로에서 24:00 종료 시각을 다음날 00:00으로 변환"""
         req = AvailabilityRequest(
-            date="2024-01-01", capacity=4, start_hour="22:00", end_hour="24:00",
-            swLat=0, swLng=0, neLat=0, neLng=0
+            date="2099-01-01", capacity=4, start_hour="22:00", end_hour="24:00",
+            swLat=0.0, swLng=0.0, neLat=1.0, neLng=1.0
         )
         slots = ["22:00", "23:00", "24:00"]
 
@@ -138,8 +138,8 @@ class TestApplyPolicies:
         results = service._apply_policies([avail], req, slots)
 
         kwargs = mock_pricing_service.calculate_total_price.call_args.kwargs
-        assert kwargs["start_dt"] == datetime(2024, 1, 1, 22, 0)
-        assert kwargs["end_dt"] == datetime(2024, 1, 2, 0, 0)
+        assert kwargs["start_dt"] == datetime(2099, 1, 1, 22, 0)
+        assert kwargs["end_dt"] == datetime(2099, 1, 2, 0, 0)
         assert results[0].estimated_price == 20000
 
 
