@@ -84,7 +84,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             return response.count or 0
         except Exception as e:
             logger.error(f"Error fetching favorite count: {e}")
-            return 0
+            raise
 
     def get_all(self, device_id: str) -> List[str]:
         """
