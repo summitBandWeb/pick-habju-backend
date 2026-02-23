@@ -1,10 +1,17 @@
 # te/test_naver_checker.py
 import pytest
+import os
 
 from datetime import datetime, timedelta
 from app.crawler.naver_checker import NaverCrawler
 from app.models.dto import RoomDetail
 from app.utils.room_loader import get_rooms_by_criteria
+
+RUN_EXTERNAL_TESTS = os.getenv("RUN_EXTERNAL_TESTS") == "1"
+pytestmark = pytest.mark.skipif(
+    not RUN_EXTERNAL_TESTS,
+    reason="External crawler test disabled. Set RUN_EXTERNAL_TESTS=1 to run.",
+)
 
 @pytest.mark.asyncio
 async def test_get_naver_availability():

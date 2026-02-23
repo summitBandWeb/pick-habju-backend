@@ -1,54 +1,83 @@
-from app.core.supabase_client import supabase
-from app.core.config import SUPABASE_TABLE
 from typing import List, Optional
-from app.exception.api.room_loader_exception import RoomLoaderFailedError
-from app.models.dto import RoomDetail
+
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
-# NOTE: API 레벨에서는 좌표가 필수(Mandatory)이지만, 기존 유닛 테스트 코드들과의 
-# 하위 호환성을 위해 내부 유틸리티 함수에서는 Optional로 유지합니다. 
-# 추후 모든 테스트 코드에 Dummy 좌표를 적용한 뒤 필수값으로 리팩토링 예정입니다.
+from app.core.supabase_client import supabase
+from app.exception.api.room_loader_exception import RoomLoaderFailedError
+from app.models.dto import RoomDetail
+
+
 def get_rooms_by_criteria(
     capacity: int,
     swLat: Optional[float] = None,
     swLng: Optional[float] = None,
     neLat: Optional[float] = None,
-    neLng: Optional[float] = None
+    neLng: Optional[float] = None,
 ) -> List[RoomDetail]:
-
     """
-    Supabase에서 capacity 이상인 룸만 조회합니다.
+    Supabase에서 capacity 이상인 룸을 조회합니다.
     좌표가 주어지면 해당 범위 내의 룸만 필터링합니다.
     """
     try:
-        # 기본 쿼리: 인원수 조건 & Branch 정보 Join
-        query = supabase.table("room").select("*, branch!inner(name, lat, lng)").gte("max_capacity", capacity)
+        # Deploy 환경마다 branch 컬럼 반영 시점이 다를 수 있어 select를 순차 fallback.
+        select_candidates = [
+            "*, branch(name, lat, lng, phone_number, display_name, open_wait_rule)",
+            "*, branch(name, lat, lng, phone_number, display_name)",
+            "*, branch(name, lat, lng)",
+        ]
 
-        # 지도 좌표 영역 필터링 (좌표가 모두 있을 때만 수행)
-        if all(v is not None for v in [swLat, swLng, neLat, neLng]):
-            query = (
-                query
-                .gte("branch.lat", swLat)
-                .lte("branch.lat", neLat)
-                .gte("branch.lng", swLng)
-                .lte("branch.lng", neLng)
-            )
+        response = None
+        last_error: Optional[Exception] = None
+        for select_expr in select_candidates:
+            try:
+                response = (
+                    supabase.table("room")
+                    .select(select_expr)
+                    .gte("max_capacity", capacity)
+                    .execute()
+                )
+                break
+            except APIError as e:
+                last_error = e
+                # undefined_column(42703)만 fallback, 나머지 API 에러는 즉시 중단.
+                if "42703" not in str(e):
+                    raise
+                continue
 
-        response = query.execute()
+        if response is None:
+            raise last_error if last_error else RoomLoaderFailedError("데이터베이스 쿼리 실패")
 
-        target_rooms = []
+        target_rooms: List[RoomDetail] = []
         for row in response.data:
-            # Data Flattening: branch 객체 내의 좌표를 상위로 추출
-            if "branch" in row and isinstance(row["branch"], dict):
-                row["lat"] = row["branch"].get("lat")
-                row["lng"] = row["branch"].get("lng")
-            
-            # image_urls가 None인 경우 빈 리스트로 변환 (DTO 요구사항 준수)
+            branch = row.get("branch")
+            if isinstance(branch, dict):
+                row["lat"] = branch.get("lat")
+                row["lng"] = branch.get("lng")
+                row["phone_number"] = branch.get("phone_number")
+                row["display_name"] = branch.get("display_name")
+                row["open_wait_rule"] = branch.get("open_wait_rule")
+            else:
+                row["branch"] = RoomDetail.BRANCH_FALLBACK_NAME
+                row["lat"] = None
+                row["lng"] = None
+                row["phone_number"] = None
+                row["display_name"] = None
+                row["open_wait_rule"] = {}
+
+            # branch 좌표가 있는 경우에만 지도 경계 필터 적용.
+            if all(v is not None for v in [swLat, swLng, neLat, neLng]):
+                lat = row.get("lat")
+                lng = row.get("lng")
+                if lat is not None and lng is not None:
+                    if not (swLat <= lat <= neLat and swLng <= lng <= neLng):
+                        continue
+
             if row.get("image_urls") is None:
                 row["image_urls"] = []
-                
+
             target_rooms.append(RoomDetail.model_validate(row))
+
         return target_rooms
 
     except APIError as e:

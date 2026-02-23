@@ -204,6 +204,63 @@ class TestDataPreservationLogic:
         
         assert upsert_data["price_per_hour"] == 25000  # 기존 가격 유지
 
+    # ============== TC: 불리언 필드 보존 로직 ==============
+    @pytest.mark.asyncio
+    async def test_preserve_boolean_fields(self, service, mock_supabase):
+        """파서에서 추출하지 못한 불리언(None)은 대상 기존(DB)의 불리언 값 유지"""
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": False, "requires_call_on_sameday": True}]
+        )
+        
+        business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
+        rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        # 파싱 결과에 None으로 명시되거나 아예 키가 없는 경우
+        parsed_results = {
+            "room1": {
+                "max_capacity": 5, 
+                "recommend_capacity": 4, 
+                "can_reserve_one_hour": None, 
+                "requires_call_on_same_day": None
+            }
+        }
+        
+        await service._save_to_db(business, rooms, parsed_results)
+        
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        upsert_data = upsert_call[0][0]
+        
+        # 기존 데이터를 유지해야 함
+        assert upsert_data["can_reserve_one_hour"] is False
+        assert upsert_data["requires_call_on_sameday"] is True
+
+    @pytest.mark.asyncio
+    async def test_override_boolean_fields(self, service, mock_supabase):
+        """파서에서 추출한 명시적 불리언(False/True)은 기존 DB를 덮어씀"""
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_call_on_sameday": False}]
+        )
+        
+        business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
+        rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        
+        parsed_results = {
+            "room1": {
+                "max_capacity": 5, 
+                "recommend_capacity": 4, 
+                "can_reserve_one_hour": False, # 새로 파싱됨
+                "requires_call_on_same_day": True # 새로 파싱됨
+            }
+        }
+        
+        await service._save_to_db(business, rooms, parsed_results)
+        
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        upsert_data = upsert_call[0][0]
+        
+        # 새로운 값으로 덮어써야 함
+        assert upsert_data["can_reserve_one_hour"] is False
+        assert upsert_data["requires_call_on_sameday"] is True
+
 
 class TestV2NewFields:
     """[v2.0.0] 신규 필드(recommend_capacity_range, price_config, display_name) 저장 검증"""

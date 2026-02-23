@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from typing import Optional
+from pydantic import ValidationError
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.core.response import ApiResponse
@@ -105,16 +107,20 @@ async def check_room_availability(
         HTTPException: 유효하지 않은 파라미터 시 400 에러
     """
     
-    svc_request = AvailabilityRequest(
-        date = date,
-        capacity = capacity,
-        start_hour = start_hour,
-        end_hour = end_hour,
-        swLat = swLat,
-        swLng = swLng,
-        neLat = neLat,
-        neLng = neLng
-    )
+    try:
+        svc_request = AvailabilityRequest(
+            date = date,
+            capacity = capacity,
+            start_hour = start_hour,
+            end_hour = end_hour,
+            swLat = swLat,
+            swLng = swLng,
+            neLat = neLat,
+            neLng = neLng
+        )
+    except ValidationError as e:
+        # Endpoint 내부에서 수동 생성한 Pydantic ValidationError를 FastAPI 422 경로로 변환
+        raise RequestValidationError(e.errors()) from e
 
     result = await service.check_availability(request=svc_request)
     return ApiResponse.success(result=result)

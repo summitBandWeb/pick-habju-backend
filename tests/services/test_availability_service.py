@@ -83,7 +83,7 @@ class TestApplyPolicies:
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity=5,
-            price_config=[], base_capacity=4, extra_charge=5000,
+            price_config=[{"price": 10000}], base_capacity=4, extra_charge=5000,
             can_reserve_one_hour=True, requires_call_on_sameday=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
@@ -106,6 +106,7 @@ class TestApplyPolicies:
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity=5,
+            price_config=[{"price": 10000}],
             can_reserve_one_hour=True, requires_call_on_sameday=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
@@ -115,6 +116,31 @@ class TestApplyPolicies:
         results = service._apply_policies([avail], req, slots)
 
         assert results[0].estimated_price is None
+
+    def test_price_calculation_list_config_supports_24h_end(self, service, mock_pricing_service):
+        """list price_config 경로에서 24:00 종료 시각을 다음날 00:00으로 변환"""
+        req = AvailabilityRequest(
+            date="2099-01-01", capacity=4, start_hour="22:00", end_hour="24:00",
+            swLat=0.0, swLng=0.0, neLat=1.0, neLng=1.0
+        )
+        slots = ["22:00", "23:00", "24:00"]
+
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, recommend_capacity=5,
+            price_config=[{"price": 10000}],
+            can_reserve_one_hour=True, requires_call_on_sameday=False
+        )
+        avail = RoomAvailability(room_detail=room, available=True, available_slots={})
+
+        mock_pricing_service.calculate_total_price.return_value = 20000
+
+        results = service._apply_policies([avail], req, slots)
+
+        kwargs = mock_pricing_service.calculate_total_price.call_args.kwargs
+        assert kwargs["start_dt"] == datetime(2099, 1, 1, 22, 0)
+        assert kwargs["end_dt"] == datetime(2099, 1, 2, 0, 0)
+        assert results[0].estimated_price == 20000
 
 
 class TestCheckAvailabilityFlow:
@@ -150,7 +176,7 @@ class TestCheckAvailabilityFlow:
             name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity=5,
             can_reserve_one_hour=True, requires_call_on_sameday=False,
-            recommend_capacity_range=[4, 8], price_config=[]
+            recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
         )
 
         # NOTE: RoomResult = Union[RoomAvailability, Exception] (타입 alias)

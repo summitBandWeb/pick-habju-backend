@@ -41,6 +41,18 @@ class IFavoriteRepository(Protocol):
             bool: 존재하면 True, 없으면 False
         """
         ...
+        
+    def count_by_device(self, device_id: str) -> int:
+        """
+        사용자의 즐겨찾기 개수 조회
+        
+        Args:
+            device_id (str): 사용자(기기) 식별 ID
+            
+        Returns:
+            int: 즐겨찾기 개수
+        """
+        ...
     
     def get_all(self, device_id: str) -> List[str]:
         """
