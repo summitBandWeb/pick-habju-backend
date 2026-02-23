@@ -33,6 +33,9 @@ def test_supabase_crud(repo, test_data):
     if repo.exists(device_id, business_id, biz_item_id):
         repo.delete(device_id, business_id, biz_item_id)
     
+    # Get initial count
+    initial_count = repo.count_by_device(device_id)
+    
     # 2. Add
     assert repo.add(device_id, business_id, biz_item_id) is True
     
@@ -42,6 +45,10 @@ def test_supabase_crud(repo, test_data):
     # 4. Exists
     assert repo.exists(device_id, business_id, biz_item_id) is True
     
+    # Check count increased by exactly 1
+    new_count = repo.count_by_device(device_id)
+    assert new_count == initial_count + 1
+    
     # 5. Get All
     items = repo.get_all(device_id)
     assert biz_item_id in items
@@ -49,3 +56,7 @@ def test_supabase_crud(repo, test_data):
     # 6. Delete
     repo.delete(device_id, business_id, biz_item_id)
     assert repo.exists(device_id, business_id, biz_item_id) is False
+    
+    # Check count returned to initial
+    final_count = repo.count_by_device(device_id)
+    assert final_count == initial_count
