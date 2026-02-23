@@ -30,6 +30,10 @@ def add_favorite(
     Returns:
         ApiResponse[Dict]: 성공 여부
     """
+    # 이미 등록된 즐겨찾기면 에러(또는 개수 체크) 없이 성공 반환 (멱등성 보장)
+    if repo.exists(device_id=x_device_id, business_id=business_id, biz_item_id=biz_item_id):
+        return ApiResponse.success(result={"added": True})
+        
     # 갯수 제한 체크
     if repo.count_by_device(device_id=x_device_id) >= MAX_FAVORITES_PER_DEVICE:
         raise FavoriteLimitExceededError()
