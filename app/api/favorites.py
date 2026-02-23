@@ -3,6 +3,9 @@ from typing import Dict, Any, List
 from app.repositories.base import IFavoriteRepository
 from app.api.dependencies import get_favorite_repository, validate_device_id
 from app.core.response import ApiResponse
+from app.exception.api.favorite_exception import FavoriteLimitExceededError
+
+MAX_FAVORITES_PER_DEVICE = 20
 
 router = APIRouter(
     prefix="/api/favorites",
@@ -27,6 +30,10 @@ def add_favorite(
     Returns:
         ApiResponse[Dict]: 성공 여부
     """
+    # 갯수 제한 체크
+    if repo.count_by_device(device_id=x_device_id) >= MAX_FAVORITES_PER_DEVICE:
+        raise FavoriteLimitExceededError()
+        
     repo.add(device_id=x_device_id, business_id=business_id, biz_item_id=biz_item_id)
     
     return ApiResponse.success(result={"added": True})

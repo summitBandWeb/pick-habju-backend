@@ -28,5 +28,8 @@ class MockFavoriteRepository(IFavoriteRepository):
     def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         return (device_id, business_id, biz_item_id) in self._data
 
+    def count_by_device(self, device_id: str) -> int:
+        return sum(1 for dev_id, _, _ in self._data if dev_id == device_id)
+
     def get_all(self, device_id: str) -> List[str]:
         return [biz_id for dev_id, _, biz_id in self._data if dev_id == device_id]

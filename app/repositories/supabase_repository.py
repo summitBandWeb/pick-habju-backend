@@ -72,6 +72,20 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             logger.error(f"Error checking existence: {e}")
             return False
 
+    def count_by_device(self, device_id: str) -> int:
+        """
+        Retrieves the total number of favorite items for a device.
+        """
+        try:
+            response = self.supabase.table(self.table_name).select(
+                "*", count="exact", head=True
+            ).eq("device_id", device_id).execute()
+            
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error fetching favorite count: {e}")
+            return 0
+
     def get_all(self, device_id: str) -> List[str]:
         """
         Retrieves all favorite biz_item_ids for a device.
