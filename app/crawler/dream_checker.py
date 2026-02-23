@@ -52,7 +52,6 @@ class DreamCrawler(BaseCrawler):
         target_date = datetime.strptime(date, '%Y-%m-%d').date()
 
         if (target_date - today).days >= self.DATE_LIMIT_DAYS:
-            # NOTE: RoomAvailability는 중첩 구조를 사용하므로 room_detail 전달
             return [
                 RoomAvailability(
                     room_detail=room,
@@ -95,7 +94,6 @@ class DreamCrawler(BaseCrawler):
         available_slots = self._parse_html_content(items_html, hour_slots)
         available = all(available_slots.values())
 
-        # NOTE: RoomAvailability는 중첩 구조를 사용하므로 room_detail 전달
         return RoomAvailability(
             room_detail=room,
             available=available,

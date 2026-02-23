@@ -46,10 +46,9 @@ def mock_room_detail_factory():
 
 @pytest.fixture
 def mock_room_info_factory(mock_room_detail_factory):
-    """ RoomAvailability 객체를 동적으로 생성하는 Factory Fixture (평탄화된 구조) """
+    """ RoomAvailability 객체를 동적으로 생성하는 Factory Fixture (기존 구조 유지) """
     def _create(name="Test Room", price=15000, available=True, **kwargs):
         room_detail = mock_room_detail_factory(name=name, price=price, **kwargs)
-        # NOTE: RoomAvailability는 중첩 구조를 가지므로 room_detail을 통해 접근
         return RoomAvailability(
             room_detail=room_detail,
             available=available,
@@ -72,9 +71,9 @@ def mock_branch_stats_factory():
 @pytest.fixture
 def mock_availability_response_factory(mock_room_info_factory, mock_branch_stats_factory):
     """ AvailabilityResponse 객체 Factory (기존 구조 + branch_summary) """
-    def _create(rooms=None, summary=None):
-        if rooms is None:
-            rooms = [mock_room_info_factory()]
+    def _create(results=None, summary=None):
+        if results is None:
+            results = [mock_room_info_factory()]
         if summary is None:
             summary = {"12345": mock_branch_stats_factory()}
             
@@ -84,7 +83,7 @@ def mock_availability_response_factory(mock_room_info_factory, mock_branch_stats
             end_hour="14:00",
             hour_slots=["12:00", "13:00", "14:00"],
             available_biz_item_ids=["67890"],
-            rooms=rooms,
+            results=results,
             branch_summary=summary
         )
     return _create

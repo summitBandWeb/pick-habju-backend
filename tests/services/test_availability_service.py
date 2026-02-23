@@ -198,8 +198,8 @@ class TestCheckAvailabilityFlow:
             response = await service.check_availability(req)
 
         # Then
-        assert len(response.rooms) == 1
-        res = response.rooms[0]
+        assert len(response.results) == 1
+        res = response.results[0]
 
         # 1. 크롤러 결과가 잘 들어왔는지
         assert res.room_detail.name == "MockRoom"

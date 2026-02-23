@@ -78,7 +78,7 @@ async def test_map_search_success(
     """
     [통합 시나리오 테스트]
     정상적인 좌표 범위 요청 시, 서비스 레이어의 결과가 API 응답 스펙에 맞게 반환되어야 한다.
-    평탄화된 구조 + branch_summary 포함.
+    기존 구조(room_detail 중첩) + branch_summary 포함.
     """
     # given
     # 기존 RoomAvailability 구조에 맞게 Mock 생성
@@ -87,7 +87,7 @@ async def test_map_search_success(
     
     # Mock 응답 생성
     mock_response = mock_availability_response_factory(
-        rooms=[room_avail],
+        results=[room_avail],
         summary={"12345": branch_stats}
     )
 
@@ -112,10 +112,10 @@ async def test_map_search_success(
         assert response.status_code == 200
         data = response.json()["result"]
         
-        # 중첩 구조 검증
+        # 기존 구조 검증 (room_detail 중첩)
         assert "branch_summary" in data
         assert "hour_slots" in data
-        assert data["rooms"][0]["room_detail"]["name"] == "Refactored Room"
+        assert data["results"][0]["room_detail"]["name"] == "Refactored Room"
         
         # Mock 호출 파라미터 검증
         called_arg = mock_method.call_args[1]['request']

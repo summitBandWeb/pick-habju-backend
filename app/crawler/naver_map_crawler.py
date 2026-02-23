@@ -1,17 +1,11 @@
 import os
 import asyncio
 import logging
-import re
 from typing import List, Dict, Optional
-from fake_useragent import UserAgent
 from playwright.sync_api import sync_playwright
-
-try:
-    from playwright_stealth import stealth_sync
-except ImportError:
-    stealth_sync = None
 from concurrent.futures import ThreadPoolExecutor
 from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
+from fake_useragent import UserAgent
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +48,18 @@ class NaverMapCrawler:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._search_sync, query)
 
-    def _get_random_ua(self) -> str:
-        """랜덤 User-Agent를 생성합니다."""
-        try:
-            ua = UserAgent(fallback="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            return ua.random
-        except Exception as e:
-            logger.warning(f"Error generating user agent: {e}. Using default.")
-            return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
     def _search_sync(self, query: str) -> List[Dict[str, str]]:
         """Synchronous search implementation."""
-        user_agent_str = self._get_random_ua()
+        # Optional dependencies import with fallback
+        try:
+            ua = UserAgent(fallback="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            user_agent_str = ua.random
+        except ImportError:
+            logger.warning("fake-useragent not found. Using default user agent.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        except Exception as e:
+            logger.warning(f"Error generating user agent: {e}. Using default.")
+            user_agent_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         results = {}
         
@@ -105,13 +99,13 @@ class NaverMapCrawler:
             )
             
             # Apply stealth if available
-            if stealth_sync:
-                try:
-                    stealth_sync(context)
-                except Exception as e:
-                    logger.warning(f"Failed to apply stealth: {e}")
-            else:
+            try:
+                from playwright_stealth import stealth_sync
+                stealth_sync(context)
+            except ImportError:
                 logger.warning("playwright-stealth not found. Skipping stealth mode.")
+            except Exception as e:
+                logger.warning(f"Failed to apply stealth: {e}")
 
             # Override navigator.webdriver to avoid detection (redundant if stealth used, but safe)
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
