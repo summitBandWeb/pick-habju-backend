@@ -37,15 +37,15 @@ ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
 
 Example 3:
-Input: "[주말] 스튜디오A", "당일 예약은 전화 문의"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true}}
+Input: "[주말] 스튜디오A", "당일 예약은 전화 문의, 최소 2시간부터 예약"
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true, "can_reserve_one_hour": false}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
@@ -56,6 +56,7 @@ Rules:
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Now extract:
 Input: "{name}", "{desc}"
@@ -76,6 +77,7 @@ Rules:
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only)
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Rooms:
 {rooms_text}
@@ -242,6 +244,16 @@ class RoomParserService:
                 return False
             if rec_range[0] < 1 or rec_range[1] > 50 or rec_range[0] > rec_range[1]:
                 return False
+                
+        # 7. can_reserve_one_hour 검증
+        can_reserve_1h = result.get("can_reserve_one_hour")
+        if can_reserve_1h is not None and not isinstance(can_reserve_1h, bool):
+            return False
+            
+        # 8. requires_call_on_same_day 검증
+        requires_call_today = result.get("requires_call_on_same_day")
+        if requires_call_today is not None and not isinstance(requires_call_today, bool):
+            return False
         
         return True
 
@@ -312,6 +324,16 @@ class RoomParserService:
         # 4. Same day call
         requires_call = "당일" in desc and ("전화" in desc or "문의" in desc)
 
+        # 5. One hour reservation
+        can_reserve_1h = True
+        if (
+            "최소 2시간" in desc or "최소2시간" in desc or 
+            "2시간 이상" in desc or "2시간 이상만" in desc or 
+            "1시간 불가" in desc or "1시간 예약 불가" in desc or 
+            ("1시간" in desc and "불가" in desc)
+        ):
+            can_reserve_1h = False
+
         # [v2.0.0] recommend_capacity_range 구성
         # Rationale: 범위 정보가 있으면 [min, max]로, 단일 값이면 [n, n]으로 변환
         rec_range = parsed_range  # 범위 추출 결과가 있으면 그대로 사용
@@ -375,7 +397,8 @@ class RoomParserService:
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
             "price_config": price_config,
-            "requires_call_on_same_day": requires_call
+            "requires_call_on_same_day": requires_call,
+            "can_reserve_one_hour": can_reserve_1h,
         }
 
     def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int], Optional[list]]:
