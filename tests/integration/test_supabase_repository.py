@@ -6,6 +6,12 @@ from app.repositories.supabase_repository import SupabaseFavoriteRepository
 # Load environment variables
 load_dotenv()
 
+RUN_EXTERNAL_TESTS = os.getenv("RUN_EXTERNAL_TESTS") == "1"
+pytestmark = pytest.mark.skipif(
+    not RUN_EXTERNAL_TESTS,
+    reason="External integration test disabled. Set RUN_EXTERNAL_TESTS=1 to run.",
+)
+
 @pytest.fixture
 def repo():
     """Real Supabase Repository instance"""
