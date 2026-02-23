@@ -77,4 +77,4 @@ def test_availability_request_validation_error():
         
         response = client.get(f"{url}?date={today_str}&capacity=3&start_hour={past_hour}&end_hour={end_hour}&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
-        assert "현재 시간" in response.text or "이후여야 합니다" in response.text
+        assert "지나간 시간" in response.text or "past" in response.text.lower()
