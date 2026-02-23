@@ -64,6 +64,23 @@ def test_add_favorite_idempotency(client, api_endpoint, headers, target_business
     assert data["isSuccess"] is True
     assert data["result"] == {"added": True}
 
+def test_add_favorite_limit_exceeded(client, headers, target_business_id, mock_repo):
+    """최대 즐겨찾기 개수를 초과하면 400 에러를 반환해야 한다."""
+    from app.api.favorites import MAX_FAVORITES_PER_DEVICE
+    
+    # Arrange: 한도를 가득 채움
+    for i in range(MAX_FAVORITES_PER_DEVICE):
+        mock_repo.add(device_id=headers["X-Device-Id"], business_id=target_business_id, biz_item_id=f"item-{i}")
+        
+    # Act: 21번째 추가
+    response = client.put("/api/favorites/new-item-over-limit", headers=headers, params={"business_id": target_business_id})
+    
+    # Assert
+    assert response.status_code == 400
+    data = response.json()
+    assert data["isSuccess"] is False
+    assert "상한" in data["message"] or "limit" in data["message"].lower()
+
 def test_delete_favorite_success(client, api_endpoint, headers, target_business_id):
     """즐겨찾기 삭제 성공 시 200 OK를 반환해야 한다."""
     # Arrange: 데이터 준비

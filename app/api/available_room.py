@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import ValidationError
+from fastapi.exceptions import RequestValidationError
 from typing import Optional
+from pydantic import ValidationError
 from app.api.dependencies import get_availability_service
 from app.models.dto import AvailabilityRequest, AvailabilityResponse
 from app.core.response import ApiResponse
@@ -23,10 +24,10 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
 @limiter.limit(f"{RATE_LIMIT_PER_MINUTE}/minute")  # Rate Limit 적용
 async def check_room_availability(
     request: Request,
-    date: str = Query(..., description="날짜 (YYYY-MM-DD)", pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$"),
+    date: str = Query(..., description="날짜 (YYYY-MM-DD)"),
     capacity: int = Query(..., description="사용 인원 수"),
-    start_hour: str = Query(..., description="시작 시간 (HH:MM), 정각 단위", pattern=r"^(0[0-9]|1[0-9]|2[0-3]):00$", json_schema_extra={"example": "14:00"}),
-    end_hour: str = Query(..., description="종료 시간 (HH:MM), 정각 단위", pattern=r"^(0[0-9]|1[0-9]|2[0-3]):00$", json_schema_extra={"example": "16:00"}),
+    start_hour: str = Query(..., description="시작 시간 (HH:MM)"),
+    end_hour: str = Query(..., description="종료 시간 (HH:MM)"),
     swLat: float = Query(..., description="남서쪽 위도 (필수)"),
     swLng: float = Query(..., description="남서쪽 경도 (필수)"),
     neLat: float = Query(..., description="북동쪽 위도 (필수)"),
@@ -55,8 +56,6 @@ async def check_room_availability(
         HTTPException: 유효하지 않은 파라미터 시 400 에러
     """
     
-    from fastapi.exceptions import RequestValidationError
-
     try:
         svc_request = AvailabilityRequest(
             date = date,
@@ -69,7 +68,7 @@ async def check_room_availability(
             neLng = neLng
         )
     except ValidationError as e:
-        # FastAPI의 전역 validation 핸들러가 처리하도록 RequestValidationError 발생
+        # Endpoint 내부에서 수동 생성한 Pydantic ValidationError를 FastAPI 422 경로로 변환
         raise RequestValidationError(e.errors()) from e
 
     result = await service.check_availability(request=svc_request)

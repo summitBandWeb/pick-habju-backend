@@ -1,12 +1,15 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from typing import List, Dict, Union, Any, Optional
-from datetime import datetime, date, timezone, timedelta
 import re
+from datetime import datetime, date
+
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from typing import List, Dict, Union, Any, Optional, ClassVar
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
+    MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = 100
+    BRANCH_FALLBACK_NAME: ClassVar[str] = "지점 정보 없음"
 
     # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
     name: str = Field(description="Rehearsal room name")
@@ -18,22 +21,38 @@ class RoomDetail(BaseModel):
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
     recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
 
-    @field_validator('recommendCapacity', mode='before')
+    @field_validator("recommendCapacity", mode="before")
     @classmethod
     def normalize_recommend_capacity(cls, v: Any) -> int:
-        """레거시 데이터 호환: 리스트로 들어올 경우 첫 번째 값을 사용"""
+        """레거시 데이터 호환: 리스트로 들어오면 첫 번째 값을 사용"""
         if isinstance(v, list):
             return v[0] if v else 0
         return v
 
-    # 신규 필드 추가 (v2.0.0 Metadata)
-    recommendCapacityRange: Optional[List[int]] = Field(None, alias="recommend_capacity_range", description="Recommended capacity range [min, max]")
-    priceConfig: Optional[List[Dict[str, Any]]] = Field(None, alias="price_config", description="Dynamic price configuration")
-    
+    recommendCapacityRange: Optional[List[int]] = Field(
+        default=None,
+        alias="recommend_capacity_range",
+        description="Recommended capacity range [min, max]",
+    )
     baseCapacity: Optional[int] = Field(None, alias="base_capacity", description="Base capacity for extra charge")
     extraCharge: Optional[int] = Field(None, alias="extra_charge", description="Extra charge per person")
+
+    # v2.0.0 유연한 정책 필드 (dict/list 모두 수용)
+    priceConfig: Union[Dict[str, Any], List[Dict[str, Any]]] = Field(
+        default_factory=dict,
+        alias="price_config",
+        description="Flexible price configuration (JSON)",
+    )
+    minCapacity: int = Field(default=1, alias="min_capacity", description="Minimum capacity for reservation")
+    minHours: int = Field(default=1, alias="min_hours", description="Minimum reservation hours")
+    maxHours: Optional[int] = Field(None, alias="max_hours", description="Maximum reservation hours")
+    
+    # Branch 정보 확장
     lat: Optional[float] = Field(None, description="Branch latitude")
     lng: Optional[float] = Field(None, description="Branch longitude")
+    phoneNumber: Optional[str] = Field(None, description="Branch phone number (if null, use chat)")
+    displayName: Optional[str] = Field(None, description="Branch display name")
+    openWaitRule: Dict[str, Any] = Field(default_factory=dict, description="Branch open wait rule (JSON)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
     canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
@@ -44,7 +63,9 @@ class RoomDetail(BaseModel):
     def extract_branch_info(cls, v: Any) -> str:
         """Supabase join 결과 정제"""
         if isinstance(v, dict):
-            return v.get('name', '')
+            v = v.get('name', '')
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return cls.BRANCH_FALLBACK_NAME
         return v
 
     @field_validator('imageUrls', mode='before')
@@ -55,6 +76,64 @@ class RoomDetail(BaseModel):
             return []
         return v
 
+    @field_validator('priceConfig', 'openWaitRule', mode='before')
+    @classmethod
+    def handle_null_json(cls, v: Any) -> Dict[str, Any]:
+        """DB에서 null로 오는 JSON 필드를 빈 딕셔너리로 변환"""
+        if v is None:
+            return {}
+        return v
+
+    @field_validator("recommendCapacityRange", mode="before")
+    @classmethod
+    def parse_recommend_capacity_range(cls, v: Any) -> Optional[List[int]]:
+        """PostgreSQL int4range/문자열/리스트 입력을 [min, max] 형태로 정규화"""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            if len(v) == 2:
+                return [int(v[0]), int(v[1])]
+            return None
+        if isinstance(v, str):
+            # NOTE: DB backfill/int4range는 inclusive("[]")만 사용하므로 해당 형식만 허용
+            match = re.fullmatch(r"\[\s*(\d+)\s*,\s*(\d+)\s*\]", v)
+            if not match:
+                return None
+            lower = int(match.group(1))
+            upper = int(match.group(2))
+            return [lower, upper]
+        return None
+
+    @model_validator(mode="after")
+    def populate_v2_fields(self) -> "RoomDetail":
+        """V2 호환 필드를 채우고 수동검토 플래그 값을 안전한 응답값으로 변환"""
+        if (
+            self.recommendCapacityRange
+            and len(self.recommendCapacityRange) == 2
+            and self.recommendCapacityRange[0] == self.MANUAL_REVIEW_CAPACITY_FLAG
+            and self.recommendCapacityRange[1] == self.MANUAL_REVIEW_CAPACITY_FLAG
+        ):
+            self.recommendCapacityRange = None
+
+        if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
+            self.maxCapacity = 0
+
+        if self.recommendCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
+            self.recommendCapacity = 0
+
+        if (
+            not self.recommendCapacityRange
+            and self.recommendCapacity
+            and self.recommendCapacity > 0
+        ):
+            min_cap = max(1, self.recommendCapacity - 2)
+            self.recommendCapacityRange = [min_cap, self.recommendCapacity]
+
+        if not self.priceConfig and self.pricePerHour:
+            self.priceConfig = {"default": self.pricePerHour, "overrides": []}
+
+        return self
+
 # Request DTO
 class AvailabilityRequest(BaseModel):
     """Request for checking availability"""
@@ -63,114 +142,71 @@ class AvailabilityRequest(BaseModel):
     start_hour: str = Field(..., description="Start time (HH:MM)")
     end_hour: str = Field(..., description="End time (HH:MM)")
     
-    @field_validator('start_hour', 'end_hour')
-    @classmethod
-    def validate_hour_format(cls, v: str) -> str:
-        if not re.match(r"^(0[0-9]|1[0-9]|2[0-3]):00$", v):
-            raise ValueError(f"시간은 'HH:00' 포맷(정각)으로 입력해야 합니다. 00:00~23:00 (잘못된 입력: {v})")
-        return v
-
-    @model_validator(mode='after')
-    def validate_time_range(self) -> 'AvailabilityRequest':
-        start_h = int(self.start_hour.split(':')[0])
-        end_h = int(self.end_hour.split(':')[0])
-        if start_h >= end_h:
-            raise ValueError(f"종료 시간({self.end_hour})은 시작 시간({self.start_hour})보다 최소 1시간 이후여야 합니다.")
-        
-        # 날짜 및 과거/미래 제한 로직 검증 (KST 기준)
-        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])", self.date):
-            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})")
-        try:
-            req_date = datetime.strptime(self.date, "%Y-%m-%d").date()
-        except ValueError as err:
-            raise ValueError(f"날짜 형식이 올바르지 않습니다. (YYYY-MM-DD 포맷 필요, 입력값: {self.date})") from err
-        
-        kst = timezone(timedelta(hours=9))
-        now_kst = datetime.now(kst)
-        today = now_kst.date()
-        
-        if req_date < today:
-            raise ValueError(f"과거 날짜({self.date})는 예약할 수 없습니다.")
-        
-        # 오늘 날짜인데 지나간 시간 예약 방지
-        current_hour = now_kst.hour
-        if req_date == today and start_h <= current_hour:
-            raise ValueError(f"오늘({self.date}) 예약 시, 시작 시간({self.start_hour})은 현재 시간({current_hour}시) 이후여야 합니다.")
-            
-        return self
-    
     # 지도 영역 좌표 (필수)
     swLat: float = Field(..., description="South-West Latitude")
     swLng: float = Field(..., description="South-West Longitude")
     neLat: float = Field(..., description="North-East Latitude")
     neLng: float = Field(..., description="North-East Longitude")
 
-    @field_validator('date')
+    @field_validator("date")
     @classmethod
-    def validate_date_format(cls, v: str) -> str:
-        # 1. Regex Format Check
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+    def validate_date_regex(cls, value: str) -> str:
+        """YYYY-MM-DD 형식 + 실제 달력 유효 날짜를 검증"""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
-        
-        # 2. Calendar Validity Check (e.g., 2024-02-30)
         try:
-            input_date = datetime.strptime(v, "%Y-%m-%d").date()
-        except ValueError as err:
-            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)") from err
-            
-        # 3. Logic Check (Past Date)
+            input_date = datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)") from exc
         if input_date < date.today():
             raise ValueError("과거 날짜는 예약할 수 없습니다.")
-            
-        return v
-    
-    @field_validator('start_hour', 'end_hour')
-    @classmethod
-    def validate_time_format(cls, v: str) -> str:
-        # HH:MM 형식 확인 (00:00 ~ 23:59)
-        if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", v):
-            raise ValueError(f"시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59): {v}")
-        return v
+        return value
 
-    @field_validator('capacity')
+    @field_validator("start_hour")
     @classmethod
-    def validate_capacity_range(cls, v: int) -> int:
-        if not (1 <= v <= 100):
-            raise ValueError("인원은 1명 이상 100명 이하여야 합니다.")
-        return v
+    def validate_start_time_format(cls, value: str) -> str:
+        if not re.fullmatch(r"^([01]\d|2[0-3]):([0-5]\d)$", value):
+            raise ValueError("시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59)")
+        return value
 
-    @model_validator(mode='after')
-    def validate_logic(self) -> 'AvailabilityRequest':
-        # 1. Coordinate Range & Logic
-        # Latitude: -90 ~ 90
+    @field_validator("end_hour")
+    @classmethod
+    def validate_end_time_format(cls, value: str) -> str:
+        if not re.fullmatch(r"^(([01]\d|2[0-3]):([0-5]\d)|24:00)$", value):
+            raise ValueError("종료 시간 형식이 올바르지 않습니다. (HH:MM, 00:00~24:00)")
+        return value
+
+    @field_validator("capacity")
+    @classmethod
+    def validate_capacity_range(cls, value: int) -> int:
+        """합주실 요청 인원수는 1~50 범위만 허용"""
+        if not 1 <= value <= 50:
+            raise ValueError("인원은 1명 이상 50명 이하여야 합니다.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_logic(self) -> "AvailabilityRequest":
         if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
             raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
-            
-        # Longitude: -180 ~ 180
         if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):
             raise ValueError("경도는 -180도에서 180도 사이여야 합니다.")
-
         if self.swLat >= self.neLat:
             raise ValueError("남서쪽 위도(swLat)는 북동쪽 위도(neLat)보다 작아야 합니다.")
         if self.swLng >= self.neLng:
             raise ValueError("남서쪽 경도(swLng)는 북동쪽 경도(neLng)보다 작아야 합니다.")
-            
-        # 2. Time Logic (Start < End & Past Time)
-        # NOTE: field_validator에서 정규식으로 형식을 보장하므로 strptime은 실패하지 않음
-        start = datetime.strptime(self.start_hour, "%H:%M")
-        end = datetime.strptime(self.end_hour, "%H:%M")
-        
-        if start >= end:
+
+        start_minutes = int(self.start_hour[:2]) * 60 + int(self.start_hour[3:])
+        end_minutes = 1440 if self.end_hour == "24:00" else int(self.end_hour[:2]) * 60 + int(self.end_hour[3:])
+        if start_minutes >= end_minutes:
             raise ValueError("시작 시간은 종료 시간보다 빨라야 합니다.")
-        
-        # 과거 시간 체크 (오늘인 경우)
+
         input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
         if input_date == date.today():
-            now_time = datetime.now().time()
-            # 시작 시간이 현재 시간보다 이전이면 에러
-            if start.time() <= now_time:
+            now_time = datetime.now()
+            now_minutes = now_time.hour * 60 + now_time.minute
+            if start_minutes <= now_minutes:
                 raise ValueError("이미 지나간 시간은 예약할 수 없습니다.")
-                
+
         return self
 
 
@@ -190,12 +226,26 @@ class RoomInfo(BaseModel):
     imageUrls: List[str]
     maxCapacity: int
     recommendCapacity: int
+    recommendCapacityRange: Optional[List[int]] = Field(
+        default=None,
+        description="Recommended capacity range [min, max]",
+    )
+    recommendCapacityMin: int = Field(..., description="Calculated min recommend capacity")
+    recommendCapacityMax: int = Field(..., description="Calculated max recommend capacity")
+    
     baseCapacity: Optional[int] = None
     extraCharge: Optional[int] = None
     pricePerHour: int
     canReserveOneHour: bool
     requiresCallOnSameDay: bool
     
+    # v2.0.0 추가 필드
+    minCapacity: int
+    minHours: int
+    maxHours: Optional[int] = None
+    phoneNumber: Optional[str] = None
+    displayName: Optional[str] = None
+
     # [v2.0.0] 계산된 정보
     estimatedPrice: Optional[int] = None
     policyWarnings: List[PolicyWarning] = Field(default_factory=list)
@@ -236,5 +286,3 @@ class AvailabilityResponse(BaseModel):
     
     # 지도 검색을 위한 신규 필드
     branch_summary: Dict[str, BranchStats] = Field(default_factory=dict, description="Summary stats per branch for map markers")
-
-

@@ -10,7 +10,16 @@ from fake_useragent import UserAgent
 logger = logging.getLogger(__name__)
 
 class NaverMapCrawler:
-    """네이버 지도에서 합주실을 검색하고 Business ID를 수집합니다."""
+    """네이버 지도에서 합주실을 검색하고 Business ID를 수집합니다.
+    
+    주요 기능:
+    - Sync Playwright 브라우저를 백그라운드 스레드에서 생성하여 합주실 검색
+    - window.__APOLLO_STATE__ 전역 변수를 파싱하여 방/지점 객체 목록 확보
+    
+    Rationale (의도):
+        - 네이버 지도는 SPA(단일 페이지 앱) 형태이므로 HTML Parsing이 불가하여 Headless 브라우저 기반 동적 렌더링을 씀.
+        - Async Playwright가 Windows 환경에서 불안정할 수 있어 ThreadPoolExecutor와 sync_playwright 패턴으로 우회 처리.
+    """
     
     BASE_URL = "https://pcmap.place.naver.com/place/list"
     
@@ -24,9 +33,17 @@ class NaverMapCrawler:
         self._executor = ThreadPoolExecutor(max_workers=1)
 
     async def search_rehearsal_rooms(self, query: str = "합주실") -> List[Dict[str, str]]:
-        """
-        특정 키워드로 합주실을 검색하고 결과 목록을 반환합니다.
-        Uses sync_playwright in a separate thread to avoid Windows asyncio issues.
+        """특정 키워드로 합주실을 검색하고 결과 목록을 반환합니다.
+        
+        Args:
+            query (str): 네이버 지도에 검색할 지역명 + 합주실 키워드 (예: '사당 합주실')
+            
+        Returns:
+            List[Dict[str, str]]: 파싱된 방 정보 딕셔너리 리스트 (id, name, address 등)
+            
+        Rationale (의도):
+            - Windows asyncio 이벤트 루프와 Playwright 내부 루프 충돌을 방지하기 위해
+              run_in_executor를 통해 별도의 스레드 풀에서 동기적으로 브라우저를 띄움.
         """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._search_sync, query)
@@ -137,7 +154,7 @@ class NaverMapCrawler:
                 const state = window.__APOLLO_STATE__;
                 // Debug: Return useful message if state is missing
                 if (!state) {
-                     return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY:" + document.body.innerHTML.substring(0, 500)];
+                     return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY_HIDDEN_FOR_SECURITY"];
                 }
                 
                 const places = [];
@@ -160,7 +177,7 @@ class NaverMapCrawler:
                 
                 // If no places found, return some keys to help debugging
                 if (places.length === 0) {
-                    return keys.slice(0, 10).map(k => "DEBUG_KEY:" + k);
+                    return ["NO_PLACES_FOUND_IN_APOLLO_STATE"];
                 }
                 
                 return places;
@@ -173,8 +190,12 @@ class NaverMapCrawler:
             if not isinstance(item, dict):
                 logger.warning(f"Skipping non-dict item: {item}")
                 continue
-            if item["id"] not in target:
-                target[item["id"]] = item
+            item_id = item.get("id")
+            if not item_id:
+                logger.warning(f"Skipping item without 'id': {list(item.keys())[:3]}")
+                continue
+            if item_id not in target:
+                target[item_id] = item
 
     async def crawl_all_regions(self) -> List[Dict]:
         """

@@ -35,7 +35,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             return True
         except Exception as e:
             logger.error(f"Error adding favorite: {e}")
-            return False
+            raise
 
     def delete(self, device_id: str, business_id: str, biz_item_id: str) -> None:
         """
@@ -51,6 +51,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             ).execute()
         except Exception as e:
             logger.error(f"Error deleting favorite: {e}")
+            raise
 
     def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
@@ -71,6 +72,20 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
         except Exception as e:
             logger.error(f"Error checking existence: {e}")
             return False
+
+    def count_by_device(self, device_id: str) -> int:
+        """
+        Retrieves the total number of favorite items for a device.
+        """
+        try:
+            response = self.supabase.table(self.table_name).select(
+                "*", count="exact", head=True
+            ).eq("device_id", device_id).execute()
+            
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error fetching favorite count: {e}")
+            raise
 
     def get_all(self, device_id: str) -> List[str]:
         """
