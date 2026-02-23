@@ -1,22 +1,22 @@
-﻿"""
-?⑹＜???덉빟 媛???щ? 議고쉶 ?쒕퉬??
+"""
+합주실 예약 가능 여부 조회 서비스
 
-??紐⑤뱢? ?щ윭 ?⑹＜???뚮옯??Dream, Groove, Naver ?????щ·?щ? ?듯빀?섏뿬
-?덉빟 媛???щ?瑜?議고쉶?섎뒗 ?쒕퉬??怨꾩링???쒓났?⑸땲??
+이 모듈은 여러 합주실 크롤러(Dream, Groove, Naver 등)를 통합하여
+예약 가능 여부를 병렬로 조회하는 서비스 계층을 제공합니다.
 
-二쇱슂 湲곕뒫:
-- ?щ윭 ?щ·??蹂묐젹 ?ㅽ뻾?쇰줈 ?묐떟 ?띾룄 理쒖쟻??
-- ?쇰? ?щ·???ㅽ뙣 ?쒖뿉???깃났??寃곌낵??諛섑솚 (Graceful Degradation)
-- ?щ·?щ퀎 ?먮윭瑜?濡쒓퉭?섎릺 API ?묐떟? ?뺤긽 泥섎━
+주요 기능:
+- 여러 크롤러의 병렬 실행(asyncio)으로 응답 속도 최적화
+- 일부 크롤러 실패 시에도 성공한 결과 반환 (Graceful Degradation)
+- 크롤러별 에러를 로깅하되 API 응답은 정상 처리 (서버 중단 방어)
 
-鍮꾩쫰?덉뒪 留λ씫:
-- Dream, Groove???먯껜 ?щ·留? Naver???덉빟 API ?ъ슜
-- 媛??뚮옯?쇰쭏???ㅻⅨ ?몄쬆 諛⑹떇 諛??곗씠??援ъ“ ?ъ슜
-- Service Layer ?⑦꽩???곸슜?섏뿬 鍮꾩쫰?덉뒪 濡쒖쭅??API ?쇱슦?곗뿉??遺꾨━
+비즈니스 맥락:
+- Dream, Groove는 자체 크롤러, Naver는 예약 GraphQL API 사용
+- 각 크롤러마다 다른 인증 방식 및 데이터 구조를 표준화
+- Service Layer 패턴을 적용하여 비즈니스 로직을 API 라우터에서 분리 (관심사 분리)
 
-愿???댁뒋: #87
-?묒꽦?? siul
-理쒖큹 ?묒꽦: 2026-01-09
+관련 이슈: #87
+작성자: siul
+최초 작성: 2026-01-09
 """
 
 from __future__ import annotations
@@ -41,29 +41,29 @@ from app.validate.room_detail_validator import validate_room_detail_list
 logger = logging.getLogger("app")
 
 class AvailabilityService:
-    """?⑹＜???덉빟 媛???щ? 議고쉶 ?쒕퉬??
+    """합주실 예약 가능 여부 조회 서비스
     
-    ?щ윭 ?щ·?щ? ?ъ슜?섏뿬 ?숈떆???덉빟 媛???щ?瑜?議고쉶?섍퀬,
-    寃곌낵瑜??듯빀?섏뿬 諛섑솚?⑸땲?? 鍮꾩쫰?덉뒪 濡쒖쭅??API ?쇱슦?곗뿉??遺꾨━?섏뿬
-    ?뚯뒪??媛?μ꽦怨??ъ궗?⑹꽦???믪엯?덈떎.
+    여러 크롤러를 사용하여 동시에 예약 가능 여부를 조회하고,
+    결과를 통합하여 반환합니다. 비즈니스 로직을 API 라우터에서 분리하여
+    테스트 가능성과 재사용성을 높입니다.
     
-    鍮꾩쫰?덉뒪 留λ씫:
-    - Dream, Groove, Naver ???щ윭 ?뚮옯?쇱쓽 ?⑹＜?ㅼ쓣 ?듯빀 議고쉶
-    - 媛??뚮옯?쇰쭏???ㅻⅨ ?щ·?щ? ?ъ슜?섏뿬 ?곗씠???섏쭛
-    - ?쇰? ?щ·???ㅽ뙣 ?쒖뿉???깃났??寃곌낵??諛섑솚 (Graceful Degradation)
+    비즈니스 맥락:
+    - Dream, Groove, Naver 등 여러 플랫폼의 합주실을 통합 조회
+    - 각 크롤러마다 다른 크롤링 기법을 사용하여 데이터 수집
+    - 일부 크롤러 실패 시에도 성공한 결과 반환 (Graceful Degradation)
     
-    ?ㅺ퀎 寃곗젙:
-    - Dependency Injection???듯빐 ?щ·??二쇱엯 (?뚯뒪???⑹씠??
-    - 鍮꾨룞湲?蹂묐젹 泥섎━濡??묐떟 ?띾룄 理쒖쟻??(asyncio.gather ?ъ슜)
-    - ?먮윭瑜?Exception 媛앹껜濡?諛섑솚?섏뿬 濡쒓퉭 ???꾪꽣留?
+    설계 결정:
+    - Dependency Injection을 통해 크롤러 주입 (테스트 용이성 확보)
+    - 비동기 병렬 처리로 응답 속도 최적화 (asyncio.gather 사용)
+    - 에러를 Exception 객체로 반환하여 로깅 및 필터링
     
-    ?ъ슜 ?덉떆:
+    사용 예시:
         >>> crawlers_map = {"dream": DreamCrawler(), "groove": GrooveCrawler()}
         >>> service = AvailabilityService(crawlers_map)
         >>> response = await service.check_availability(request)
     
     Attributes:
-        crawlers_map: ?щ·????낆쓣 ?ㅻ줈, BaseCrawler ?몄뒪?댁뒪瑜?媛믪쑝濡??섎뒗 ?뺤뀛?덈━
+        crawlers_map (dict): 크롤러 타입을 키로, BaseCrawler 인스턴스를 값으로 하는 딕셔너리
     """
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
@@ -99,7 +99,21 @@ class AvailabilityService:
         return slots
 
     def _slot_to_minutes(self, slot: str) -> int:
-        """HH:MM 臾몄옄?댁쓣 遺??⑥쐞 ?뺤닔濡?蹂??24:00 ?덉슜)."""
+        """HH:MM 형식의 문자열을 분(Minutes) 단위 정수로 변환합니다. (24:00 허용)
+        
+        Args:
+            slot (str): 시간 포맷 문자열 (예: "14:00")
+            
+        Returns:
+            int: 00:00으로부터 경과된 '분' (예: "14:00" -> 840)
+            
+        Raises:
+            ValueError: 형식이 맞지 않거나, 분 단위가 0이 아닐 경우
+            
+        Rationale (의도):
+            문자열 기반의 타임라인 계산 시 대소 비교나 시간 간격 연산의 복잡도가 증가하므로,
+            수치형 차원(Int) 연산으로 정규화하여 안정성을 높임.
+        """
         match = re.fullmatch(r"(\d{2}):(\d{2})", slot)
         if not match:
             raise ValueError(f"?쒓컙 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎: {slot}")
@@ -187,7 +201,21 @@ class AvailabilityService:
         
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
-        """Check room availability for a specific map area and criteria."""
+        """조건에 맞는 합주실들의 예약 가능 여부를 일괄 조회합니다.
+
+        Args:
+            request (AvailabilityRequest): 클라이언트가 요청한 날짜, 시간, 위치, 인원 등의 필터 스펙
+
+        Returns:
+            AvailabilityResponse: 정상 조회된 방 리스트 및 에러/경고가 포맷팅된 최종 응답
+
+        Raises:
+            HTTPException: 400 (시간 슬롯 생성 실패 시 등)
+
+        Rationale (의도):
+            동기/비동기 크롤러를 혼합 호출하며, 에러가 발생한 크롤러(예: 네이버 블럭)가 
+            전체 합주실 조회 서비스의 실패(500 서버 장애)로 이어지지 않도록 방어 로직을 구성함.
+        """
 
         # 1. ?쒓컙 踰붿쐞(Range) -> ?쒓컙 ?щ’ 由ъ뒪??List) 蹂??
         # ?? 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
@@ -311,22 +339,15 @@ class AvailabilityService:
 
 
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
-        """?щ·留?寃곌낵?먯꽌 ?먮윭瑜?異붿텧?섏뿬 濡쒓퉭.
-        
-        ?щ·?щ퀎 ?먮윭瑜??먯??섍퀬 ?곸젅??濡쒓렇 ?덈꺼濡?湲곕줉?⑸땲??
-        而ㅼ뒪? ?덉쇅??Warning ?덈꺼, ?쇰컲 ?덉쇅??Error ?덈꺼濡?濡쒓퉭?⑸땲??
+        """병렬 크롤러 결과에서 에러(Exception)만 추출하여 로깅합니다.
         
         Args:
-            results: RoomAvailability ?먮뒗 Exception???쇱옱??由ъ뒪??
-            date_context: 濡쒓렇???ы븿???좎쭨 ?뺣낫 (??꾩뒪?ы봽 ???
+            results (list[RoomAvailability | Exception]): 코루틴 gather를 통해 취합된 정상 응답 및 예외 객체 리스트
+            date_context (str): 예약 요청일 (로그 추적 용도)
             
-        Note:
-            - BaseCustomException: Warning ?덈꺼 (?덉긽???먮윭, ?? ?щ·留??ㅽ뙣)
-            - 湲고? Exception: Error ?덈꺼 (?덉긽移?紐삵븳 ?먮윭)
-            
-        TODO:
-            Sentry 媛숈? 紐⑤땲?곕쭅 ?꾧뎄 ?곕룞 怨좊젮
-            ?먮윭 諛쒖깮瑜좎씠 ?믪쓣 寃쎌슦 ?뚮┝ 湲곕뒫 異붽? ?꾩슂
+        Rationale (의도):
+            크롤러가 1개 실패해도 전체 서비스는 계속 진행되지만 백엔드 개발자는 실패 사실을 알아야 하므로
+            예상된 에러(비즈니스 예외)는 Warning으로, 크롤링 구조 변경 등 치명적 에러는 Error로 나눠 슬랙/로그 알림.
         """
         errors = [e for e in results if isinstance(e, Exception)]
         for err in errors:
@@ -353,7 +374,20 @@ class AvailabilityService:
         request: AvailabilityRequest,
         hour_slots: List[str],
     ) -> List[RoomAvailability]:
-        """정책 필터 및 가격 계산 적용"""
+        """크롤링된 각 합주실의 비즈니스 정책(최소 인원 등) 및 동적 가격을 정산하여 방 필터링 및 할당.
+
+        Args:
+            results (List[RoomAvailability]): 크롤러에서 성공적으로 반환된 방 정보 리스트
+            request (AvailabilityRequest): 사용자의 예약 필터 요건
+            hour_slots (List[str]): 예약할 시간 슬롯들
+
+        Returns:
+            List[RoomAvailability]: 가격 책정 및 정책 필터링(보정)이 끝난 최종 클라이언트 응답용 방 배열
+
+        Rationale (의도):
+            단순 수집 결과(Raw Data)를 프론트엔드에 넘기기 전에 서버 자체 가격 계산기(PricingService)와 
+            예약 조건(당일 예약 불가, 1시간 전화 등)을 검사/기입하기 위함.
+        """
         today = datetime.now().strftime("%Y-%m-%d")
         processed: List[RoomAvailability] = []
 

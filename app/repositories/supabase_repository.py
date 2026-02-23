@@ -35,7 +35,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             return True
         except Exception as e:
             logger.error(f"Error adding favorite: {e}")
-            return False
+            raise
 
     def delete(self, device_id: str, business_id: str, biz_item_id: str) -> None:
         """
@@ -51,6 +51,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             ).execute()
         except Exception as e:
             logger.error(f"Error deleting favorite: {e}")
+            raise
 
     def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
         """
