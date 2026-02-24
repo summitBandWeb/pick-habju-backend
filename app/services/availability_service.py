@@ -111,8 +111,7 @@ class AvailabilityService:
         current_min = start_min
         while current_min <= end_min:
             slot_min_adjusted = current_min % 1440
-            
-            # 24:00 (1440분) 처리 로직 가독성 개선
+
             if slot_min_adjusted == 0 and current_min != 0:
                 slot_to_add = 1440
             else:
@@ -148,6 +147,13 @@ class AvailabilityService:
         if hour < 0 or hour > 24:
             raise ValueError(f"?쒓컙 踰붿쐞媛 ?щ컮瑜댁? ?딆뒿?덈떎: {slot}")
         return hour * 60 + minute
+
+    @staticmethod
+    def _get_next_day_str(date_str: str) -> str:
+        """날짜 문자열(YYYY-MM-DD)을 받아 익일 날짜문자열 반환"""
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        next_dt = dt + timedelta(days=1)
+        return next_dt.strftime("%Y-%m-%d")
 
     def _minutes_to_slot(self, minute_value: int) -> str:
         """遺??⑥쐞 媛믪쓣 HH:MM 臾몄옄?대줈 蹂??"""
@@ -270,12 +276,6 @@ class AvailabilityService:
         # 3. 크롤러 비동기 작업 준비 및 실행
         tasks = []
         task_dates = []
-        
-        # 날짜 문자열 익일 계산 유틸리티
-        def get_next_day_str(date_str: str) -> str:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            next_dt = dt + timedelta(days=1)
-            return next_dt.strftime("%Y-%m-%d")
 
         end_min = 1440 if request.end_hour == "24:00" else self._slot_to_minutes(request.end_hour)
         is_overnight = (self._slot_to_minutes(request.start_hour) > end_min)
@@ -285,7 +285,7 @@ class AvailabilityService:
             start_mins = self._slot_to_minutes(request.start_hour)
             day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
             day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
-            next_date = get_next_day_str(request.date)
+            next_date = self._get_next_day_str(request.date)
 
         for crawler_type, crawler in self.crawlers_map.items():
             filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
