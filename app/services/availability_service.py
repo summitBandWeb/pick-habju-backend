@@ -277,13 +277,13 @@ class AvailabilityService:
         tasks = []
         task_dates = []
 
+        start_mins = self._slot_to_minutes(request.start_hour)
         end_min = self._slot_to_minutes(request.end_hour)
-        is_overnight = (self._slot_to_minutes(request.start_hour) > end_min)
+        is_overnight = (start_mins > end_min)
         
         # [최적화] 루프 내부 반복 연산을 줄이기 위해 크롤러 루프 외부에서 1회만 계산
         if is_overnight:
-            start_mins = self._slot_to_minutes(request.start_hour)
-            day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
+            day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins]
             day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
             
             # [버그 수정] 익일(day2) 크롤링 시 00:00~01:00 간격을 조회하려면 00:00 슬롯이 반드시 포함되어야 함
@@ -320,7 +320,7 @@ class AvailabilityService:
         results_of_lists = await asyncio.gather(*tasks)
         
         all_results = []
-        for res_list, t_date in zip(results_of_lists, task_dates):
+        for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
             for item in res_list:
                 if isinstance(item, Exception):
                     item.date_context = t_date  # 익일 요청 실패 시의 날짜 추적을 위해 context 주입
