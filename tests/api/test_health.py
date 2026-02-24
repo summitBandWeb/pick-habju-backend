@@ -5,15 +5,17 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 import httpx
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    return TestClient(app)
 
-def test_ping():
+def test_ping(client):
     response = client.get("/ping")
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
 @patch("httpx.AsyncClient")
-def test_health_check_success(mock_client_class):
+def test_health_check_success(mock_client_class, client):
     mock_client = AsyncMock()
     mock_client_class.return_value.__aenter__.return_value = mock_client
     
@@ -30,7 +32,7 @@ def test_health_check_success(mock_client_class):
 
 
 @patch("httpx.AsyncClient")
-def test_health_check_failure(mock_client_class):
+def test_health_check_failure(mock_client_class, client):
     mock_client = AsyncMock()
     mock_client_class.return_value.__aenter__.return_value = mock_client
     
@@ -44,7 +46,7 @@ def test_health_check_failure(mock_client_class):
     assert data["dependencies"]["database"] == "down"
 
 @patch("httpx.AsyncClient")
-def test_health_check_timeout(mock_client_class):
+def test_health_check_timeout(mock_client_class, client):
     mock_client = AsyncMock()
     mock_client_class.return_value.__aenter__.return_value = mock_client
     
