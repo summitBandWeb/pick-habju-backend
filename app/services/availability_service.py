@@ -79,25 +79,28 @@ class AvailabilityService:
     # ?쒖옉?쒓컙怨?醫낅즺?쒓컙?쇰줈 ?쒓컙 ?щ’ 由ъ뒪???앹꽦
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
         """
-        start_hour? end_hour ?ъ씠??1?쒓컙 ?⑥쐞 ?щ’ 由ъ뒪?몃? ?앹꽦?⑸땲??
-        ?? 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        start_hour와 end_hour 사이의 1시간 단위 슬롯 리스트를 생성합니다.
+        자정을 넘기는 경우(예: 23:00 ~ 02:00) 24:00을 기준으로 두 날의 슬롯을 합쳐 생성합니다.
         """
         start_min = self._slot_to_minutes(start_str)
         end_min = self._slot_to_minutes(end_str)
 
+        # 예외 검증(시작=종료, 최대 5시간, 잘못된 심야 시간)은 이미 DTO 계층에서 처리 완료됨
+        # 여기서는 오직 슬롯 배열 생성 로직에만 집중
         if start_min > end_min:
-            raise ValueError("시작 시간이 종료 시간보다 늦을 수 없습니다.")
+            end_min += 1440
+
         if (end_min - start_min) % 60 != 0:
-            raise ValueError("?쒖옉/醫낅즺 ?쒓컙? 1?쒓컙 ?⑥쐞?ъ빞 ?⑸땲??")
+            raise ValueError("시작/종료 시간은 1시간 단위여야 합니다.")
 
         slots = []
         current_min = start_min
         while current_min <= end_min:
-            slots.append(self._minutes_to_slot(current_min))
+            slot_min_adjusted = current_min % 1440
+            slots.append(self._minutes_to_slot(slot_min_adjusted if slot_min_adjusted != 0 or current_min == 0 else 1440))
             current_min += 60
             
         return slots
-
     def _slot_to_minutes(self, slot: str) -> int:
         """HH:MM 형식의 문자열을 분(Minutes) 단위 정수로 변환합니다. (24:00 허용)
         
@@ -240,10 +243,32 @@ class AvailabilityService:
 
         # 3. ?щ·???묒뾽 以鍮?諛??ㅽ뻾
         tasks = []
+        
+        # 날짜 문자열 익일 계산 유틸리티
+        def get_next_day_str(date_str: str) -> str:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            next_dt = dt + timedelta(days=1)
+            return next_dt.strftime("%Y-%m-%d")
+
+        end_min = 1440 if request.end_hour == "24:00" else self._slot_to_minutes(request.end_hour)
+        is_overnight = (self._slot_to_minutes(request.start_hour) > end_min)
+
         for crawler_type, crawler in self.crawlers_map.items():
             filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
             if filtered_rooms:
-                tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
+                if is_overnight:
+                    # 크로스 미드나잇인 경우 당일과 익일로 요청을 분리
+                    start_mins = self._slot_to_minutes(request.start_hour)
+                    day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
+                    day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
+                    
+                    if day1_slots:
+                        tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
+                    if day2_slots:
+                        next_date = get_next_day_str(request.date)
+                        tasks.append(crawler.check_availability(next_date, day2_slots, filtered_rooms))
+                else:
+                    tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
 
         if not tasks:
             return AvailabilityResponse(
