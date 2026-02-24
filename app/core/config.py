@@ -1,7 +1,10 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 APP_ENV = os.getenv("APP_ENV", "production")
 IS_DEBUG = APP_ENV == "development"
@@ -34,6 +37,22 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
+
+missing_crawler_vars = []
+if not GROOVE_BASE_URL:
+    missing_crawler_vars.append("GROOVE_BASE_URL")
+if not DREAM_BASE_URL:
+    missing_crawler_vars.append("DREAM_BASE_URL")
+if not LOGIN_ID:
+    missing_crawler_vars.append("LOGIN_ID")
+if not LOGIN_PW:
+    missing_crawler_vars.append("LOGIN_PW")
+
+if missing_crawler_vars:
+    logger.warning(
+        f"필수 크롤러 환경변수가 누락되었습니다: {', '.join(missing_crawler_vars)}. "
+        f"환경변수 누락 시 크롤링 기능이 비정상적으로 빈 결과를 반환할 수 있습니다."
+    )
 
 
 # CORS 허용 오리진 (환경변수 기반)
