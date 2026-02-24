@@ -1,8 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
+import httpx
 
 client = TestClient(app)
 
@@ -11,14 +12,14 @@ def test_ping():
     assert response.status_code == 200
     assert response.json() == {"ok": True}
 
-@patch("app.main.get_supabase_client")
-def test_health_check_success(mock_get_client):
-    mock_supabase = MagicMock()
-    mock_get_client.return_value = mock_supabase
+@patch("httpx.AsyncClient")
+def test_health_check_success(mock_client_class):
+    mock_client = AsyncMock()
+    mock_client_class.return_value.__aenter__.return_value = mock_client
     
-    # Mocking the synchronous execute call
-    mock_execute = MagicMock(return_value={"data": [{"id": 1}]})
-    mock_supabase.table.return_value.select.return_value.limit.return_value.execute = mock_execute
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_client.get.return_value = mock_response
 
     response = client.get("/health")
     
@@ -28,13 +29,12 @@ def test_health_check_success(mock_get_client):
     assert data["dependencies"]["database"] == "ok"
 
 
-@patch("app.main.get_supabase_client")
-def test_health_check_failure(mock_get_client):
-    mock_supabase = MagicMock()
-    mock_get_client.return_value = mock_supabase
+@patch("httpx.AsyncClient")
+def test_health_check_failure(mock_client_class):
+    mock_client = AsyncMock()
+    mock_client_class.return_value.__aenter__.return_value = mock_client
     
-    # Mocking the execute call to raise an exception
-    mock_supabase.table.return_value.select.return_value.limit.return_value.execute.side_effect = Exception("DB Connection Error")
+    mock_client.get.side_effect = Exception("HTTP Connection Error")
 
     response = client.get("/health")
     
@@ -43,13 +43,12 @@ def test_health_check_failure(mock_get_client):
     assert data["status"] == "degraded"
     assert data["dependencies"]["database"] == "down"
 
-@patch("app.main.get_supabase_client")
-def test_health_check_timeout(mock_get_client):
-    mock_supabase = MagicMock()
-    mock_get_client.return_value = mock_supabase
+@patch("httpx.AsyncClient")
+def test_health_check_timeout(mock_client_class):
+    mock_client = AsyncMock()
+    mock_client_class.return_value.__aenter__.return_value = mock_client
     
-    # Mocking the execute call to simulate a timeout error from asyncio.wait_for
-    mock_supabase.table.return_value.select.return_value.limit.return_value.execute.side_effect = asyncio.TimeoutError()
+    mock_client.get.side_effect = asyncio.TimeoutError()
 
     response = client.get("/health")
     

@@ -1,6 +1,9 @@
 import os
 import asyncio
+import logging
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -28,7 +31,8 @@ from app.exception.envelope_handlers import (
 from app.utils.client_loader import close_global_client, set_global_client
 from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
-
+import httpx
+from app.core.config import SUPABASE_URL, HEALTH_CHECK_TIMEOUT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -96,14 +100,14 @@ async def health_check():
     장애 시 503 상태 코드를 반환하여 로드밸런서가 비정상 상태를 식별할 수 있도록 합니다.
     """
     health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
-    try:
-        supabase = get_supabase_client()
-        # 2초 타임아웃 제한 (동기 I/O를 worker thread로 위임하여 이벤트 루프 블로킹 방지)
-        await asyncio.wait_for(
-            asyncio.to_thread(supabase.table("room").select("id").limit(1).execute),
-            timeout=2.0
-        )
+    try:        
+        # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 루트 호출을 통해 범용적 상태 점검
+        async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
+            # Supabase PostgREST root url returns API info when healthy
+            response = await client.get(f"{SUPABASE_URL}/rest/v1/")
+            response.raise_for_status()
     except Exception as e:
+        logger.error("Health check failed: %s", e, exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         return JSONResponse(status_code=503, content=health_status)
