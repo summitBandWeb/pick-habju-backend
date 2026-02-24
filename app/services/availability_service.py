@@ -266,20 +266,21 @@ class AvailabilityService:
 
         end_min = 1440 if request.end_hour == "24:00" else self._slot_to_minutes(request.end_hour)
         is_overnight = (self._slot_to_minutes(request.start_hour) > end_min)
+        
+        # [최적화] 루프 내부 반복 연산을 줄이기 위해 크롤러 루프 외부에서 1회만 계산
+        if is_overnight:
+            start_mins = self._slot_to_minutes(request.start_hour)
+            day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
+            day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
+            next_date = get_next_day_str(request.date)
 
         for crawler_type, crawler in self.crawlers_map.items():
             filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
             if filtered_rooms:
                 if is_overnight:
-                    # 크로스 미드나잇인 경우 당일과 익일로 요청을 분리
-                    start_mins = self._slot_to_minutes(request.start_hour)
-                    day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
-                    day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
-                    
                     if day1_slots:
                         tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     if day2_slots:
-                        next_date = get_next_day_str(request.date)
                         tasks.append(crawler.check_availability(next_date, day2_slots, filtered_rooms))
                 else:
                     tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
