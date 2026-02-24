@@ -1,8 +1,13 @@
 import os
+import asyncio
+import logging
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -24,8 +29,11 @@ from app.exception.envelope_handlers import (
     validation_exception_handler,
 )
 from app.utils.client_loader import close_global_client, set_global_client
+from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
-
+import httpx
+from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT
+from app.models.dto import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -83,6 +91,33 @@ app.add_middleware(TraceIDMiddleware)
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
+    """
+    인프라 기반 헬스체크 엔드포인트
+    DB 등 핵심 의존성의 상태를 점검합니다. 
+    장애 시 503 상태 코드를 반환하여 로드밸런서가 비정상 상태를 식별할 수 있도록 합니다.
+    """
+    health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
+    try:        
+        # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 루트 호출을 통해 범용적 상태 점검
+        async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
+            # Supabase PostgREST root url returns API info when healthy
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/",
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}"
+                }
+            )
+            response.raise_for_status()
+    except Exception:  # noqa: BLE001
+        logger.error("Health check failed", exc_info=True)
+        health_status["status"] = "degraded"
+        health_status["dependencies"]["database"] = "down"
+        return JSONResponse(status_code=503, content=health_status)
+    return HealthResponse(**health_status)
 
 
 # API 라우터 포함

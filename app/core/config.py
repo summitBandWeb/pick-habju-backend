@@ -73,6 +73,7 @@ CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
 
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
+HEALTH_CHECK_TIMEOUT = float(os.getenv("HEALTH_CHECK_TIMEOUT", "2.0"))
 
 
 # CORS 허용 오리진 (환경변수 기반)
