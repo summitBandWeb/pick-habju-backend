@@ -208,13 +208,11 @@ class AvailabilityRequest(BaseModel):
             
             if is_intended_overnight:
                 end_minutes += 1440
-                if (end_minutes - start_minutes) > 300:
-                    raise ValueError("자정을 넘기는 심야 예약은 최대 5시간까지만 가능합니다.")
             else:
                 raise ValueError("종료 시간이 시작 시간보다 빠를 수 없습니다.")
-        else:
-            if (end_minutes - start_minutes) > 300:
-                raise ValueError("최대 5시간까지만 예약할 수 있습니다.")
+                
+        if (end_minutes - start_minutes) > 300:
+            raise ValueError("최대 5시간까지만 예약할 수 있습니다.")
 
         input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
         if input_date == date.today():
