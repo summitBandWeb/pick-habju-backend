@@ -22,7 +22,7 @@ def _room_detail(**overrides) -> RoomDetail:
 
 def test_generate_time_slots_supports_24h():
     service = AvailabilityService(crawlers_map={})
-    assert service.generate_time_slots("22:00", "24:00") == ["22:00", "23:00", "24:00"]
+    assert service.generate_time_slots("22:00", "24:00") == ["22:00", "23:00", "00:00"]
 
 
 def test_calculate_total_price_with_fallback_default_price():
@@ -42,7 +42,7 @@ def test_calculate_total_price_with_override_and_surcharge():
                 {
                     "day_type": "weekend",
                     "start_hour": "18:00",
-                    "end_hour": "24:00",
+                    "end_hour": "00:00",
                     "price": 15000,
                 }
             ],
@@ -64,7 +64,7 @@ def test_calculate_total_price_skips_invalid_override_hours():
                 {
                     "day_type": "weekday",
                     "start_hour": "18:30",
-                    "end_hour": "24:00",
+                    "end_hour": "00:00",
                     "price": 15000,
                 }
             ],
