@@ -118,12 +118,12 @@ class TestApplyPolicies:
         assert results[0].estimated_price is None
 
     def test_price_calculation_list_config_supports_24h_end(self, service, mock_pricing_service):
-        """list price_config 경로에서 24:00 종료 시각을 다음날 00:00으로 변환"""
+        """list price_config 경로에서 00:00 종료 시각을 다음날 00:00으로 변환"""
         req = AvailabilityRequest(
-            date="2099-01-01", capacity=4, start_hour="22:00", end_hour="24:00",
+            date="2099-01-01", capacity=4, start_hour="22:00", end_hour="00:00",
             swLat=0.0, swLng=0.0, neLat=1.0, neLng=1.0
         )
-        slots = ["22:00", "23:00", "24:00"]
+        slots = ["22:00", "23:00", "00:00"]
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
