@@ -110,14 +110,7 @@ class AvailabilityService:
         slots = []
         current_min = start_min
         while current_min <= end_min:
-            slot_min_adjusted = current_min % 1440
-
-            if slot_min_adjusted == 0 and current_min != 0:
-                slot_to_add = 1440
-            else:
-                slot_to_add = slot_min_adjusted
-                
-            slots.append(self._minutes_to_slot(slot_to_add))
+            slots.append(self._minutes_to_slot(current_min))
             current_min += 60
             
         return slots
@@ -156,10 +149,8 @@ class AvailabilityService:
         return next_dt.strftime("%Y-%m-%d")
 
     def _minutes_to_slot(self, minute_value: int) -> str:
-        """遺??⑥쐞 媛믪쓣 HH:MM 臾몄옄?대줈 蹂??"""
-        if minute_value == 1440:
-            return "24:00"
-        return f"{minute_value // 60:02d}:00"
+        """분 단위 값을 HH:MM 문자열로 변환 (1440분 등 자정은 00:00으로 정규화)"""
+        return f"{(minute_value % 1440) // 60:02d}:00"
 
     def _get_day_type(self, date_str: str) -> str:
         """?붿껌 ?좎쭨 湲곗? ?붿씪 ???weekday/weekend) 諛섑솚."""
@@ -281,16 +272,19 @@ class AvailabilityService:
         end_min = self._slot_to_minutes(request.end_hour)
         is_overnight = (start_mins > end_min)
         
+        # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
+        # 예: 23:00 ~ 01:00 요청 시 hour_slots는 ["23:00", "00:00", "01:00"] 이며,
+        # 체크해야 할 시작 타임은 ["23:00", "00:00"] 입니다.
+        slots_to_check = hour_slots[:-1]
+
         # [최적화] 루프 내부 반복 연산을 줄이기 위해 크롤러 루프 외부에서 1회만 계산
         if is_overnight:
-            day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins]
-            day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
-            
-            # [버그 수정] 익일(day2) 크롤링 시 00:00~01:00 간격을 조회하려면 00:00 슬롯이 반드시 포함되어야 함
-            if "24:00" in day1_slots and day2_slots and "00:00" not in day2_slots:
-                day2_slots.insert(0, "00:00")
-                
+            day1_slots = [slot for slot in slots_to_check if self._slot_to_minutes(slot) >= start_mins]
+            day2_slots = [slot for slot in slots_to_check if slot not in day1_slots]
             next_date = self._get_next_day_str(request.date)
+        else:
+            day1_slots = slots_to_check
+            day2_slots = []
 
         for crawler_type, crawler in self.crawlers_map.items():
             filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
@@ -303,7 +297,7 @@ class AvailabilityService:
                         tasks.append(crawler.check_availability(next_date, day2_slots, filtered_rooms))
                         task_dates.append(next_date)
                 else:
-                    tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
+                    tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     task_dates.append(request.date)
 
         if not tasks:
