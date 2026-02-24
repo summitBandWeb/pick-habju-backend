@@ -160,8 +160,13 @@ class AvailabilityService:
             end_min = self._slot_to_minutes(end_hour)
         except ValueError:
             return False
-        if start_min >= end_min:
+        if start_min == end_min:
             return False
+        
+        if start_min > end_min:
+            # 심야(Overnight) 요금 할증 등 시작 시간이 종료 시간보다 큰 경우 지원
+            return slot_min >= start_min or slot_min < end_min
+            
         return start_min <= slot_min < end_min
 
     def _resolve_slot_price(self, room_detail, date_str: str, slot: str) -> int:
