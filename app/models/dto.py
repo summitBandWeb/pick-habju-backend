@@ -217,7 +217,7 @@ class AvailabilityRequest(BaseModel):
 
         # 자정을 넘기는 케이스 처리 (예: 23:00 -> 02:00)
         if start_minutes > end_minutes:
-            # 시작 시간이 19:00 이후이고 종료 시간이 05:00 이전일 때만 밤샘(Overnight) 의도로 간주
+            # 시작 시간이 19:00 이후이고 종료 시간이 05:00 이하일 때만 밤샘(Overnight) 의도로 간주 (05:00 포함)
             is_intended_overnight = (start_minutes >= 1140) and (end_minutes <= 300)
             
             if is_intended_overnight:
