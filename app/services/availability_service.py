@@ -111,7 +111,14 @@ class AvailabilityService:
         current_min = start_min
         while current_min <= end_min:
             slot_min_adjusted = current_min % 1440
-            slots.append(self._minutes_to_slot(slot_min_adjusted if slot_min_adjusted != 0 or current_min == 0 else 1440))
+            
+            # 24:00 (1440분) 처리 로직 가독성 개선
+            if slot_min_adjusted == 0 and current_min != 0:
+                slot_to_add = 1440
+            else:
+                slot_to_add = slot_min_adjusted
+                
+            slots.append(self._minutes_to_slot(slot_to_add))
             current_min += 60
             
         return slots
