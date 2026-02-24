@@ -112,8 +112,8 @@ async def health_check() -> HealthResponse:
                 }
             )
             response.raise_for_status()
-    except Exception as e:
-        logger.error("Health check failed: %s", e, exc_info=True)
+    except Exception:  # noqa: BLE001
+        logger.error("Health check failed", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         return JSONResponse(status_code=503, content=health_status)
