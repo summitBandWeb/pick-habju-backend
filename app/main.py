@@ -32,7 +32,7 @@ from app.utils.client_loader import close_global_client, set_global_client
 from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
 import httpx
-from app.core.config import SUPABASE_URL, HEALTH_CHECK_TIMEOUT
+from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -104,7 +104,13 @@ async def health_check():
         # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 루트 호출을 통해 범용적 상태 점검
         async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
             # Supabase PostgREST root url returns API info when healthy
-            response = await client.get(f"{SUPABASE_URL}/rest/v1/")
+            response = await client.get(
+                f"{SUPABASE_URL}/rest/v1/",
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}"
+                }
+            )
             response.raise_for_status()
     except Exception as e:
         logger.error("Health check failed: %s", e, exc_info=True)
