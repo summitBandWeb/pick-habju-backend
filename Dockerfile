@@ -56,9 +56,9 @@ ENV PORT=8080
 # Python 출력 버퍼링 비활성화 (실시간 로그, 크래시 시 로그 유실 방지)
 ENV PYTHONUNBUFFERED=1
 
-# Health check (선택적)
+# Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/ping')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
 
 # Cloud Run 요구사항: 0.0.0.0 바인딩, $PORT 동적 감지
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
