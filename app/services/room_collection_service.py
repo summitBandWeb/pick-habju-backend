@@ -21,7 +21,7 @@ class RoomCollectionService:
     MAX_CONCURRENT_BATCHES = 3  # Number of parallel LLM calls
     
     # Capacity value indicating LLM parsing failure - flags for manual review
-    # Rationale: 100紐낆쓣 ?섏슜?섎뒗 ?⑹＜?ㅼ? ?꾩떎?곸쑝濡??놁쑝誘濡??섎룞 寃???꾩슂 ??ぉ?쇰줈 ?앸퀎 媛??
+    # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
 
     def __init__(self):
@@ -42,7 +42,7 @@ class RoomCollectionService:
         """
         logger.info(f"Starting collection for query: {query}")
         
-        # 1. 吏??寃?됱쑝濡?ID ?뺣낫
+        # 1. 지도 검색으로 ID 확보
         search_results = await self.map_crawler.search_rehearsal_rooms(query)
         logger.info(f"Found {len(search_results)} businesses for {query}")
         
@@ -157,7 +157,7 @@ class RoomCollectionService:
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
-            "display_name": business.get("businessDisplayName"),  # v2.0.0: ?몄텧???대쫫
+            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
         }
@@ -205,8 +205,8 @@ class RoomCollectionService:
                 existing_max = existing.get("max_capacity", 0)
                 existing_rec = existing.get("recommend_capacity", 0)
 
-                # [Logic] 湲곗〈 媛믪씠 ?좏슚?섍퀬(>1), ??媛믪씠 湲곕낯媛?1)?닿굅???섎룞寃?좏뵆?섍렇(100)??寃쎌슦 湲곗〈 媛?蹂댁〈
-                # ?? 湲곗〈 媛??먯껜媛 100??寃쎌슦???쒖쇅
+                # [Logic] 기존 값이 유효하고(>1), 새 값이 기본값(1)이거나 수동검토플래그(100)인 경우 기존 값 보존
+                # 단, 기존 값 자체가 100인 경우는 제외
                 if (new_max_cap <= 1 or new_max_cap == self.MANUAL_REVIEW_FLAG) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
                     final_max_cap = existing_max
                 
@@ -283,26 +283,26 @@ class RoomCollectionService:
         base_cap: Optional[int],
         extra_charge: Optional[int]
     ) -> List[int]:
-        """異붽? ?붽툑 ?좊Т???곕씪 沅뚯옣 ?몄썝 踰붿쐞 怨꾩궛
+        """추가 요금 유무에 따라 권장 인원 범위 계산
 
         Args:
-            parsed_range: LLM/?뺢퇋?앹씠 ?뚯떛??踰붿쐞 ([min, max] ?뺥깭)
-            rec_cap: 沅뚯옣 ?몄썝 ??
-            max_cap: 理쒕? ?몄썝 ??
-            base_cap: 湲곗? ?몄썝 ??(異붽? ?붽툑 怨꾩궛 湲곗?)
-            extra_charge: 異붽? ?붽툑 (??
+            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
+            rec_cap: 권장 인원 수
+            max_cap: 최대 인원 수
+            base_cap: 기준 인원 수 (추가 요금 계산 기준)
+            extra_charge: 추가 요금 (원)
 
         Returns:
-            [min, max] ?뺥깭??沅뚯옣 ?몄썝 踰붿쐞 由ъ뒪??
+            [min, max] 형태의 권장 인원 범위 리스트
 
         Rationale:
-            1. ?뚯떛??踰붿쐞媛 ?좏슚?섎㈃ ?곗꽑 ?ъ슜 (?? ?⑸━??踰붿쐞濡?clamp)
-            2. 異붽? ?붽툑 諛쒖깮 ?? [base_cap, max_cap]
-            3. 異붽? ?붽툑 ?놁쓣 ?? [rec_cap, rec_cap + 2] (理쒕? max_cap)
+            1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
+            2. 추가 요금 발생 시 [base_cap, max_cap]
+            3. 추가 요금 없을 시 [rec_cap, rec_cap + 2] (최대 max_cap)
         """
-        # 1. ?뚯떛??踰붿쐞 寃利????곗꽑 ?ъ슜
-        # 議곌굔: 2媛??レ옄(int ?먮뒗 float), min <= max, ?⑹＜???꾩떎??踰붿쐞(1~50紐? ??
-        # NOTE: LLM ?뚯꽌媛 float(?? 4.0)??諛섑솚?????덉쑝誘濡?int/float 紐⑤몢 ?덉슜
+        # 1. 파싱된 범위 검증 후 우선 사용
+        # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
+        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
@@ -310,16 +310,16 @@ class RoomCollectionService:
             and parsed_range[0] <= parsed_range[1]
             and 1 <= parsed_range[0] and parsed_range[1] <= 50
         ):
-            # float ??int 蹂?????⑸━??踰붿쐞濡?clamp
+            # float → int 변환 및 합리적 범위로 clamp
             clamped_min = max(int(parsed_range[0]), 1)
             clamped_max = min(int(parsed_range[1]), max_cap) if max_cap > 0 else int(parsed_range[1])
-            # clamp ?꾩뿉??min <= max 蹂댁옣
+            # clamp 후에도 min <= max 보장
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
 
-        # --- Sentinel 諛⑹뼱 ---
-        # NOTE: MANUAL_REVIEW_FLAG(100)??rec_cap/max_cap/base_cap???ㅼ뼱?ㅻ㈃
-        #        [100, 102] 媛숈? 鍮꾪쁽?ㅼ쟻 踰붿쐞媛 諛섑솚?섎?濡? ?꾩떎???곹븳(50)?쇰줈 clamp
+        # --- Sentinel 방어 ---
+        # NOTE: MANUAL_REVIEW_FLAG(100)이 rec_cap/max_cap/base_cap에 들어오면
+        #        [100, 102] 같은 비현실적 범위가 반환되므로 현실적 상한(50)으로 clamp
         MAX_REALISTIC_CAP = 50
         if max_cap >= self.MANUAL_REVIEW_FLAG:
             max_cap = MAX_REALISTIC_CAP
@@ -328,21 +328,21 @@ class RoomCollectionService:
         if base_cap and base_cap >= self.MANUAL_REVIEW_FLAG:
             base_cap = MAX_REALISTIC_CAP
 
-        # 2. 異붽? ?붽툑 ?덈뒗 寃쎌슦
+        # 2. 추가 요금 있는 경우
         if extra_charge and extra_charge > 0 and base_cap:
             # min: base_cap, max: max_cap
-            # ?? max_cap < base_cap??鍮꾩젙???곗씠??諛⑹뼱
+            # 단 max_cap < base_cap인 비정상 데이터 방어
             real_max = max(max_cap, base_cap)
             return [base_cap, real_max]
             
-        # 3. 異붽? ?붽툑 ?녿뒗 寃쎌슦 (湲곕낯)
+        # 3. 추가 요금 없는 경우 (기본)
         # min: rec_cap, max: rec_cap + 2
-        # ?? max_cap???섏? ?딅룄濡??쒗븳
+        # 단 max_cap을 넘지 않도록 제한
         min_c = rec_cap
         max_c = min(rec_cap + 2, max_cap)
         
-        # 留뚯빟 rec_cap + 2 > max_cap ?대씪??max_c媛 min_c蹂대떎 ?묒븘吏??寃쎌슦 諛⑹뼱
-        # (?? rec=5, max=5 -> min=5, max=5)
+        # 만약 rec_cap + 2 > max_cap 이라면 max_c가 min_c보다 작아지는 경우 방어
+        # (예: rec=5, max=5 -> min=5, max=5)
         max_c = max(max_c, min_c)
         
         return [min_c, max_c]
@@ -386,48 +386,48 @@ class RoomCollectionService:
 
         # If there are unresolved items, export them
         if unresolved_items:
-            # ?섍꼍蹂?섎줈 寃쎈줈 ?ㅼ젙 媛?? 湲곕낯媛믪? ?꾨줈?앺듃 猷⑦듃/scripts/unresolved
-            default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
-            export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
-            export_dir.mkdir(parents=True, exist_ok=True)
+                # 로컬 환경에서 호출 시 경로 설정 가능. 기본값은 프로젝트 루트/scripts/unresolved
+                default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
+                export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
+                export_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename with current date
-            date_str = datetime.now().strftime("%Y%m%d")
-            export_file = export_dir / f"unresolved_{date_str}.json"
+                # Generate filename with current date
+                date_str = datetime.now().strftime("%Y%m%d")
+                export_file = export_dir / f"unresolved_{date_str}.json"
 
-            # Load existing data if file exists, otherwise start with empty list
-            existing_data = []
-            if export_file.exists():
-                try:
-                    with open(export_file, "r", encoding="utf-8") as f:
-                        existing_data = json.load(f)
-                except Exception as e:
-                    logger.warning(f"Failed to read existing unresolved file: {e}")
+                # Load existing data if file exists, otherwise start with empty list
+                existing_data = []
+                if export_file.exists():
+                    try:
+                        with open(export_file, "r", encoding="utf-8") as f:
+                            existing_data = json.load(f)
+                    except Exception as e:
+                        logger.warning(f"Failed to read existing unresolved file: {e}")
 
-            # Append new unresolved items with duplicate check
-            existing_ids = {item["biz_item_id"] for item in existing_data}
-            new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
+                # Append new unresolved items with duplicate check
+                existing_ids = {item["biz_item_id"] for item in existing_data}
+                new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
 
-            if new_items:
-                existing_data.extend(new_items)
+                if new_items:
+                    existing_data.extend(new_items)
 
-                # Atomic write: temp file ??rename?쇰줈 以묎컙 ?곹깭 諛⑹?
-                tmp_fd, tmp_path = tempfile.mkstemp(
-                    dir=str(export_dir), suffix=".tmp"
-                )
-                try:
-                    with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                        json.dump(existing_data, f, ensure_ascii=False, indent=2)
-                    # os.replace???먯옄??(媛숈? ?뚯씪?쒖뒪????
-                    os.replace(tmp_path, str(export_file))
-                except Exception:
-                    # ?ㅽ뙣 ???꾩떆 ?뚯씪 ?뺣━
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
-                    raise
+                    # Atomic write: temp file 후 rename으로 중간 상태 방지
+                    tmp_fd, tmp_path = tempfile.mkstemp(
+                        dir=str(export_dir), suffix=".tmp"
+                    )
+                    try:
+                        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                            json.dump(existing_data, f, ensure_ascii=False, indent=2)
+                        # os.replace는 원자적(같은 파일시스템 상)
+                        os.replace(tmp_path, str(export_file))
+                    except Exception:
+                        # 실패 시 임시 파일 정리
+                        if os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
+                        raise
 
-                logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
-            else:
-                logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
+                    logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
+                else:
+                    logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
 
 
