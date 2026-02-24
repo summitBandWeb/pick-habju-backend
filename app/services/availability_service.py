@@ -217,13 +217,29 @@ class AvailabilityService:
         return max(slot_price, 0)
 
     def calculate_total_price(self, room_detail, date_str: str, hour_slots: List[str]) -> int:
-        """?붿껌 ?щ’ ?꾩껜??珥?媛寃?怨꾩궛."""
+        """요청 슬롯 전체의 총 가격 계산. (심야 예약 시 익일 날짜 반영 로직 포함)"""
         if len(hour_slots) < 2:
             return 0
-        # `hour_slots` is end-inclusive boundaries (e.g. ["14:00","15:00"] => 1 hour),
-        # so only slots except the last boundary are billable.
+            
+        # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
         billable_slots = hour_slots[:-1]
-        return sum(self._resolve_slot_price(room_detail, date_str, slot) for slot in billable_slots)
+        
+        total_price = 0
+        current_date = date_str
+        last_minutes = -1
+        
+        for slot in billable_slots:
+            current_minutes = self._slot_to_minutes(slot)
+            
+            # 자정을 넘겼는지 체크 (이전 슬롯보다 분 단위가 작으면 날짜 변경)
+            # NOTE: 슬롯이 1시간 단위로 연속적임이 검증되었다고 가정함.
+            if last_minutes != -1 and current_minutes < last_minutes:
+                current_date = self._get_next_day_str(current_date)
+            
+            total_price += self._resolve_slot_price(room_detail, current_date, slot)
+            last_minutes = current_minutes
+            
+        return total_price
         
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
@@ -521,14 +537,13 @@ class AvailabilityService:
                             f"{request.date} {hour_slots[0]}", "%Y-%m-%d %H:%M"
                         )
                         end_slot = hour_slots[-1]
-                        if end_slot == "24:00":
-                            end_dt = datetime.strptime(
-                                f"{request.date} 00:00", "%Y-%m-%d %H:%M"
-                            ) + timedelta(days=1)
-                        else:
-                            end_dt = datetime.strptime(
-                                f"{request.date} {end_slot}", "%Y-%m-%d %H:%M"
-                            )
+                        end_dt = datetime.strptime(
+                            f"{request.date} {end_slot}", "%Y-%m-%d %H:%M"
+                        )
+                        
+                        # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
+                        if end_dt <= start_dt:
+                            end_dt += timedelta(days=1)
                         price = self.pricing_service.calculate_total_price(
                             base_price=room.pricePerHour,
                             price_config=normalized_rules,
