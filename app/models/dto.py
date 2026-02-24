@@ -4,6 +4,11 @@ from datetime import datetime, date
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Union, Any, Optional, ClassVar
 
+class HealthResponse(BaseModel):
+    """Health Check Response Model"""
+    status: str = Field(description="Health status of the system (healthy, degraded)")
+    dependencies: Dict[str, str] = Field(description="Health status of individual dependencies (e.g., database)")
+
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""

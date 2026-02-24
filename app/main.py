@@ -33,6 +33,7 @@ from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
 import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT
+from app.models.dto import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -91,9 +92,8 @@ app.add_middleware(TraceIDMiddleware)
 def ping():
     return {"ok": True}
 
-
-@app.get("/health")
-async def health_check():
+@app.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
     """
     인프라 기반 헬스체크 엔드포인트
     DB 등 핵심 의존성의 상태를 점검합니다. 
@@ -117,7 +117,7 @@ async def health_check():
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         return JSONResponse(status_code=503, content=health_status)
-    return health_status
+    return HealthResponse(**health_status)
 
 
 # API 라우터 포함
