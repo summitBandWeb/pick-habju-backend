@@ -106,8 +106,8 @@ class RealIPMiddleware(BaseHTTPMiddleware):
         # request.state에 저장하여 다른 곳에서 사용 가능
         request.state.real_ip = real_ip
 
-        # 로깅 (헬스체크 제외)
-        if request.url.path != "/ping":
+        # 로깅
+        if request.url.path not in ("/ping", "/health"):
             logger.info(
                 f"[{real_ip}] {request.method} {request.url.path}",
                 extra={
