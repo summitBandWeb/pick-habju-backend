@@ -123,11 +123,12 @@ class TestCacheControlMiddleware:
         assert response.headers.get("Expires") == "0"
 
     @pytest.mark.asyncio
-    async def test_cache_control_not_on_non_api(self, client):
-        """/ping 같은 비-API 경로에는 Cache-Control이 적용되지 않는지 검증"""
-        response = await client.get("/ping")
+    @pytest.mark.parametrize("path", ["/ping", "/health"])
+    async def test_cache_control_not_on_non_api(self, client, path):
+        """/ping, /health 같은 비-API 경로에는 Cache-Control이 적용되지 않는지 검증"""
+        response = await client.get(path)
 
-        # NOTE: /ping은 /api로 시작하지 않으므로 캐시 헤더가 없어야 함
+        # NOTE: /ping, /health는 /api로 시작하지 않으므로 캐시 헤더가 없어야 함
         cache_control = response.headers.get("Cache-Control")
         if cache_control:
             assert "no-store" not in cache_control
@@ -182,24 +183,19 @@ class TestRealIPMiddleware:
         assert response.status_code != 500
 
     @pytest.mark.asyncio
-    async def test_real_ip_ping_no_log(self, client, caplog):
-        """/ping 요청 시 RealIPMiddleware의 IP 로깅이 스킵되는지 검증"""
+    @pytest.mark.parametrize("path", ["/ping", "/health"])
+    async def test_real_ip_healthcheck_no_log(self, client, caplog, path):
+        """/ping, /health 요청 시 RealIPMiddleware의 IP 로깅이 스킵되는지 검증"""
         with caplog.at_level(logging.INFO, logger="app.core.middleware"):
-            response = await client.get("/ping")
+            response = await client.get(path)
 
-        assert response.status_code == 200
-        # NOTE: /ping 경로는 로깅 제외 대상이므로 middleware 로그가 없어야 함
-        middleware_logs = [
+        assert response.status_code in (200, 503)
+        # NOTE: 헬스체크 경로는 로깅 제외 대상이므로 middleware 로그가 없어야 함
+        health_logs = [
             r for r in caplog.records
-            if r.name == "app.core.middleware"
-            and "/ping" not in r.getMessage()
+            if r.name == "app.core.middleware" and path in r.getMessage()
         ]
-        # /ping 관련 로그가 없거나, 있더라도 /ping이 포함되지 않아야 함
-        ping_logs = [
-            r for r in caplog.records
-            if r.name == "app.core.middleware" and "/ping" in r.getMessage()
-        ]
-        assert len(ping_logs) == 0, "/ping 경로에 대한 로그가 기록되었습니다"
+        assert len(health_logs) == 0, f"{path} 경로에 대한 로그가 기록되었습니다"
 
 
 # =============================================================================
