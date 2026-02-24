@@ -61,7 +61,18 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
     for slot in hour_slots:
         validate_hour_slot_format(slot)
 
-    slots = sorted(_slot_to_minutes(slot) for slot in hour_slots)
+    raw_slots = [_slot_to_minutes(slot) for slot in hour_slots]
+    
+    # 최대 예약 허용 시간은 5시간이므로, 자정을 넘기는 케이스는
+    # 20:00(1200분) ~ 04:00(240분) 사이에만 발생할 수 있음
+    has_late_night = any(s >= 1200 for s in raw_slots)   # 20:00 이후
+    has_early_morning = any(s <= 240 for s in raw_slots) # 04:00 이전
+    
+    # 두 시간대가 공존하면 새벽 시간대(04:00 이하)를 다음 날로 간주하여 1440을 더함
+    if has_late_night and has_early_morning:
+        slots = sorted((s + 1440 if s <= 240 else s) for s in raw_slots)
+    else:
+        slots = sorted(raw_slots)
 
     for i in range(len(slots) - 1):
         if slots[i + 1] - slots[i] != 60:
