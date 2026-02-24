@@ -255,8 +255,9 @@ class AvailabilityService:
         
         validate_availability_request(request.date, hour_slots, target_rooms)
 
-        # 3. ?щ·???묒뾽 以鍮?諛??ㅽ뻾
+        # 3. 크롤러 비동기 작업 준비 및 실행
         tasks = []
+        task_dates = []
         
         # 날짜 문자열 익일 계산 유틸리티
         def get_next_day_str(date_str: str) -> str:
@@ -280,10 +281,13 @@ class AvailabilityService:
                 if is_overnight:
                     if day1_slots:
                         tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
+                        task_dates.append(request.date)
                     if day2_slots:
                         tasks.append(crawler.check_availability(next_date, day2_slots, filtered_rooms))
+                        task_dates.append(next_date)
                 else:
                     tasks.append(crawler.check_availability(request.date, hour_slots, filtered_rooms))
+                    task_dates.append(request.date)
 
         if not tasks:
             return AvailabilityResponse(
@@ -297,7 +301,13 @@ class AvailabilityService:
             )
 
         results_of_lists = await asyncio.gather(*tasks)
-        all_results = [item for sublist in results_of_lists for item in sublist]
+        
+        all_results = []
+        for res_list, t_date in zip(results_of_lists, task_dates):
+            for item in res_list:
+                if isinstance(item, Exception):
+                    item.date_context = t_date  # 익일 요청 실패 시의 날짜 추적을 위해 context 주입
+                all_results.append(item)
 
         self._log_errors(all_results, request.date)
 
@@ -391,10 +401,11 @@ class AvailabilityService:
         """
         errors = [e for e in results if isinstance(e, Exception)]
         for err in errors:
+            actual_date = getattr(err, 'date_context', date_context)
             if isinstance(err, BaseCustomException):
                 # ?덉긽???щ·???먮윭 (Warning ?덈꺼)
                 logger.warning({
-                    "timestamp": date_context,
+                    "timestamp": actual_date,
                     "status": err.status_code,
                     "errorCode": err.error_code,
                     "message": err.message,
@@ -402,7 +413,7 @@ class AvailabilityService:
             else:
                 # ?덉긽移?紐삵븳 ?쇰컲 ?먮윭 (Error ?덈꺼)
                 logger.error({
-                    "timestamp": date_context,
+                    "timestamp": actual_date,
                     "status": 500,
                     "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
                     "message": str(err),
