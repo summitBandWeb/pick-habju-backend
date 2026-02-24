@@ -285,6 +285,11 @@ class AvailabilityService:
             start_mins = self._slot_to_minutes(request.start_hour)
             day1_slots = [slot for slot in hour_slots if self._slot_to_minutes(slot) >= start_mins or slot == "24:00"]
             day2_slots = [slot for slot in hour_slots if slot not in day1_slots]
+            
+            # [버그 수정] 익일(day2) 크롤링 시 00:00~01:00 간격을 조회하려면 00:00 슬롯이 반드시 포함되어야 함
+            if "24:00" in day1_slots and day2_slots and "00:00" not in day2_slots:
+                day2_slots.insert(0, "00:00")
+                
             next_date = self._get_next_day_str(request.date)
 
         for crawler_type, crawler in self.crawlers_map.items():
