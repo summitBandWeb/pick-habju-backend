@@ -492,7 +492,8 @@ class AvailabilityService:
 
         for res in results:
             room = res.room_detail
-            policy_warnings: List[PolicyWarning] = []
+            # 기존 크롤러 등에서 넘어온 경고가 있을 수 있으므로 보존하면서 추가
+            policy_warnings: List[PolicyWarning] = list(res.policy_warnings) if hasattr(res, 'policy_warnings') and res.policy_warnings else []
 
             booking_duration_hours = len(hour_slots) - 1
             if booking_duration_hours == 1 and not room.canReserveOneHour:
