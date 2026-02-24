@@ -325,7 +325,38 @@ class AvailabilityService:
 
         # 4. 寃곌낵 吏묎퀎 諛??뺤콉/媛寃??곸슜
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
-        processed_results = self._apply_policies(successful_results, request, hour_slots)
+                # 심야 예약 분할 조회로 인한 동일 합주실(biz_item_id) 중복 데이터 병합
+        merged_dict = {}
+        for r in successful_results:
+            biz_id = r.room_detail.biz_item_id
+            if biz_id in merged_dict:
+                existing = merged_dict[biz_id]
+                
+                # 1. 예약 가능 여부 병합 (AND 로직, 보수적 평가)
+                if existing.available is True and r.available is True:
+                    existing.available = True
+                elif existing.available is False or r.available is False:
+                    existing.available = False
+                else:
+                    existing.available = "unknown"
+                    
+                # 2. 각 시간대별 슬롯 가능 여부 딕셔너리 병합
+                existing.available_slots.update(r.available_slots)
+                
+                # 3. 크롤러가 반환한 가격 병합
+                if isinstance(existing.estimated_price, int) and isinstance(r.estimated_price, int):
+                    existing.estimated_price += r.estimated_price
+                elif isinstance(r.estimated_price, int):
+                    existing.estimated_price = r.estimated_price
+                    
+                # 4. 정책 경고 로그 병합
+                if hasattr(existing, 'policy_warnings') and hasattr(r, 'policy_warnings'):
+                    existing.policy_warnings.extend(r.policy_warnings)
+            else:
+                merged_dict[biz_id] = r
+                
+        merged_results = list(merged_dict.values())
+        processed_results = self._apply_policies(merged_results, request, hour_slots)
         
         available_results = []
         branch_summary = {}
