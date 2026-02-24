@@ -23,21 +23,35 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
 
-missing_crawler_vars = []
+# NOTE: config.py는 setup_logging() 이전에 임포트되므로,
+# 이 시점에서 logger.warning()을 호출하면 Python 기본 lastResort 핸들러로 출력됨.
+# 따라서 누락 변수 리스트만 저장하고, 경고 출력은 setup_logging() 이후에 호출하도록 지연 처리.
+_MISSING_CRAWLER_VARS: list[str] = []
 if not GROOVE_BASE_URL:
-    missing_crawler_vars.append("GROOVE_BASE_URL")
+    _MISSING_CRAWLER_VARS.append("GROOVE_BASE_URL")
 if not DREAM_BASE_URL:
-    missing_crawler_vars.append("DREAM_BASE_URL")
+    _MISSING_CRAWLER_VARS.append("DREAM_BASE_URL")
 if not LOGIN_ID:
-    missing_crawler_vars.append("LOGIN_ID")
+    _MISSING_CRAWLER_VARS.append("LOGIN_ID")
 if not LOGIN_PW:
-    missing_crawler_vars.append("LOGIN_PW")
+    _MISSING_CRAWLER_VARS.append("LOGIN_PW")
 
-if missing_crawler_vars:
-    logger.warning(
-        f"필수 크롤러 환경변수가 누락되었습니다: {', '.join(missing_crawler_vars)}. "
-        f"환경변수 누락 시 크롤링 기능이 비정상적으로 빈 결과를 반환할 수 있습니다."
-    )
+
+def emit_startup_warnings() -> None:
+    """setup_logging() 이후에 호출하여 정규 로그 포맷으로 환경변수 누락 경고를 출력합니다.
+
+    Rationale:
+        config.py는 모듈 임포트 시 즉시 실행되므로, 로깅 설정(핸들러, 포맷터)이
+        완료되기 전에 logger.warning()을 호출하면 Python 기본 포맷으로 출력됩니다.
+        이를 방지하기 위해 누락 정보를 저장해두었다가 setup_logging() 직후에
+        본 함수를 호출하여 JSON 포맷 등 정규 로깅 파이프라인을 통해 경고합니다.
+    """
+    if _MISSING_CRAWLER_VARS:
+        logger.warning(
+            "필수 크롤러 환경변수가 누락되었습니다: %s. "
+            "환경변수 누락 시 크롤링 기능이 비정상적으로 빈 결과를 반환할 수 있습니다.",
+            ", ".join(_MISSING_CRAWLER_VARS)
+        )
 
 # --- URL 파생 변수 (None 안전 처리) ---
 # NOTE: BASE_URL이 None이면 깨진 URL("None/...")이 생성되는 것을 방지하기 위해

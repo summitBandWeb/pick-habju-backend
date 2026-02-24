@@ -116,5 +116,11 @@ app.add_exception_handler(Exception, global_exception_handler_envelope)
 # 로깅 설정(콘솔 + 일자별 파일 로테이션, JSON 포맷)
 setup_logging()
 
+# NOTE: config.py는 모듈 임포트 시점에 실행되어 setup_logging() 이전에 로드됨.
+# 따라서 환경변수 누락 경고를 정규 로그 포맷(JSON)으로 출력하기 위해
+# setup_logging() 직후에 지연 호출합니다.
+from app.core.config import emit_startup_warnings
+emit_startup_warnings()
+
 if __name__ == "__main__":
     uvicorn.run("main:app", port=8000, reload=True)
