@@ -277,7 +277,7 @@ class AvailabilityService:
         tasks = []
         task_dates = []
 
-        end_min = 1440 if request.end_hour == "24:00" else self._slot_to_minutes(request.end_hour)
+        end_min = self._slot_to_minutes(request.end_hour)
         is_overnight = (self._slot_to_minutes(request.start_hour) > end_min)
         
         # [최적화] 루프 내부 반복 연산을 줄이기 위해 크롤러 루프 외부에서 1회만 계산
