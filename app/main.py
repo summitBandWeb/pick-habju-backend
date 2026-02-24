@@ -1,8 +1,10 @@
 import os
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -24,6 +26,7 @@ from app.exception.envelope_handlers import (
     validation_exception_handler,
 )
 from app.utils.client_loader import close_global_client, set_global_client
+from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
 
 
@@ -83,6 +86,28 @@ app.add_middleware(TraceIDMiddleware)
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+
+@app.get("/health")
+async def health_check():
+    """
+    인프라 기반 헬스체크 엔드포인트
+    DB 등 핵심 의존성의 상태를 점검합니다. 
+    장애 시 503 상태 코드를 반환하여 로드밸런서가 비정상 상태를 식별할 수 있도록 합니다.
+    """
+    health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
+    try:
+        supabase = get_supabase_client()
+        # 2초 타임아웃 제한 (동기 I/O를 worker thread로 위임하여 이벤트 루프 블로킹 방지)
+        await asyncio.wait_for(
+            asyncio.to_thread(supabase.table("room").select("id").limit(1).execute),
+            timeout=2.0
+        )
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["dependencies"]["database"] = "down"
+        return JSONResponse(status_code=503, content=health_status)
+    return health_status
 
 
 # API 라우터 포함
