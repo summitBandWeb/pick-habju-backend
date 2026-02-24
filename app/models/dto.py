@@ -186,6 +186,20 @@ class AvailabilityRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_logic(self) -> "AvailabilityRequest":
+        """합주실 검색 요청(AvailabilityRequest)의 위경도 및 시간 유효성을 검증합니다.
+
+        Returns:
+            AvailabilityRequest: 유효성 검증을 통과한 인스턴스 자신.
+
+        Raises:
+            ValueError: 위경도 범위를 벗어나거나, 종료 시간이 시작 시간보다 빠르거나(심야 별도),
+                        최대 5시간을 초과하는 등 주요 예약 정책 위반 시 발생.
+
+        Rationale (의도):
+            API 진입점(DTO 계층)에서 올바른 지도 좌표 범위를 선제적으로 검사하고,
+            단순 시간 입력 실수(예: 15:00~13:00)와 정상적인 심야 예약(예: 23:00~02:00)을 
+            명확히 구분하여 사용자 친화적인 에러를 반환하기 위해 설계되었습니다.
+        """
         if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
             raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
         if not (-180 <= self.swLng <= 180) or not (-180 <= self.neLng <= 180):

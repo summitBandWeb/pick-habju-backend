@@ -53,7 +53,20 @@ def validate_hour_slots(hour_slots: List[str], date: str):
 
 
 def validate_hour_continuous(hour_slots: List[str], date: str):
-    """입력받은 시간값이 연속인지 검증"""
+    """입력받은 시간 슬롯들이 1시간 단위로 끊기지 않고 연속적인지 검증합니다.
+
+    Args:
+        hour_slots (List[str]): 검사할 시간 슬롯 문자열 배열 (예: ["23:00", "24:00", "01:00"]).
+        date (str): 예약 기준 날짜 (YYYY-MM-DD 형식). 시그니처 유지를 위해 존재함.
+
+    Raises:
+        HourDiscontinuousError: 슬롯 간격이 1시간을 초과하여 중간에 빈 시간이 있는 경우 발생.
+
+    Rationale (의도):
+        사용자가 선택한 개별 시간 단위(1시간)가 중간에 이가 빠지지 않고 이어져 있는지 
+        확인하기 위한 필수 검수 과정입니다. 자정을 넘기는 교차 시간대의 경우,
+        새벽 시간대 슬롯(04:00 이하)에 1440분(하루)을 더해 연속성 정렬 오류를 방지하도록 구현되었습니다.
+    """
     _ = date
     if len(hour_slots) <= 1:
         return

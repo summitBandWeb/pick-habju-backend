@@ -78,9 +78,23 @@ class AvailabilityService:
 
     # ?쒖옉?쒓컙怨?醫낅즺?쒓컙?쇰줈 ?쒓컙 ?щ’ 由ъ뒪???앹꽦
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
-        """
-        start_hour와 end_hour 사이의 1시간 단위 슬롯 리스트를 생성합니다.
-        자정을 넘기는 경우(예: 23:00 ~ 02:00) 24:00을 기준으로 두 날의 슬롯을 합쳐 생성합니다.
+        """시작 시간과 종료 시간 사이의 1시간 단위 예약 슬롯 리스트를 생성합니다.
+
+        Args:
+            start_str (str): 예약 시작 시간 문자열 (HH:MM 형식).
+            end_str (str): 예약 종료 시간 문자열 (HH:MM 형식).
+
+        Returns:
+            List[str]: 1시간 단위로 분리된 슬롯 배열 (예: ["14:00", "15:00"]).
+
+        Raises:
+            ValueError: 시작/종료 시간이 정확히 1시간 단위가 아닐 때 발생. 
+
+        Rationale (의도):
+            사용자가 입력한 "시작~종료" 범위 구간을, 크롤러에 전달하고 응답과 대조하기 쉬운
+            이산적인 1시간 단위 배열로 정규화하는 역할을 수행합니다.
+            핵심 에러 검증(시작>종료 에외, 5시간 제한 등)은 DTO 계층으로 위임하고, 
+            본 함수는 % 1440 모듈러 연산을 이용해 익일 슬롯 배열을 안정적으로 변환하는 것에 집중합니다.
         """
         start_min = self._slot_to_minutes(start_str)
         end_min = self._slot_to_minutes(end_str)
