@@ -76,14 +76,19 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
 
     raw_slots = [_slot_to_minutes(slot) for slot in hour_slots]
     
-    # 최대 예약 허용 시간은 5시간이므로, 자정을 넘기는 케이스는
-    # 20:00(1200분) ~ 04:00(240분) 사이에만 발생할 수 있음
-    has_late_night = any(s >= 1200 for s in raw_slots)   # 20:00 이후
-    has_early_morning = any(s <= 240 for s in raw_slots) # 04:00 이전
+    # [자정을 넘기는 연속성 검사 기준 (19:00 ~ 05:00)]
+    # DTO 계층에서 허용하는 최대 예약 시간은 5시간입니다.
+    # 가장 극단적인 심야 예약 조합은 "19:00 ~ 00:00(24:00)"에서 시작해, 가장 늦게 끝나는 조합이 "00:00 ~ 05:00"입니다.
+    # 즉, 정상적인 5시간 이내의 예약이라면 '19:00 이전' 시간대와 '05:00 이후' 시간대가 같은 슬롯 배열에 공존할 수 없습니다.
+    # 따라서 19:00(1140분) 이후 값을 "심야", 05:00(300분) 이전 값을 "새벽"으로 정의하여 교차 여부를 판별합니다.
+    has_late_night = any(s >= 1140 for s in raw_slots)   # 19:00 이후 슬롯 존재 여부
+    has_early_morning = any(s <= 300 for s in raw_slots) # 05:00 이전 슬롯 존재 여부
     
-    # 두 시간대가 공존하면 새벽 시간대(04:00 이하)를 다음 날로 간주하여 1440을 더함
+    # 심야(19:00~)와 새벽(~05:00) 시간대가 배열에 공존한다면 자정을 넘긴(Overnight) 예약입니다.
+    # 00:00~04:00과 같은 새벽 슬롯들은 숫자가 작아 정렬 시 앞으로 오게 되므로 시계열 연속성이 깨집니다.
+    # 이를 방지하기 위해 새벽 시간대값에 하루치인 1440분을 더해 익일 시간(예: 01:00 -> 25:00)으로 변환 후 정렬합니다.
     if has_late_night and has_early_morning:
-        slots = sorted((s + 1440 if s <= 240 else s) for s in raw_slots)
+        slots = sorted((s + 1440 if s <= 300 else s) for s in raw_slots)
     else:
         slots = sorted(raw_slots)
 
