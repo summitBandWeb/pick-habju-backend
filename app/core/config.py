@@ -18,22 +18,7 @@ DREAM_BASE_URL = os.getenv("DREAM_BASE_URL")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp"
-GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp"
-GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp"
-
-DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php"  # 드림 합주실 실제 로그인 URL
-DREAM_HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Content-Type": "application/x-www-form-urlencoded",
-}
-
-CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
-
-
-SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
-
-RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
+# --- 필수 환경변수 검증 (URL 파생 변수 생성 이전에 수행) ---
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
@@ -53,6 +38,27 @@ if missing_crawler_vars:
         f"필수 크롤러 환경변수가 누락되었습니다: {', '.join(missing_crawler_vars)}. "
         f"환경변수 누락 시 크롤링 기능이 비정상적으로 빈 결과를 반환할 수 있습니다."
     )
+
+# --- URL 파생 변수 (None 안전 처리) ---
+# NOTE: BASE_URL이 None이면 깨진 URL("None/...")이 생성되는 것을 방지하기 위해
+# 조건부로 생성하며, None인 경우 크롤러 호출 시점에서 별도 예외 처리됨.
+
+GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp" if GROOVE_BASE_URL else None
+GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp" if GROOVE_BASE_URL else None
+GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp" if GROOVE_BASE_URL else None
+
+DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php" if DREAM_BASE_URL else None  # 드림 합주실 실제 로그인 URL
+DREAM_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Content-Type": "application/x-www-form-urlencoded",
+}
+
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
+
+
+SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
+
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
 
 
 # CORS 허용 오리진 (환경변수 기반)
