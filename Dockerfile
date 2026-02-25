@@ -57,6 +57,8 @@ ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
 
 # Health check
+# NOTE: 해당 엔드포인트(/health)는 readiness를 의도하여 DB 상태 등을 점검하지만, 
+# Docker/Cloud Run 환경에서는 liveness 판단 기준으로 사용되어 DB 일시 장애 시 컨테이너 연쇄 재시작을 유발할 수 있습니다.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
 

@@ -98,6 +98,12 @@ async def health_check() -> HealthResponse:
     인프라 기반 헬스체크 엔드포인트
     DB 등 핵심 의존성의 상태를 점검합니다. 
     장애 시 503 상태 코드를 반환하여 로드밸런서가 비정상 상태를 식별할 수 있도록 합니다.
+    
+    NOTE: 
+    이 엔드포인트는 논리적으로 readiness 목적(의존성 연결 불가 시 트래픽 차단)에 가깝지만,
+    Cloud Run/Docker 환경 등에서는 이 헬스체크 실패가 인스턴스 재시작(liveness 동작)의 
+    판단 기준으로 사용될 수 있습니다. DB 장애나 일시적 지연 시 연쇄적인 인스턴스 재시작이 
+    발생할 수 있으므로 운영 시 주의가 필요합니다.
     """
     health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
     try:        
