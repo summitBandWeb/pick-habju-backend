@@ -123,7 +123,8 @@ async def health_check() -> HealthResponse:
         logger.error("Health check failed", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
-        return JSONResponse(status_code=503, content=health_status)
+        error_response = HealthResponse(**health_status)
+        return JSONResponse(status_code=503, content=error_response.model_dump())
     return HealthResponse(**health_status)
 
 
