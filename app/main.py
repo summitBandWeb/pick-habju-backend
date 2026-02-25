@@ -107,11 +107,12 @@ async def health_check() -> HealthResponse:
     """
     health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
     try:        
-        # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 루트 호출을 통해 범용적 상태 점검
+        # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 테이블 조회를 통해 실제 DB 연결 상태 점검
         async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
-            # Supabase PostgREST root url returns API info when healthy
+            # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
+            # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/",
+                f"{SUPABASE_URL}/rest/v1/favorites?select=id&limit=1",
                 headers={
                     "apikey": SUPABASE_KEY,
                     "Authorization": f"Bearer {SUPABASE_KEY}"
