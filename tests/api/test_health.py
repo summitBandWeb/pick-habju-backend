@@ -62,7 +62,7 @@ def test_health_check_timeout(mock_client_class, client):
     
     # NOTE: httpx의 timeout 발생 상황을 정확히 모사하기 위해 
     # asyncio.TimeoutError가 아닌 httpx 예외를 사용합니다.
-    mock_client.get.side_effect = httpx.ReadTimeout("timeout", request=None)
+    mock_client.get.side_effect = httpx.ReadTimeout("Request timed out", request=MagicMock())
 
     response = client.get("/health")
     
