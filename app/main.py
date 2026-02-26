@@ -30,7 +30,7 @@ from app.exception.envelope_handlers import (
 from app.utils.client_loader import close_global_client, set_global_client
 from pydantic import ValidationError
 import httpx
-from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE
+from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
 
 @asynccontextmanager
@@ -166,7 +166,6 @@ setup_logging()
 # NOTE: config.py는 모듈 임포트 시점에 실행되어 setup_logging() 이전에 로드됨.
 # 따라서 환경변수 누락 경고를 정규 로그 포맷(JSON)으로 출력하기 위해
 # setup_logging() 직후에 지연 호출합니다.
-from app.core.config import emit_startup_warnings
 emit_startup_warnings()
 
 if __name__ == "__main__":
