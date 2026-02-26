@@ -108,7 +108,7 @@ async def health_check(response: Response) -> HealthResponse:
         async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
             # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
             # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
-            response = await client.get(
+            supabase_resp = await client.get(
                 f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
                 headers={
                     "apikey": SUPABASE_KEY,
@@ -116,7 +116,7 @@ async def health_check(response: Response) -> HealthResponse:
                 },
                 params={"select": "id", "limit": "1"}
             )
-            response.raise_for_status()
+            supabase_resp.raise_for_status()
     except httpx.TimeoutException:
         logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase connection took too long", exc_info=True)
         health_status["status"] = "degraded"
