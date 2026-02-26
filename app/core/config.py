@@ -37,6 +37,8 @@ if not LOGIN_PW:
     _MISSING_CRAWLER_VARS.append("LOGIN_PW")
 
 
+_WARNINGS_EMITTED = False
+
 def emit_startup_warnings() -> None:
     """setup_logging() 이후에 호출하여 정규 로그 포맷으로 환경변수 누락 경고를 출력합니다.
 
@@ -46,6 +48,11 @@ def emit_startup_warnings() -> None:
         이를 방지하기 위해 누락 정보를 저장해두었다가 setup_logging() 직후에
         본 함수를 호출하여 JSON 포맷 등 정규 로깅 파이프라인을 통해 경고합니다.
     """
+    global _WARNINGS_EMITTED
+    if _WARNINGS_EMITTED:
+        return
+    _WARNINGS_EMITTED = True
+
     if _MISSING_CRAWLER_VARS:
         logger.warning(
             "필수 크롤러 환경변수가 누락되었습니다: %s. "
