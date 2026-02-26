@@ -1,5 +1,4 @@
 import os
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -29,7 +28,6 @@ from app.exception.envelope_handlers import (
     validation_exception_handler,
 )
 from app.utils.client_loader import close_global_client, set_global_client
-from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
 import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE
