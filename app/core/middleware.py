@@ -106,21 +106,29 @@ class RealIPMiddleware(BaseHTTPMiddleware):
         # request.state에 저장하여 다른 곳에서 사용 가능
         request.state.real_ip = real_ip
 
-        # 로깅
-        if request.url.path not in ("/ping", "/health"):
-            logger.info(
-                f"[{real_ip}] {request.method} {request.url.path}",
-                extra={
-                    "real_ip": real_ip,
-                    "method": request.method,
-                    "path": request.url.path,
-                    "user_agent": request.headers.get("User-Agent", ""),
-                    "referer": request.headers.get("Referer", ""),
-                    "request_id": request.headers.get("X-Request-ID", ""),
-                },
-            )
-
         response = await call_next(request)
+
+        # 로깅 (정상 헬스체크는 스킵하되, 500번대 에러 발생 시 상태 코드 포함시켜 로깅)
+        if request.url.path not in ("/ping", "/health") or (response is not None and response.status_code >= 500):
+            status_code = response.status_code if response else 500
+            log_level = logging.ERROR if status_code >= 500 else logging.INFO
+            
+            log_msg = f"[{real_ip}] {request.method} {request.url.path} {status_code}"
+            extra_data = {
+                "real_ip": real_ip,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": status_code,
+                "user_agent": request.headers.get("User-Agent", ""),
+                "referer": request.headers.get("Referer", ""),
+                "request_id": request.headers.get("X-Request-ID", ""),
+            }
+            
+            if log_level == logging.ERROR:
+                logger.error(log_msg, extra=extra_data)
+            else:
+                logger.info(log_msg, extra=extra_data)
+
         return response
 
     def _get_real_ip(self, request: Request) -> str:
