@@ -36,6 +36,8 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
 # 간헐적인 503 에러가 발생하여 불필요한 인스턴스 재시작으로 이어질 수 있습니다. 
 # 운영 환경 배포 전에 실제 RTT를 측정하고 필요 시 환경변수를 통해 이 값을 조정해야 합니다.
 HEALTH_CHECK_TIMEOUT = float(os.getenv("HEALTH_CHECK_TIMEOUT", "2.0"))
+if HEALTH_CHECK_TIMEOUT <= 0:
+    raise ValueError("HEALTH_CHECK_TIMEOUT must be strictly greater than 0")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")
