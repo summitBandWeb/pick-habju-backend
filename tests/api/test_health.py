@@ -59,10 +59,9 @@ def test_health_check_timeout(mock_client_class, client):
     mock_client = AsyncMock()
     mock_client_class.return_value.__aenter__.return_value = mock_client
     
-    # NOTE: 이 테스트는 실제 httpx의 timeout 발생 상황을 완벽히 모사하지 않고,
-    # client.get() 메서드가 직접 TimeoutError를 던지는 상황을 시뮬레이션합니다.
-    # main.py에서는 except Exception as e가 모든 예외를 잡으므로 에러 핸들링 결과는 동일하게 테스트할 수 있습니다.
-    mock_client.get.side_effect = asyncio.TimeoutError()
+    # NOTE: httpx의 timeout 발생 상황을 정확히 모사하기 위해 
+    # asyncio.TimeoutError가 아닌 httpx 예외를 사용합니다.
+    mock_client.get.side_effect = httpx.ReadTimeout("timeout", request=None)
 
     response = client.get("/health")
     

@@ -13,7 +13,7 @@ import json
 import logging
 import pytest
 import pytest_asyncio
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock, MagicMock
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
@@ -130,8 +130,7 @@ class TestCacheControlMiddleware:
 
         # NOTE: /ping, /health는 /api로 시작하지 않으므로 캐시 헤더가 없어야 함
         cache_control = response.headers.get("Cache-Control")
-        if cache_control:
-            assert "no-store" not in cache_control
+        assert cache_control is None
 
 
 # =============================================================================
@@ -184,12 +183,20 @@ class TestRealIPMiddleware:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/ping", "/health"])
-    async def test_real_ip_healthcheck_no_log(self, client, caplog, path):
+    @patch("httpx.AsyncClient")
+    async def test_real_ip_healthcheck_no_log(self, mock_client_class, client, caplog, path):
         """/ping, /health 요청 시 RealIPMiddleware의 IP 로깅이 스킵되는지 검증"""
+        # /health 검증을 위해 정상 응답 셋업
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_client.get.return_value = mock_response
+
         with caplog.at_level(logging.INFO, logger="app.core.middleware"):
             response = await client.get(path)
 
-        assert response.status_code in (200, 503)
+        assert response.status_code == 200
         # NOTE: 헬스체크 경로는 로깅 제외 대상이므로 middleware 로그가 없어야 함
         health_logs = [
             r for r in caplog.records
