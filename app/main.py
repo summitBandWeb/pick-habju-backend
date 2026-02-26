@@ -117,8 +117,14 @@ async def health_check(response: Response) -> HealthResponse:
                 params={"select": "id", "limit": "1"}
             )
             response.raise_for_status()
+    except httpx.TimeoutException:
+        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase connection took too long", exc_info=True)
+        health_status["status"] = "degraded"
+        health_status["dependencies"]["database"] = "down"
+        response.status_code = 503
+        return HealthResponse(**health_status)
     except Exception:  # noqa: BLE001
-        logger.error("Health check failed", exc_info=True)
+        logger.error("Health check failed: Supabase connection error", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
