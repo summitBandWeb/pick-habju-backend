@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.api.dependencies import get_favorite_repository
 from app.repositories.memory import MockFavoriteRepository
+from app.api.favorites import MAX_FAVORITES_PER_DEVICE
 
 @pytest.fixture
 def mock_repo():
@@ -66,7 +67,6 @@ def test_add_favorite_idempotency(client, api_endpoint, headers, target_business
 
 def test_add_favorite_limit_exceeded(client, headers, target_business_id, mock_repo):
     """최대 즐겨찾기 개수를 초과하면 400 에러를 반환해야 한다."""
-    from app.api.favorites import MAX_FAVORITES_PER_DEVICE
     
     # Arrange: 한도를 가득 채움
     for i in range(MAX_FAVORITES_PER_DEVICE):
