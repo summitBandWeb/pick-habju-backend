@@ -4,7 +4,7 @@ from app.main import app
 from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 import httpx
-from app.core.config import SUPABASE_URL, SUPABASE_KEY
+from app.core.config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_TABLE
 
 @pytest.fixture
 def client():
@@ -32,11 +32,12 @@ def test_health_check_success(mock_client_class, client):
     assert data["dependencies"]["database"] == "ok"
     
     mock_client.get.assert_called_once_with(
-        f"{SUPABASE_URL}/rest/v1/favorites?select=id&limit=1",
+        f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
         headers={
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
-        }
+        },
+        params={"select": "id", "limit": "1"}
     )
 
 

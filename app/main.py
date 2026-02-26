@@ -32,7 +32,7 @@ from app.utils.client_loader import close_global_client, set_global_client
 from app.core.supabase_client import get_supabase_client
 from pydantic import ValidationError
 import httpx
-from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT
+from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE
 from app.models.dto import HealthResponse
 
 @asynccontextmanager
@@ -111,11 +111,12 @@ async def health_check() -> HealthResponse:
             # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
             # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
             response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/favorites?select=id&limit=1",
+                f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
                 headers={
                     "apikey": SUPABASE_KEY,
                     "Authorization": f"Bearer {SUPABASE_KEY}"
-                }
+                },
+                params={"select": "id", "limit": "1"}
             )
             response.raise_for_status()
     except Exception:  # noqa: BLE001
