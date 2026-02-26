@@ -204,6 +204,30 @@ class TestRealIPMiddleware:
         ]
         assert len(health_logs) == 0, f"{path} 경로에 대한 로그가 기록되었습니다"
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["/health"])
+    @patch("httpx.AsyncClient")
+    async def test_real_ip_healthcheck_503_log(self, mock_client_class, client, caplog, path):
+        """/health 요청이 503 실패일 경우 RealIPMiddleware에서 에러 로깅이 수행되는지 검증"""
+        # 503 발생을 위해 예외 모의
+        mock_client = AsyncMock()
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client.get.side_effect = Exception("DB Connection Error")
+
+        with caplog.at_level(logging.ERROR, logger="app.core.middleware"):
+            response = await client.get(path)
+
+        assert response.status_code == 503
+        
+        # 500번대 에러이므로 로그가 남아있어야 함
+        error_logs = [
+            r for r in caplog.records
+            if r.name == "app.core.middleware" and path in r.getMessage() and r.levelno == logging.ERROR
+        ]
+        assert len(error_logs) > 0, f"{path} 503 응답에 대한 에러 로그가 기록되지 않았습니다"
+        # 컨텍스트(trace id 등은 다른 미들웨어나 포매터에서 붙지만 적어도 path와 상태 코드는 포함되어야 함)
+        assert "503" in error_logs[0].getMessage()
+
 
 # =============================================================================
 # 미들웨어 체인 E2E 테스트
