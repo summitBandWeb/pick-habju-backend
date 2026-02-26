@@ -386,48 +386,48 @@ class RoomCollectionService:
 
         # If there are unresolved items, export them
         if unresolved_items:
-                # 로컬 환경에서 호출 시 경로 설정 가능. 기본값은 프로젝트 루트/scripts/unresolved
-                default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
-                export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
-                export_dir.mkdir(parents=True, exist_ok=True)
+            # 로컬 환경에서 호출 시 경로 설정 가능. 기본값은 프로젝트 루트/scripts/unresolved
+            default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
+            export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
+            export_dir.mkdir(parents=True, exist_ok=True)
 
-                # Generate filename with current date
-                date_str = datetime.now().strftime("%Y%m%d")
-                export_file = export_dir / f"unresolved_{date_str}.json"
+            # Generate filename with current date
+            date_str = datetime.now().strftime("%Y%m%d")
+            export_file = export_dir / f"unresolved_{date_str}.json"
 
-                # Load existing data if file exists, otherwise start with empty list
-                existing_data = []
-                if export_file.exists():
-                    try:
-                        with open(export_file, "r", encoding="utf-8") as f:
-                            existing_data = json.load(f)
-                    except Exception as e:
-                        logger.warning(f"Failed to read existing unresolved file: {e}")
+            # Load existing data if file exists, otherwise start with empty list
+            existing_data = []
+            if export_file.exists():
+                try:
+                    with open(export_file, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to read existing unresolved file: {e}")
 
-                # Append new unresolved items with duplicate check
-                existing_ids = {item["biz_item_id"] for item in existing_data}
-                new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
+            # Append new unresolved items with duplicate check
+            existing_ids = {item["biz_item_id"] for item in existing_data}
+            new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
 
-                if new_items:
-                    existing_data.extend(new_items)
+            if new_items:
+                existing_data.extend(new_items)
 
-                    # Atomic write: temp file 후 rename으로 중간 상태 방지
-                    tmp_fd, tmp_path = tempfile.mkstemp(
-                        dir=str(export_dir), suffix=".tmp"
-                    )
-                    try:
-                        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
-                            json.dump(existing_data, f, ensure_ascii=False, indent=2)
-                        # os.replace는 원자적(같은 파일시스템 상)
-                        os.replace(tmp_path, str(export_file))
-                    except Exception:
-                        # 실패 시 임시 파일 정리
-                        if os.path.exists(tmp_path):
-                            os.unlink(tmp_path)
-                        raise
+                # Atomic write: temp file 후 rename으로 중간 상태 방지
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=str(export_dir), suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                        json.dump(existing_data, f, ensure_ascii=False, indent=2)
+                    # os.replace는 원자적(같은 파일시스템 상)
+                    os.replace(tmp_path, str(export_file))
+                except Exception:
+                    # 실패 시 임시 파일 정리
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+                    raise
 
-                    logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
-                else:
-                    logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
+                logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
+            else:
+                logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
 
 
