@@ -6,7 +6,7 @@ from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
 
 class HealthResponse(BaseModel):
     """Health Check Response Model"""
-    status: Literal["healthy", "degraded"] = Field(description="Health status of the system (healthy, degraded)")
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(description="Health status of the system (healthy, degraded, unhealthy)")
     dependencies: Dict[str, str] = Field(description="Health status of individual dependencies (e.g., database)")
 
 # Room Information DTO (DB Query Result)
