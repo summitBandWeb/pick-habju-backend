@@ -67,16 +67,16 @@ class AvailabilityService:
     """
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
-        """?쒕퉬??珥덇린??
+        """서비스 초기화
         
         Args:
-            crawlers_map: ?щ·???????怨?BaseCrawler ?몄뒪?댁뒪(媛???留ㅽ븨 ?뺤뀛?덈━
-                         ?? {"dream": DreamCrawler(), "groove": GrooveCrawler()}
+            crawlers_map: 플랫폼 타입을 키로 하고 BaseCrawler 인스턴스를 값으로 하는 매핑 딕셔너리
+                         예: {"dream": DreamCrawler(), "groove": GrooveCrawler()}
         """
         self.crawlers_map = crawlers_map
         self.pricing_service = PricingService()
 
-    # ?쒖옉?쒓컙怨?醫낅즺?쒓컙?쇰줈 ?쒓컙 ?щ’ 由ъ뒪???앹꽦
+    # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
         """시작 시간과 종료 시간 사이의 1시간 단위 예약 슬롯 리스트를 생성합니다.
 
@@ -132,13 +132,13 @@ class AvailabilityService:
         """
         match = re.fullmatch(r"(\d{2}):(\d{2})", slot)
         if not match:
-            raise ValueError(f"?쒓컙 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎: {slot}")
+            raise ValueError(f"시간 형식이 올바르지 않습니다: {slot}")
         hour = int(match.group(1))
         minute = int(match.group(2))
         if minute != 0:
-            raise ValueError(f"?쒓컙? ?뺤떆(00遺?留?吏?먰빀?덈떎: {slot}")
+            raise ValueError(f"시간은 정시(00분)만 지원합니다: {slot}")
         if hour < 0 or hour > 24:
-            raise ValueError(f"?쒓컙 踰붿쐞媛 ?щ컮瑜댁? ?딆뒿?덈떎: {slot}")
+            raise ValueError(f"시간 범위가 올바르지 않습니다: {slot}")
         return hour * 60 + minute
 
     @staticmethod
@@ -153,11 +153,11 @@ class AvailabilityService:
         return f"{(minute_value % 1440) // 60:02d}:00"
 
     def _get_day_type(self, date_str: str) -> str:
-        """?붿껌 ?좎쭨 湲곗? ?붿씪 ???weekday/weekend) 諛섑솚."""
+        """요청 날짜 기준 요일 타입(weekday/weekend) 반환."""
         return "weekend" if datetime.strptime(date_str, "%Y-%m-%d").weekday() >= 5 else "weekday"
 
     def _is_slot_in_range(self, slot: str, start_hour: str, end_hour: str) -> bool:
-        """slot??[start_hour, end_hour) 踰붿쐞???ы븿?섎뒗吏 ?먮떒."""
+        """slot이 [start_hour, end_hour) 범위에 포함되는지 판단."""
         try:
             slot_min = self._slot_to_minutes(slot)
             start_min = self._slot_to_minutes(start_hour)
@@ -174,7 +174,7 @@ class AvailabilityService:
         return start_min <= slot_min < end_min
 
     def _resolve_slot_price(self, room_detail, date_str: str, slot: str) -> int:
-        """?⑥씪 ?щ’ 媛寃?怨꾩궛(price_config override + surcharge 諛섏쁺)."""
+        """단일 슬롯 가격 계산(price_config override + surcharge 반영)."""
         day_type = self._get_day_type(date_str)
         price_config = room_detail.priceConfig or {}
         if not isinstance(price_config, dict):
@@ -259,8 +259,8 @@ class AvailabilityService:
             전체 합주실 조회 서비스의 실패(500 서버 장애)로 이어지지 않도록 방어 로직을 구성함.
         """
 
-        # 1. ?쒓컙 踰붿쐞(Range) -> ?쒓컙 ?щ’ 由ъ뒪??List) 蹂??
-        # ?? 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
+        # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
+        # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
         try:
             hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
         except ValueError as e:
@@ -269,7 +269,7 @@ class AvailabilityService:
         
         # 1.5. 지도 좌표 유효성 검증 (필수) -> DTO model_validator로 이관됨
 
-        # 2. ?몄썝??諛?吏??踰붿쐞??留욌뒗 猷??꾪꽣留?(DB)
+        # 2. 인원수 및 지도 범위에 맞는 룸 필터링(DB)
         target_rooms = get_rooms_by_criteria(
             capacity=request.capacity,
             swLat=request.swLat,
@@ -338,7 +338,7 @@ class AvailabilityService:
 
         self._log_errors(all_results, request.date)
 
-        # 4. 寃곌낵 吏묎퀎 諛??뺤콉/媛寃??곸슜
+        # 4. 결과 집계 및 정책/가격 적용
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
                 # 심야 예약 분할 조회로 인한 동일 합주실(biz_item_id) 중복 데이터 병합
         merged_dict = {}
@@ -377,12 +377,12 @@ class AvailabilityService:
         branch_summary = {}
 
         for res in processed_results:
-            # 猷??뺣낫 異붿텧
+            # 룸 정보 추출
             room_detail = res.room_detail
 
-            # ?덉빟 媛?ν븳 猷몃쭔 寃곌낵 由ъ뒪?몄뿉 ?ы븿 (unknown ?ы븿)
+            # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
             if res.available is True or res.available == "unknown":
-                # v2.0.0: ?쒖떆??沅뚯옣 ?몄썝 踰붿쐞 怨꾩궛 (鍮꾩젙??max/base 議고빀 諛⑹뼱)
+                # v2.0.0: 표시용 권장 인원 범위 계산 (비정적 max/base 조합 방어)
                 rec_min: Optional[int] = None
                 rec_max: Optional[int] = None
 
@@ -419,7 +419,7 @@ class AvailabilityService:
 
                 available_results.append(res)
 
-                # 吏???붿빟 ?뺣낫 ?낅뜲?댄듃 (branch_summary) - 吏??湲곕뒫??
+                # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
                 bid = room_detail.business_id
                 if bid not in branch_summary:
                     branch_summary[bid] = BranchStats(
@@ -461,7 +461,7 @@ class AvailabilityService:
         for err in errors:
             actual_date = getattr(err, 'date_context', date_context)
             if isinstance(err, BaseCustomException):
-                # ?덉긽???щ·???먮윭 (Warning ?덈꺼)
+                # 예상된 플랫폼 에러 (Warning 레벨)
                 logger.warning({
                     "timestamp": actual_date,
                     "status": err.status_code,
@@ -469,7 +469,7 @@ class AvailabilityService:
                     "message": err.message,
                 })
             else:
-                # ?덉긽移?紐삵븳 ?쇰컲 ?먮윭 (Error ?덈꺼)
+                # 예상치 못한 일반 에러 (Error 레벨)
                 logger.error({
                     "timestamp": actual_date,
                     "status": 500,
