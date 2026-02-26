@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 logger = logging.getLogger(__name__)
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -91,7 +91,7 @@ def ping():
     return {"ok": True}
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+async def health_check(response: Response) -> HealthResponse:
     """
     인프라 기반 readiness 체크 엔드포인트
     DB 등 핵심 의존성의 상태를 점검합니다. 
@@ -121,8 +121,8 @@ async def health_check() -> HealthResponse:
         logger.error("Health check failed", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
-        error_response = HealthResponse(**health_status)
-        return JSONResponse(status_code=503, content=error_response.model_dump())
+        response.status_code = 503
+        return HealthResponse(**health_status)
     return HealthResponse(**health_status)
 
 
