@@ -6,7 +6,6 @@ logger = logging.getLogger(__name__)
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
