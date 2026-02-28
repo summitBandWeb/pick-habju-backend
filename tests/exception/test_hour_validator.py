@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 
@@ -101,20 +102,28 @@ class TestOvernightValidation:
         Rationale:
             23:00~01:00은 다음날 새벽 슬롯(00:00, 01:00)을 포함하므로
             today 기준 과거 시간 비교에서 제외되어야 함.
+            NOTE: datetime.now()를 22:00으로 고정하여 시간 의존성을 제거함.
         """
-        today = datetime.now().strftime("%Y-%m-%d")
-        # 24:00 표기 또는 00:00~05:00 범위 슬롯이 포함된 overnight 슬롯 배열
+        fixed_now = datetime.now().replace(hour=22, minute=0, second=0, microsecond=0)
+        today = fixed_now.strftime("%Y-%m-%d")
         slots = ["23:00", "00:00", "01:00"]
-        # 예외 없이 통과해야 함
-        validate_hour_slots(slots, today)
+        with patch("app.validate.hour_validator.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime.side_effect = datetime.strptime
+            # 예외 없이 통과해야 함
+            validate_hour_slots(slots, today)
 
     def test_non_overnight_today_past_slot_is_still_rejected(self):
-        """overnight이 아닌 일반 오늘 예약에서는 과거 슬롯이 여전히 거부되어야 함"""
-        now = datetime.now()
-        if now.hour < 1:
-            pytest.skip("새벽 00시대에는 과거 슬롯 생성이 어려워 건너뜁니다.")
-        today = now.strftime("%Y-%m-%d")
-        past_slot = f"{(now.hour - 1):02d}:00"  # 1시간 전 슬롯
-        future_slot = f"{min(now.hour + 1, 23):02d}:00"
-        with pytest.raises(PastHourSlotNotAllowedError):
-            validate_hour_slots([past_slot, future_slot], today)
+        """overnight이 아닌 일반 오늘 예약에서는 과거 슬롯이 여전히 거부되어야 함
+
+        Rationale:
+            overnight 스킵 로직이 일반 과거 시간 검증을 약화시키지 않는지 회귀 방지.
+            NOTE: datetime.now()를 14:00으로 고정하여 시간 의존성을 제거함.
+        """
+        fixed_now = datetime.now().replace(hour=14, minute=0, second=0, microsecond=0)
+        today = fixed_now.strftime("%Y-%m-%d")
+        with patch("app.validate.hour_validator.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime.side_effect = datetime.strptime
+            with pytest.raises(PastHourSlotNotAllowedError):
+                validate_hour_slots(["12:00", "15:00"], today)
