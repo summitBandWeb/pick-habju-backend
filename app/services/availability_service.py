@@ -483,6 +483,9 @@ class AvailabilityService:
             # 기존 크롤러 등에서 넘어온 경고가 있을 수 있으므로 보존하면서 추가
             policy_warnings: List[PolicyWarning] = list(res.policy_warnings) if hasattr(res, 'policy_warnings') and res.policy_warnings else []
 
+            # NOTE: hour_slots는 end-inclusive 슬롯 배열 (예: 14:00~16:00 → ["14:00","15:00","16:00"])
+            #       따라서 예약 시간 = len - 1 로 정확히 계산됨.
+            #       overnight 슬롯(예: ["23:00","00:00"]) 역시 len-1 = 1시간으로 정확히 계산됨.
             booking_duration_hours = len(hour_slots) - 1
             needs_1h_contact = (booking_duration_hours == 1 and not room.canReserveOneHour)
             needs_today_contact = (request.date == today and room.requiresContactOnSameDay)

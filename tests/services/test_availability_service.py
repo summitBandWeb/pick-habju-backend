@@ -36,8 +36,10 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, can_reserve_one_hour=False, requires_contact_on_sameday=False,
-            max_capacity=10, recommend_capacity_range=[3, 5]
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            # NOTE: 이슈 2-1 필터링 조건 통과를 위해 phoneNumber 필수
+            phoneNumber="010-1234-5678"
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
 
@@ -62,8 +64,10 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, can_reserve_one_hour=True, requires_contact_on_sameday=True,
-            max_capacity=10, recommend_capacity_range=[3, 5]
+            pricePerHour=10000, can_reserve_one_hour=True, requiresContactOnSameDay=True,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            # NOTE: 이슈 2-1 필터링 조건 통과를 위해 phoneNumber 필수
+            phoneNumber="010-1234-5678"
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -84,7 +88,7 @@ class TestApplyPolicies:
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}], base_capacity=4, extra_charge=5000,
-            can_reserve_one_hour=True, requires_contact_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -107,7 +111,7 @@ class TestApplyPolicies:
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}],
-            can_reserve_one_hour=True, requires_contact_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -129,7 +133,7 @@ class TestApplyPolicies:
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}],
-            can_reserve_one_hour=True, requires_contact_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -175,7 +179,7 @@ class TestCheckAvailabilityFlow:
         mock_room = RoomDetail(
             name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10,
-            can_reserve_one_hour=True, requires_contact_on_sameday=False,
+            can_reserve_one_hour=True, requiresContactOnSameDay=False,
             recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
         )
 

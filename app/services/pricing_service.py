@@ -140,7 +140,7 @@ class PricingService:
         for rule in rules:
             # [이슈 5 - A안] season 체크: 크롤링 시 수집된 season 태그는 별도 기간 검증 없이 활성으로 간주.
             # Rationale: 크롤러가 특가 정보를 수집했다면 해당 룰은 현재 유효한 것으로 처리함.
-            #            season 유효 기간 검증은 crwaler 주기가 안정화되면 재논의 예정 (PR 참고).
+            #            season 유효 기간 검증은 crawler 주기가 안정화되면 재논의 예정 (PR 참고).
             # (이전: rule.season is not None → continue 로 스킵)
 
             # 요일 체크

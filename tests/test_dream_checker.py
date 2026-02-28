@@ -36,7 +36,7 @@ def sample_dream_rooms():
             recommend_capacity_range=[2, 4],
             pricePerHour=15000,
             canReserveOneHour=True,
-            requires_contact_on_sameday=False
+            requiresContactOnSameDay=False
         ))
     return rooms
 
