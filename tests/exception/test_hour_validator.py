@@ -126,4 +126,4 @@ class TestOvernightValidation:
             mock_dt.now.return_value = fixed_now
             mock_dt.strptime.side_effect = datetime.strptime
             with pytest.raises(PastHourSlotNotAllowedError):
-                validate_hour_slots(["12:00", "15:00"], today)
+                validate_hour_slots(["12:00", "13:00"], today)  # 연속 + 14:00 기준 과거
