@@ -44,9 +44,22 @@ def validate_hour_slots(hour_slots: List[str], date: str):
     today = now.date()
     input_date = datetime.strptime(date, "%Y-%m-%d").date()
 
+    is_overnight = False
+    if input_date == today:
+        raw_minutes = [_slot_to_minutes(s) for s in hour_slots if re.match(HOUR_PATTERN, s)]
+        has_late_night = any(m >= 1140 for m in raw_minutes)   # 19:00 이후
+        has_early_morning = any(m <= 300 for m in raw_minutes)  # 05:00 이전
+        # Rationale: 23:00~01:00처럼 자정을 넘기는 overnight 예약에서
+        #            00:00, 01:00 등 새벽 슬롯은 실제로 "다음날" 시간임.
+        #            today 기준 과거 시간 비교를 적용하면 오탐이 발생하므로 스킵함.
+        #            validate_hour_continuous와 동일한 19:00/05:00 기준을 사용.
+        is_overnight = has_late_night and has_early_morning
+
     for slot in hour_slots:
         validate_hour_slot_format(slot)
         if input_date == today:
+            if is_overnight and _slot_to_minutes(slot) <= 300:
+                continue  # 다음날 새벽 슬롯은 과거 비교 제외
             validate_hour_slot_not_past(slot, now.time())
 
     validate_hour_continuous(hour_slots, date)
