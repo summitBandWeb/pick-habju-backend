@@ -163,10 +163,10 @@ class RoomCollectionService:
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
-            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
+            "display_name": business.get("businessDisplayName"), 
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
-            "standby_days": first_parsed.get("standby_days"),  # [이슈 4] 오픈대기일수
+            "standby_days": first_parsed.get("standby_days"), 
         }
         
         # Upsert Branch
@@ -195,6 +195,9 @@ class RoomCollectionService:
             if new_max_cap is None:
                 new_max_cap = self.MANUAL_REVIEW_FLAG
                 
+            # HACK: [이슈 6 기술부채] recommend_capacity(단일값) 레거시.
+            # DTO에서는 제거됐으나 DB 컬럼과 _calculate_capacity_range 의존성 때문에 upsert 유지.
+            # 향후 recommend_capacity_range로 완전히 대체 시 이 컬럼 제거 예정.
             new_rec_cap = parsed.get("recommend_capacity")
             if new_rec_cap is None:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
@@ -242,7 +245,10 @@ class RoomCollectionService:
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
             final_can_reserve = parsed_can_reserve if parsed_can_reserve is not None else existing_can_reserve
             
-            existing_requires_call = existing.get("requires_contact_on_sameday", False) if existing else False
+            existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
+            # NOTE: 파서 프롬프트는 여전히 'requires_call_on_same_day' 키를 출력함.
+            #       파서 프롬프트와 DB/서비스 키가 다른 것은 이슈 1 당시 파서 프롬프트 수정이 누락된 기술부채임.
+            #       TODO: room_parser_service.py 프롬프트의 requires_call_on_same_day → requires_contact_on_sameday 변경
             parsed_requires_call = parsed.get("requires_call_on_same_day")
             final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
 
@@ -266,7 +272,9 @@ class RoomCollectionService:
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap,
                 "extra_charge": final_extra_charge,
-                "requires_contact_on_sameday": final_requires_call,
+                # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
+                # TODO: DB 마이그레이션(requires_call_on_sameday → requires_contact_on_sameday) 완료 후 아래 키 변경
+                "requires_call_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }

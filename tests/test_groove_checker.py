@@ -27,7 +27,7 @@ def sample_groove_rooms():
         maxCapacity=6,
         recommend_capacity_range=[2, 4],
         canReserveOneHour=True,
-        requires_contact_on_sameday=False
+        requiresContactOnSameDay=False
     )]
 
 

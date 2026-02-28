@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, date
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
 from typing import List, Dict, Union, Any, Optional, ClassVar
 
 # Room Information DTO (DB Query Result)
@@ -49,7 +49,19 @@ class RoomDetail(BaseModel):
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
     # NOTE: 아래 두 필드는 내부 정책 판별 로직에서만 사용하며, 프론트엔드 응답에서는 policy_warnings로 대체됨
     canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available", exclude=True)
-    requiresContactOnSameDay: bool = Field(alias="requires_contact_on_sameday", description="당일 예약 시 연락(전화/채팅) 필요 여부", exclude=True)
+    # [이슈 1] Python 필드명: requiresCallOnSameDay → requiresContactOnSameDay (전화뿐 아닌 모든 연락수단 포함)
+    # NOTE: AliasChoices로 DB 컬럼명 변경 전/후 모두 허용.
+    #       - 신규: requires_contact_on_sameday (DB 마이그레이션 완료 후 사용)
+    #       - 구형: requires_call_on_sameday    (기존 DB 컬럼명, 마이그레이션 후 이 항목 제거)
+    #       TODO: DB 마이그레이션 완료 후 AliasChoices에서 requires_call_on_sameday 제거
+    requiresContactOnSameDay: bool = Field(
+        validation_alias=AliasChoices(
+            "requires_contact_on_sameday",
+            "requires_call_on_sameday",
+        ),
+        description="당일 예약 시 연락(전화/채팅) 필요 여부",
+        exclude=True,
+    )
 
     @field_validator('branch', mode='before')
     @classmethod
