@@ -49,17 +49,18 @@ class PriceRule(BaseModel):
 
     Rationale:
         노션에서 확정된 price_config 스키마를 반영합니다.
-        season/days/time_band가 모두 null이면 '기본가' 규칙입니다.
+        season/week/time_band가 모두 null이면 '기본가' 규칙입니다.
         리스트 내에서 앞쪽에 위치할수록 우선순위가 높은 First-Match 방식을 사용합니다.
 
     Examples:
         기본가:        {"price": 10000}
-        주말:          {"days": [5, 6], "price": 15000}
+        주말:          {"week": [5, 6], "price": 15000}
         저녁 피크:     {"timeBand": {"startHour": 18, "endHour": 24}, "price": 20000}
-        성수기+주말:   {"season": "Summer", "days": [5, 6], "price": 25000}
+        성수기+주말:   {"season": "Summer", "week": [5, 6], "price": 25000}
     """
     season: Optional[str] = None
-    days: Optional[List[int]] = None
+    # NOTE: 'week'는 이전 스키마의 'days'를 대체합니다. alias로 하위 호환성 유지.
+    week: Optional[List[int]] = Field(None, alias="week", validation_alias="week")
     time_band: Optional[TimeBand] = Field(None, alias="timeBand")
     price: int
 
@@ -137,13 +138,13 @@ class PricingService:
         hour = target.hour
 
         for rule in rules:
-            # 시즌 체크 (현재 미구현 → 시즌 규칙은 스킵)
-            # TODO: SeasonService 연동 후 활성화
-            if rule.season is not None:
-                continue
+            # [이슈 5 - A안] season 체크: 크롤링 시 수집된 season 태그는 별도 기간 검증 없이 활성으로 간주.
+            # Rationale: 크롤러가 특가 정보를 수집했다면 해당 룰은 현재 유효한 것으로 처리함.
+            #            season 유효 기간 검증은 crwaler 주기가 안정화되면 재논의 예정 (PR 참고).
+            # (이전: rule.season is not None → continue 로 스킵)
 
             # 요일 체크
-            if rule.days is not None and day not in rule.days:
+            if rule.week is not None and day not in rule.week:
                 continue
 
             # 시간대 체크
