@@ -11,6 +11,7 @@ from app.validate.hour_validator import (
     validate_hour_continuous,
     validate_hour_slot_format,
     validate_hour_slot_not_past,
+    validate_hour_slots,
 )
 
 
@@ -89,3 +90,31 @@ def test_validate_hour_slots_equal_time_should_fail():
 
     with pytest.raises(PastHourSlotNotAllowedError):
         validate_hour_slot_not_past(slot, today)
+
+
+class TestOvernightValidation:
+    """자정 교차(overnight) 예약 슬롯 과거 검증 테스트"""
+
+    def test_overnight_today_early_morning_slots_are_not_rejected(self):
+        """오늘 날짜 23:00~01:00 예약 시 자정 이후 슬롯은 과거 판정하지 않아야 함
+
+        Rationale:
+            23:00~01:00은 다음날 새벽 슬롯(00:00, 01:00)을 포함하므로
+            today 기준 과거 시간 비교에서 제외되어야 함.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        # 24:00 표기 또는 00:00~05:00 범위 슬롯이 포함된 overnight 슬롯 배열
+        slots = ["23:00", "00:00", "01:00"]
+        # 예외 없이 통과해야 함
+        validate_hour_slots(slots, today)
+
+    def test_non_overnight_today_past_slot_is_still_rejected(self):
+        """overnight이 아닌 일반 오늘 예약에서는 과거 슬롯이 여전히 거부되어야 함"""
+        now = datetime.now()
+        if now.hour < 1:
+            pytest.skip("새벽 00시대에는 과거 슬롯 생성이 어려워 건너뜁니다.")
+        today = now.strftime("%Y-%m-%d")
+        past_slot = f"{(now.hour - 1):02d}:00"  # 1시간 전 슬롯
+        future_slot = f"{min(now.hour + 1, 23):02d}:00"
+        with pytest.raises(PastHourSlotNotAllowedError):
+            validate_hour_slots([past_slot, future_slot], today)
