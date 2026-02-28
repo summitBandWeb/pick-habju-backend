@@ -506,21 +506,54 @@ class AvailabilityService:
             policy_warnings: List[PolicyWarning] = list(res.policy_warnings) if hasattr(res, 'policy_warnings') and res.policy_warnings else []
 
             booking_duration_hours = len(hour_slots) - 1
-            if booking_duration_hours == 1 and not room.canReserveOneHour:
-                policy_warnings.append(
-                    PolicyWarning(
+            needs_1h_contact = (booking_duration_hours == 1 and not room.canReserveOneHour)
+            needs_today_contact = (request.date == today and room.requiresContactOnSameDay)
+
+            # --- [이슈 2-1] 연락 수단 없는 방 사전 필터링 ---
+            # Rationale: phoneNumber/displayName 모두 없는 경우는 크롤러 미수집 문제임.
+            #            이런 방에 정책이 적용되면 프론트에 전달할 type이 없으므로 제외함.
+            #            장기 과제: 크롤러 phoneNumber/displayName 수집 안정화.
+            if needs_1h_contact and not room.phoneNumber and not room.displayName:
+                continue
+            if needs_today_contact and not room.phoneNumber:
+                continue
+
+            # --- [이슈 2] 1시간 예약 불가 경고 생성 (최대 2가지 type) ---
+            if needs_1h_contact:
+                if room.phoneNumber:
+                    policy_warnings.append(PolicyWarning(
                         type="call_required_1h",
                         message="1시간 예약은 전화 문의가 필요합니다.",
-                    )
-                )
+                    ))
+                else:
+                    # displayName만 있는 경우 (위 필터링 통과 후 여기 도달)
+                    policy_warnings.append(PolicyWarning(
+                        type="chat_required_1h",
+                        message="1시간 예약은 채팅 문의가 필요합니다.",
+                    ))
 
-            if request.date == today and room.requiresContactOnSameDay:
-                policy_warnings.append(
-                    PolicyWarning(
-                        type="call_required_today",
-                        message="당일 예약은 전화 문의가 필요합니다.",
-                    )
-                )
+            # --- [이슈 2] 당일 예약 연락 필요 경고 생성 (항상 1가지 type) ---
+            if needs_today_contact:
+                # phoneNumber 있는 방만 여기 도달 (없으면 위 필터링에서 제외됨)
+                policy_warnings.append(PolicyWarning(
+                    type="call_required_today",
+                    message="당일 예약은 전화 문의가 필요합니다.",
+                ))
+
+            # --- [이슈 3] 최소/최대 예약 시간 정책 검사 ---
+            # Rationale: 합주실마다 최소(예: 2시간)/최대(예: 4시간) 예약 제한이 있음.
+            #            요청 시간이 범위를 벗어날 경우, 프론트엔드가 안내 모달을 띄울 수 있도록 경고 추가.
+            # NOTE: minHours/maxHours가 None이면 제한 없음으로 간주하여 검사 스킵.
+            if room.minHours is not None and booking_duration_hours < room.minHours:
+                policy_warnings.append(PolicyWarning(
+                    type="min_hours_violation",
+                    message=f"최소 {room.minHours}시간 이상 예약이 필요합니다.",
+                ))
+            if room.maxHours is not None and booking_duration_hours > room.maxHours:
+                policy_warnings.append(PolicyWarning(
+                    type="max_hours_violation",
+                    message=f"최대 {room.maxHours}시간까지만 예약할 수 있습니다.",
+                ))
 
             if res.available is True:
                 try:
