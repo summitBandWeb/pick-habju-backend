@@ -10,6 +10,29 @@ from app.exception.common.hour_exception import (
 
 HOUR_PATTERN = r"^(?:[01]\d|2[0-4]):00$"
 
+# Overnight 판별 기준: 심야(19:00 이후) + 새벽(05:00 이전) 슬롯이 공존하면 자정 교차 예약
+# Rationale: validate_hour_slots/validate_hour_continuous 양쪽에서 동일한 기준을 공유하기 위해 상수화.
+#            한쪽만 바꾸는 silent 불일치를 방지함.
+OVERNIGHT_LATE_START_MINUTES = 19 * 60   # 19:00 = 1140분
+OVERNIGHT_EARLY_END_MINUTES = 5 * 60     # 05:00 = 300분
+
+def _is_overnight(minutes: List[int]) -> bool:
+    """19:00 이후와 05:00 이전 슬롯이 공존하면 overnight으로 판별합니다.
+
+    Args:
+        minutes (List[int]): 분 단위로 변환된 슬롯 정수 리스트.
+
+    Returns:
+        bool: True이면 자정을 교차하는(Overnight) 예약.
+
+    Rationale:
+        OVERNIGHT_LATE_START_MINUTES/OVERNIGHT_EARLY_END_MINUTES 상수를 사용하여
+        validate_hour_slots와 validate_hour_continuous가 동일한 기준으로 동작하도록 보장.
+    """
+    has_late_night = any(m >= OVERNIGHT_LATE_START_MINUTES for m in minutes)
+    has_early_morning = any(m <= OVERNIGHT_EARLY_END_MINUTES for m in minutes)
+    return has_late_night and has_early_morning
+
 
 def validate_hour_slot_format(slot: str):
     """시간 형식(HH:MM) 검증"""
@@ -47,18 +70,15 @@ def validate_hour_slots(hour_slots: List[str], date: str):
     is_overnight = False
     if input_date == today:
         raw_minutes = [_slot_to_minutes(s) for s in hour_slots if re.match(HOUR_PATTERN, s)]
-        has_late_night = any(m >= 1140 for m in raw_minutes)   # 19:00 이후
-        has_early_morning = any(m <= 300 for m in raw_minutes)  # 05:00 이전
+        is_overnight = _is_overnight(raw_minutes)
         # Rationale: 23:00~01:00처럼 자정을 넘기는 overnight 예약에서
         #            00:00, 01:00 등 새벽 슬롯은 실제로 "다음날" 시간임.
         #            today 기준 과거 시간 비교를 적용하면 오탐이 발생하므로 스킵함.
-        #            validate_hour_continuous와 동일한 19:00/05:00 기준을 사용.
-        is_overnight = has_late_night and has_early_morning
 
     for slot in hour_slots:
         validate_hour_slot_format(slot)
         if input_date == today:
-            if is_overnight and _slot_to_minutes(slot) <= 300:
+            if is_overnight and _slot_to_minutes(slot) <= OVERNIGHT_EARLY_END_MINUTES:
                 continue  # 다음날 새벽 슬롯은 과거 비교 제외
             validate_hour_slot_not_past(slot, now.time())
 
@@ -94,14 +114,13 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
     # 가장 극단적인 심야 예약 조합은 "19:00 ~ 00:00(24:00)"에서 시작해, 가장 늦게 끝나는 조합이 "00:00 ~ 05:00"입니다.
     # 즉, 정상적인 5시간 이내의 예약이라면 '19:00 이전' 시간대와 '05:00 이후' 시간대가 같은 슬롯 배열에 공존할 수 없습니다.
     # 따라서 19:00(1140분) 이후 값을 "심야", 05:00(300분) 이전 값을 "새벽"으로 정의하여 교차 여부를 판별합니다.
-    has_late_night = any(s >= 1140 for s in raw_slots)   # 19:00 이후 슬롯 존재 여부
-    has_early_morning = any(s <= 300 for s in raw_slots) # 05:00 이전 슬롯 존재 여부
+    has_overnight = _is_overnight(raw_slots)
     
     # 심야(19:00~)와 새벽(~05:00) 시간대가 배열에 공존한다면 자정을 넘긴(Overnight) 예약입니다.
     # 00:00~04:00과 같은 새벽 슬롯들은 숫자가 작아 정렬 시 앞으로 오게 되므로 시계열 연속성이 깨집니다.
     # 이를 방지하기 위해 새벽 시간대값에 하루치인 1440분을 더해 익일 시간(예: 01:00 -> 25:00)으로 변환 후 정렬합니다.
-    if has_late_night and has_early_morning:
-        slots = sorted((s + 1440 if s <= 300 else s) for s in raw_slots)
+    if has_overnight:
+        slots = sorted((s + 1440 if s <= OVERNIGHT_EARLY_END_MINUTES else s) for s in raw_slots)
     else:
         slots = sorted(raw_slots)
 
