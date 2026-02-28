@@ -235,7 +235,7 @@ class RoomCollectionService:
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
             final_can_reserve = parsed_can_reserve if parsed_can_reserve is not None else existing_can_reserve
             
-            existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
+            existing_requires_call = existing.get("requires_contact_on_sameday", False) if existing else False
             parsed_requires_call = parsed.get("requires_call_on_same_day")
             final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
 
@@ -259,7 +259,7 @@ class RoomCollectionService:
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap,
                 "extra_charge": final_extra_charge,
-                "requires_call_on_sameday": final_requires_call,
+                "requires_contact_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }
