@@ -28,10 +28,10 @@ async def test_get_naver_availability():
                 biz_item_id=item.biz_item_id,
                 imageUrls=item.imageUrls,
                 maxCapacity=item.maxCapacity,
-                recommendCapacity=item.recommendCapacity,
+                recommend_capacity_range=item.recommendCapacityRange,
                 pricePerHour=item.pricePerHour,
                 canReserveOneHour=item.canReserveOneHour,
-                requiresCallOnSameDay=item.requiresCallOnSameDay
+                requires_contact_on_sameday=item.requiresContactOnSameDay
             )
             naver_rooms.append(room)
 

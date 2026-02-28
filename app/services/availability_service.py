@@ -382,31 +382,9 @@ class AvailabilityService:
 
             # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
             if res.available is True or res.available == "unknown":
-                # v2.0.0: 표시용 권장 인원 범위 계산 (비정적 max/base 조합 방어)
-                rec_min: Optional[int] = None
-                rec_max: Optional[int] = None
-
-                if room_detail.baseCapacity and room_detail.baseCapacity > 0:
-                    rec_min = room_detail.baseCapacity
-                    if room_detail.maxCapacity and room_detail.maxCapacity >= rec_min:
-                        rec_max = room_detail.maxCapacity
-                    else:
-                        fallback_max = room_detail.recommendCapacity or (rec_min + 2)
-                        rec_max = max(rec_min, fallback_max)
-                elif room_detail.recommendCapacityRange and len(room_detail.recommendCapacityRange) == 2:
-                    rec_min, rec_max = room_detail.recommendCapacityRange
-                elif room_detail.recommendCapacity and room_detail.recommendCapacity > 0:
-                    rec_min = room_detail.recommendCapacity
-                    rec_max = room_detail.recommendCapacity + 2
-
-                if (
-                    not room_detail.recommendCapacityRange
-                    and rec_min is not None
-                    and rec_max is not None
-                    and rec_min > 0
-                    and rec_max >= rec_min
-                ):
-                    room_detail.recommendCapacityRange = [rec_min, rec_max]
+                # [이슈 6] recommendCapacityRange가 DB에서 제공되면 그대로 사용.
+                # None인 경우는 파서/room_collection_service에서 보강 예정.
+                # (이전: recommendCapacity 단일값 기반 fallback 로직 존재, 제거함)
 
                 if isinstance(res.estimated_price, int) and res.estimated_price > 0:
                     total_price = res.estimated_price
@@ -509,7 +487,7 @@ class AvailabilityService:
             needs_1h_contact = (booking_duration_hours == 1 and not room.canReserveOneHour)
             needs_today_contact = (request.date == today and room.requiresContactOnSameDay)
 
-            # --- [이슈 2-1] 연락 수단 없는 방 사전 필터링 ---
+            # 연락 수단 없는 방 사전 필터링
             # Rationale: phoneNumber/displayName 모두 없는 경우는 크롤러 미수집 문제임.
             #            이런 방에 정책이 적용되면 프론트에 전달할 type이 없으므로 제외함.
             #            장기 과제: 크롤러 phoneNumber/displayName 수집 안정화.
@@ -518,7 +496,7 @@ class AvailabilityService:
             if needs_today_contact and not room.phoneNumber:
                 continue
 
-            # --- [이슈 2] 1시간 예약 불가 경고 생성 (최대 2가지 type) ---
+            # 1시간 예약 불가 경고 생성
             if needs_1h_contact:
                 if room.phoneNumber:
                     policy_warnings.append(PolicyWarning(
@@ -532,7 +510,7 @@ class AvailabilityService:
                         message="1시간 예약은 채팅 문의가 필요합니다.",
                     ))
 
-            # --- [이슈 2] 당일 예약 연락 필요 경고 생성 (항상 1가지 type) ---
+            # 당일 예약 연락 필요 경고 생성 (항상 1가지 type)
             if needs_today_contact:
                 # phoneNumber 있는 방만 여기 도달 (없으면 위 필터링에서 제외됨)
                 policy_warnings.append(PolicyWarning(
@@ -540,7 +518,7 @@ class AvailabilityService:
                     message="당일 예약은 전화 문의가 필요합니다.",
                 ))
 
-            # --- [이슈 3] 최소/최대 예약 시간 정책 검사 ---
+            # 최소/최대 예약 시간 정책 검사
             # Rationale: 합주실마다 최소(예: 2시간)/최대(예: 4시간) 예약 제한이 있음.
             #            요청 시간이 범위를 벗어날 경우, 프론트엔드가 안내 모달을 띄울 수 있도록 경고 추가.
             # NOTE: minHours/maxHours가 None이면 제한 없음으로 간주하여 검사 스킵.

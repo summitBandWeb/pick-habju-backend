@@ -19,16 +19,7 @@ class RoomDetail(BaseModel):
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
-    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
-
-    @field_validator("recommendCapacity", mode="before")
-    @classmethod
-    def normalize_recommend_capacity(cls, v: Any) -> int:
-        """레거시 데이터 호환: 리스트로 들어오면 첫 번째 값을 사용"""
-        if isinstance(v, list):
-            return v[0] if v else 0
-        return v
-
+    # [이슈 6] recommendCapacity(단일값 레거시) 제거. 범위형 recommendCapacityRange로 단일화.
     recommendCapacityRange: Optional[List[int]] = Field(
         default=None,
         alias="recommend_capacity_range",
@@ -120,16 +111,8 @@ class RoomDetail(BaseModel):
         if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
             self.maxCapacity = 0
 
-        if self.recommendCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
-            self.recommendCapacity = 0
-
-        if (
-            not self.recommendCapacityRange
-            and self.recommendCapacity
-            and self.recommendCapacity > 0
-        ):
-            min_cap = max(1, self.recommendCapacity - 2)
-            self.recommendCapacityRange = [min_cap, self.recommendCapacity]
+        # [이슈 6] recommendCapacity(단일값) fallback 로직 제거.
+        # recommendCapacityRange가 None이면 그대로 None. 파서/DB 보강으로 해결.
 
         if not self.priceConfig and self.pricePerHour:
             self.priceConfig = {"default": self.pricePerHour, "overrides": []}

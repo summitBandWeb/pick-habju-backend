@@ -25,9 +25,9 @@ def sample_groove_rooms():
         imageUrls=[],
         pricePerHour=15000,
         maxCapacity=6,
-        recommendCapacity=4,
+        recommend_capacity_range=[2, 4],
         canReserveOneHour=True,
-        requiresCallOnSameDay=False
+        requires_contact_on_sameday=False
     )]
 
 
