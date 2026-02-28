@@ -53,10 +53,12 @@ class RoomDetail(BaseModel):
     phoneNumber: Optional[str] = Field(None, description="Branch phone number (if null, use chat)")
     displayName: Optional[str] = Field(None, description="Branch display name")
     openWaitRule: Dict[str, Any] = Field(default_factory=dict, description="Branch open wait rule (JSON)")
+    standbyDays: Optional[int] = Field(None, alias="standby_days", description="오픈대기일수 (현재일 기준 N일 이후 오픈 대기 여부 판단용)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
-    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
-    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="Whether same-day reservation requires a call")
+    # NOTE: 아래 두 필드는 내부 정책 판별 로직에서만 사용하며, 프론트엔드 응답에서는 policy_warnings로 대체됨
+    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available", exclude=True)
+    requiresContactOnSameDay: bool = Field(alias="requires_contact_on_sameday", description="당일 예약 시 연락(전화/채팅) 필요 여부", exclude=True)
 
     @field_validator('branch', mode='before')
     @classmethod
@@ -264,8 +266,6 @@ class RoomInfo(BaseModel):
     baseCapacity: Optional[int] = None
     extraCharge: Optional[int] = None
     pricePerHour: int
-    canReserveOneHour: bool
-    requiresCallOnSameDay: bool
     
     # v2.0.0 추가 필드
     minCapacity: int
@@ -273,6 +273,7 @@ class RoomInfo(BaseModel):
     maxHours: Optional[int] = None
     phoneNumber: Optional[str] = None
     displayName: Optional[str] = None
+    standbyDays: Optional[int] = None
 
     # [v2.0.0] 계산된 정보
     estimatedPrice: Optional[int] = None

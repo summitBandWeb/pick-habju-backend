@@ -514,7 +514,7 @@ class AvailabilityService:
                     )
                 )
 
-            if request.date == today and room.requiresCallOnSameDay:
+            if request.date == today and room.requiresContactOnSameDay:
                 policy_warnings.append(
                     PolicyWarning(
                         type="call_required_today",
