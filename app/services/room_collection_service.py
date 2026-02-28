@@ -154,12 +154,19 @@ class RoomCollectionService:
         
         # 1. Save Branch
         coords = business.get("coordinates")
+        # standby_days 추출: 지점 단위 속성이므로 첫 번째 룸의 파싱 결과를 대표로 사용
+        # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
+        #            같은 지점 소속 룸들은 동일한 standby_days를 가지므로 첫 번째 룸 값을 사용.
+        first_room_id = rooms[0]["bizItemId"] if rooms else None
+        first_parsed = parsed_results.get(first_room_id, {}) if first_room_id else {}
+
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
             "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
+            "standby_days": first_parsed.get("standby_days"),  # [이슈 4] 오픈대기일수
         }
         
         # Upsert Branch
