@@ -31,12 +31,12 @@ def mock_room_detail_factory():
             "biz_item_id": biz_item_id,
             "imageUrls": ["http://test.com/img.jpg"],
             "maxCapacity": 10,
-            "recommendCapacity": 5,
+            "recommend_capacity_range": [3, 5],
             "baseCapacity": None,
             "extraCharge": None,
             "pricePerHour": price,
             "canReserveOneHour": True,
-            "requiresCallOnSameDay": False,
+            "requiresContactOnSameDay": False,
             "lat": lat,
             "lng": lng
         }
