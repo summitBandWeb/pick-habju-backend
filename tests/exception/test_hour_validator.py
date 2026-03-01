@@ -161,17 +161,17 @@ class TestIsOvernightUnit:
     @pytest.mark.parametrize("minutes,expected", [
         # overnight O: 정확히 경계값 포함
         ([OVERNIGHT_LATE_START_MINUTES, 60], True),          # 19:00 + 01:00
-        ([OVERNIGHT_EARLY_END_MINUTES, 1200], True),         # 05:00 + 20:00
+        ([OVERNIGHT_EARLY_END_MINUTES, 1200], True),         # 새벽 경계(04:00)와 심야(20:00)가 공존 → overnight
         ([OVERNIGHT_LATE_START_MINUTES, OVERNIGHT_EARLY_END_MINUTES], True),  # 양쪽 경계
         ([1380, 60], True),                                  # 23:00 + 01:00
         # overnight X: 경계보다 1단위 미달/초과
         ([OVERNIGHT_LATE_START_MINUTES - 60, 60], False),    # 18:00(경계 미만) + 01:00
-        ([1200, OVERNIGHT_EARLY_END_MINUTES + 60], False),   # 20:00 + 06:00(경계 초과)
+        ([1200, OVERNIGHT_EARLY_END_MINUTES + 60], False),   # 20:00 + 05:00(경계 초과)
         ([1200, 480], False),                                # 20:00만 있고 새벽 없음
         ([60, OVERNIGHT_EARLY_END_MINUTES], False),          # 01:00만 있고 심야 없음
     ])
     def test_is_overnight_boundary(self, minutes, expected):
-        """_is_overnight()가 19:00/05:00 경계값을 포함(inclusive) 처리하는지 검증
+        """_is_overnight()가 19:00/04:00 경계값을 포함(inclusive) 처리하는지 검증
 
         Rationale:
             OVERNIGHT_LATE_START_MINUTES·OVERNIGHT_EARLY_END_MINUTES 상수를 >= / <= 로
