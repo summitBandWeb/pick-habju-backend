@@ -23,8 +23,12 @@ HOUR_PATTERN = r"^(?:[01]\d|2[0-4]):00$"
 #       서버 로컬 타임존 대신 KST를 명시적으로 고정함. (import 블록에서 선언)
 
 # Overnight 판별 기준: 심야(19:00 이상) + 새벽(04:00 이하) 슬롯이 공존하면 자정 교차 예약
-# Rationale: validate_hour_slots/validate_hour_continuous 양쪽에서 동일한 기준을 공유하기 위해 상수화.
-#            한쪽만 바꾸는 silent 불일치를 방지함.
+# Rationale:
+#   validate_hour_slots/validate_hour_continuous 양쪽에서 동일한 기준을 공유하기 위해 상수화.
+#   한쪽만 바꾸는 silent 불일치를 방지함.
+#   DTO 최대 예약 시간(5시간)과 연동: 19:00 시작 → 00:00 종료(5시간), 00:00 시작 → 04:00 콜렉션(4시간, max)
+#   ⚠️ 향후 DTO 최대 예약 시간 변경 시 이 상수도 함께 조정해야 함.
+#   Reference: app/models/dto.py 내 hour_slots 길이 검증자
 OVERNIGHT_LATE_START_MINUTES = 19 * 60   # 19:00 = 1140분
 OVERNIGHT_EARLY_END_MINUTES = 4 * 60     # 04:00 = 240분 (포함, overnight 새벽 종료 기준)
 # NOTE: 최대 5시간 overnight 시 23:00 시작 → 04:00 종료가 최대.
@@ -109,7 +113,7 @@ def validate_hour_slots(hour_slots: List[str], date: str):
     # 4단계: 과거 시간 검증
     for slot, minutes in zip(hour_slots, slot_minutes):
         if input_date == today:
-            # NOTE: 24:00(end-of-day 마커)은 _slot_to_minutes 상 1440분으로 OVERNIGHT_EARLY_END_MINUTES(300)보다 크므로
+            # NOTE: 24:00(end-of-day 마커)은 _slot_to_minutes 상 1440분으로 OVERNIGHT_EARLY_END_MINUTES(240)보다 크므로
             #       overnight이어도 skip 대상이 아닙니다. 이는 의도된 동작입니다.
             if is_overnight and minutes <= OVERNIGHT_EARLY_END_MINUTES:
                 continue  # overnight 새벽 슬롯(00:00~04:00)은 과거 비교 제외
