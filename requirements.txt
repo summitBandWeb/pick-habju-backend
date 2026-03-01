@@ -6,6 +6,7 @@ beautifulsoup4~=4.12
 pydantic~=2.7
 supabase~=2.4        # Supabase Python 클라이언트
 lxml~=5.2            # BeautifulSoup 'lxml' 파서
+tzdata~=2024.1       # Windows에서 zoneinfo(Asia/Seoul) 사용 시 필수
 
 # ==== 크롤러 & LLM ====
 playwright~=1.40     # Naver Map 크롤링
