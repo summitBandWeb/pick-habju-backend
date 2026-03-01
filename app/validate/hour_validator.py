@@ -1,6 +1,15 @@
 ﻿import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List
+try:
+    from zoneinfo import ZoneInfo
+    # NOTE: Windows에서는 tzdata 패키지가 없으면 ZoneInfoNotFoundError 발생.
+    #       프로덕션 환경에선 `pip install tzdata`로 반드시 설치해야 함.
+    KST = ZoneInfo("Asia/Seoul")
+except Exception:
+    # HACK: tzdata 미설치 환경(Windows 로컬 등)에서의 fallback.
+    #       ZoneInfo를 사용할 수 없을 때 UTC+9 오프셋으로 대체.
+    KST = timezone(timedelta(hours=9))
 
 from app.exception.common.hour_exception import (
     HourDiscontinuousError,
@@ -9,6 +18,9 @@ from app.exception.common.hour_exception import (
 )
 
 HOUR_PATTERN = r"^(?:[01]\d|2[0-4]):00$"
+
+# NOTE: 운영 환경의 타임존 설정 오류가 전체 시간 검증을 무력화하는 것을 방지하기 위해
+#       서버 로컬 타임존 대신 KST를 명시적으로 고정함. (import 블록에서 선언)
 
 # Overnight 판별 기준: 심야(19:00 이상) + 새벽(04:00 이하) 슬롯이 공존하면 자정 교차 예약
 # Rationale: validate_hour_slots/validate_hour_continuous 양쪽에서 동일한 기준을 공유하기 위해 상수화.
@@ -27,10 +39,22 @@ def _is_overnight(minutes: List[int]) -> bool:
     Returns:
         bool: True이면 자정을 교차하는(Overnight) 예약.
 
+    Raises:
+        InvalidHourSlotError: 음수이거나 1440(24:00)을 초과하는 분 값이 포함된 경우.
+
     Rationale:
         OVERNIGHT_LATE_START_MINUTES/OVERNIGHT_EARLY_END_MINUTES 상수를 사용하여
         validate_hour_slots와 validate_hour_continuous가 동일한 기준으로 동작하도록 보장.
+        빈 리스트나 범위를 벗어난 값이 입력될 경우 False 반환 또는 예외를 발생시켜
+        False Positive로 인한 Silent failure를 방지함.
     """
+    if not minutes:
+        return False  # 빈 입력은 overnight 아님으로 명시적 처리
+
+    # 음수 또는 24:00(1440분) 초과 값은 _slot_to_minutes에서 생성될 수 없는 범위이므로 방어 처리
+    if any(m < 0 or m > 1440 for m in minutes):
+        raise InvalidHourSlotError("유효 범위(0~1440분)를 벗어난 분 값이 포함되어 있습니다.")
+
     has_late_night = any(m >= OVERNIGHT_LATE_START_MINUTES for m in minutes)
     has_early_morning = any(m <= OVERNIGHT_EARLY_END_MINUTES for m in minutes)
     return has_late_night and has_early_morning
@@ -65,7 +89,7 @@ def validate_hour_slot_not_past(slot: str, now_time):
 
 def validate_hour_slots(hour_slots: List[str], date: str):
     """시간 슬롯 전체 검증(형식 + 과거여부 + 연속성)"""
-    now = datetime.now()
+    now = datetime.now(KST)
     today = now.date()
     input_date = datetime.strptime(date, "%Y-%m-%d").date()
 
@@ -119,6 +143,8 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
     raw_slots = [_slot_to_minutes(slot) for slot in hour_slots]
     
     # [자정을 넘기는 연속성 검사 기준 (19:00 ~ 04:00)]
+    # NOTE: 슬롯 최대 개수(5시간) 검증은 DTO 계층에서 수행됩니다.
+    #       이 함수는 DTO 유효성 검사를 통과한 입력만 받는다고 가정합니다.
     # DTO 계층에서 허용하는 최대 예약 시간은 5시간입니다.
     # 가장 극단적인 심야 예약 조합은 "19:00 ~ 00:00(24:00)" 시작, 가장 늦게 끝나는 조합이 "23:00 ~ 04:00"입니다.
     # 즉, 정상적인 5시간 이내의 예약이라면 '19:00 미만' 시간대와 '04:00 초과' 시간대가 같은 슬롯 배열에 공존할 수 없습니다.

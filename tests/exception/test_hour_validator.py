@@ -1,4 +1,5 @@
 ﻿from datetime import datetime, timedelta
+from datetime import datetime as dt_original
 from unittest.mock import patch
 
 import pytest
@@ -113,7 +114,7 @@ class TestOvernightValidation:
         slots = ["23:00", "00:00", "01:00"]
         with patch("app.validate.hour_validator.datetime") as mock_dt:
             mock_dt.now.return_value = fixed_now
-            mock_dt.strptime.side_effect = datetime.strptime
+            mock_dt.strptime = dt_original.strptime  # side_effect 대신 직접 할당으로 호출 경로를 명확히 함
             # 예외 없이 통과해야 함
             validate_hour_slots(slots, today)
 
@@ -128,7 +129,7 @@ class TestOvernightValidation:
         today = fixed_now.strftime("%Y-%m-%d")
         with patch("app.validate.hour_validator.datetime") as mock_dt:
             mock_dt.now.return_value = fixed_now
-            mock_dt.strptime.side_effect = datetime.strptime
+            mock_dt.strptime = dt_original.strptime  # side_effect 대신 직접 할당으로 호출 경로를 명확히 함
             with pytest.raises(PastHourSlotNotAllowedError):
                 validate_hour_slots(["12:00", "13:00"], today)  # 연속 + 14:00 기준 과거
 
@@ -150,9 +151,48 @@ class TestOvernightValidation:
         today = fixed_now.strftime("%Y-%m-%d")
         with patch("app.validate.hour_validator.datetime") as mock_dt:
             mock_dt.now.return_value = fixed_now
-            mock_dt.strptime.side_effect = datetime.strptime
+            mock_dt.strptime = dt_original.strptime  # side_effect 대신 직접 할당으로 호출 경로를 명확히 함
             # overnight으로 판별되어 새벽 슬롯이 과거 판정에서 제외 → 예외 없이 통과해야 함
             validate_hour_slots(slots, today)
+
+    def test_overnight_exact_boundary_23_to_04(self):
+        """23:00~04:00 (OVERNIGHT_EARLY_END_MINUTES = 04:00 정각 경계) overnight는 예외 없이 통과해야 함
+
+        Rationale:
+            최대 5시간 overnight의 가장 늦은 조합 '23:00 ~ 04:00'을 검증.
+            OVERNIGHT_EARLY_END_MINUTES(04:00, 240분)가 <= 비교이므로
+            04:00 슬롯(240분)이 overnight 새벽으로 판별되어 과거 검증에서 제외되어야 함.
+            임계값(<=)을 < 로 잘못 변경하면 이 테스트가 즉시 실패하여 미탐지를 방지함.
+            NOTE: 05:00(300분)은 OVERNIGHT_EARLY_END_MINUTES(240분) 초과라 overnight skip 대상이 아님.
+                  19:00+05:00 조합은 10시간이므로 DTO 5시간 제한에도 위배됨. 해당 경계는
+                  TestIsOvernightUnit.test_is_overnight_boundary에서 단위 검증함.
+            NOTE: 23:00 슬롯이 미래가 되도록 now를 22:00으로 고정.
+        """
+        fixed_now = datetime.now().replace(hour=22, minute=0, second=0, microsecond=0)
+        today = fixed_now.strftime("%Y-%m-%d")
+        slots = ["23:00", "00:00", "01:00", "02:00", "03:00", "04:00"]  # 정확히 5시간
+        with patch("app.validate.hour_validator.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime = dt_original.strptime
+            # 04:00이 overnight 새벽으로 판별되어 과거 검증 제외 → 예외 없이 통과
+            validate_hour_slots(slots, today)
+
+    def test_non_overnight_early_morning_past_rejected(self):
+        """overnight이 아닌데 새벽 슬롯만 있는 경우 과거 시간으로 거부되어야 함
+
+        Rationale:
+            02:00, 03:00은 19:00 이상 슬롯이 없으므로 overnight 미해당.
+            14:00 기준으로 02:00~03:00은 이미 과거이므로 PastHourSlotNotAllowedError 발생해야 함.
+            overnight 스킵 로직이 일반 새벽 과거 슬롯을 잘못 통과시키지 않는지 회귀 방지.
+        """
+        fixed_now = datetime.now().replace(hour=14, minute=0, second=0, microsecond=0)
+        today = fixed_now.strftime("%Y-%m-%d")
+        slots = ["02:00", "03:00"]  # 심야 슬롯 없음 → overnight 아님, 모두 과거
+        with patch("app.validate.hour_validator.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime = dt_original.strptime
+            with pytest.raises(PastHourSlotNotAllowedError):
+                validate_hour_slots(slots, today)
 
 
 class TestIsOvernightUnit:
