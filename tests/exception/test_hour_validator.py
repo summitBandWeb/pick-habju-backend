@@ -13,7 +13,11 @@ from app.validate.hour_validator import (
     validate_hour_slot_format,
     validate_hour_slot_not_past,
     validate_hour_slots,
+    _is_overnight,
+    OVERNIGHT_LATE_START_MINUTES,
+    OVERNIGHT_EARLY_END_MINUTES,
 )
+
 
 
 def test_validate_hour_slots_invalid_format():
@@ -127,3 +131,51 @@ class TestOvernightValidation:
             mock_dt.strptime.side_effect = datetime.strptime
             with pytest.raises(PastHourSlotNotAllowedError):
                 validate_hour_slots(["12:00", "13:00"], today)  # 연속 + 14:00 기준 과거
+
+    @pytest.mark.parametrize("slots", [
+        # [19:00 경계] 정확히 19:00부터 시작하는 overnight 5시간 예약 (end-inclusive 6슬롯)
+        # NOTE: 05:00 경계 케이스는 19:00 이상→05:00 최소 10시간 거리라 5시간 제한 내 불가.
+        #       05:00 경계는 _is_overnight() 단위테스트(TestIsOvernightUnit)에서 직접 검증.
+        ["19:00", "20:00", "21:00", "22:00", "23:00", "00:00"],
+    ])
+    def test_overnight_boundary_slots_are_not_rejected(self, slots):
+        """19:00·05:00 경계값이 포함된 연속 overnight 슬롯은 과거 판정 없이 통과해야 함
+
+        Rationale:
+            OVERNIGHT_LATE_START_MINUTES(19:00)·OVERNIGHT_EARLY_END_MINUTES(05:00) 상수를
+            직접 검증하는 경계 테스트. 임계값이 변경되면 이 테스트가 즉시 실패하여 미탐지를 방지함.
+            NOTE: 19:00 슬롯이 '미래'가 되도록 now를 18:00으로 고정. (22:00으로 하면 19:00이 과거 시간이 됨)
+        """
+        fixed_now = datetime.now().replace(hour=18, minute=0, second=0, microsecond=0)
+        today = fixed_now.strftime("%Y-%m-%d")
+        with patch("app.validate.hour_validator.datetime") as mock_dt:
+            mock_dt.now.return_value = fixed_now
+            mock_dt.strptime.side_effect = datetime.strptime
+            # overnight으로 판별되어 새벽 슬롯이 과거 판정에서 제외 → 예외 없이 통과해야 함
+            validate_hour_slots(slots, today)
+
+
+class TestIsOvernightUnit:
+    """_is_overnight() 헬퍼 함수 단위 테스트 (경계값 중점)"""
+
+    @pytest.mark.parametrize("minutes,expected", [
+        # overnight O: 정확히 경계값 포함
+        ([OVERNIGHT_LATE_START_MINUTES, 60], True),          # 19:00 + 01:00
+        ([OVERNIGHT_EARLY_END_MINUTES, 1200], True),         # 05:00 + 20:00
+        ([OVERNIGHT_LATE_START_MINUTES, OVERNIGHT_EARLY_END_MINUTES], True),  # 양쪽 경계
+        ([1380, 60], True),                                  # 23:00 + 01:00
+        # overnight X: 경계보다 1단위 미달/초과
+        ([OVERNIGHT_LATE_START_MINUTES - 60, 60], False),    # 18:00(경계 미만) + 01:00
+        ([1200, OVERNIGHT_EARLY_END_MINUTES + 60], False),   # 20:00 + 06:00(경계 초과)
+        ([1200, 480], False),                                # 20:00만 있고 새벽 없음
+        ([60, OVERNIGHT_EARLY_END_MINUTES], False),          # 01:00만 있고 심야 없음
+    ])
+    def test_is_overnight_boundary(self, minutes, expected):
+        """_is_overnight()가 19:00/05:00 경계값을 포함(inclusive) 처리하는지 검증
+
+        Rationale:
+            OVERNIGHT_LATE_START_MINUTES·OVERNIGHT_EARLY_END_MINUTES 상수를 >= / <= 로
+            비교하므로 경계값 자체도 overnight으로 판별되어야 함.
+            이 테스트가 실패하면 상수 또는 비교 연산자가 잘못 변경된 것임.
+        """
+        assert _is_overnight(minutes) == expected
