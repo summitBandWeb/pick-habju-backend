@@ -78,8 +78,10 @@ def validate_hour_slots(hour_slots: List[str], date: str):
     for slot in hour_slots:
         validate_hour_slot_format(slot)
         if input_date == today:
+            # NOTE: 24:00(end-of-day 마커)은 _slot_to_minutes 상 1440분으로 OVERNIGHT_EARLY_END_MINUTES(300)보다 크므로
+            #       overnight이어도 skip 대상이 아닙니다. 이는 의도된 동작입니다.
             if is_overnight and _slot_to_minutes(slot) <= OVERNIGHT_EARLY_END_MINUTES:
-                continue  # 다음날 새벽 슬롯은 과거 비교 제외
+                continue  # 다음날 새벽 슬롯(00:00~05:00)은 과거 비교 제외
             validate_hour_slot_not_past(slot, now.time())
 
     validate_hour_continuous(hour_slots, date)
