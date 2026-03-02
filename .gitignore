@@ -182,5 +182,8 @@ cython_debug/
 logs/
 
 CONVENTION.md
+convention.md
+PR_DESCRIPTION.md
+/scripts/
 *.db
 nul
