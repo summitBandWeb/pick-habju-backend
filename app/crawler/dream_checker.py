@@ -92,15 +92,7 @@ class DreamCrawler(BaseCrawler):
 
         # BeautifulSoup으로 파싱
         available_slots = self._parse_html_content(items_html, hour_slots)
-        all_true = all(available_slots.values())
-        any_true = any(available_slots.values())
-        
-        if all_true:
-            available = True
-        elif any_true:
-            available = "unknown"
-        else:
-            available = False
+        available = self.resolve_tri_state(available_slots)
 
         return RoomAvailability(
             room_detail=room,

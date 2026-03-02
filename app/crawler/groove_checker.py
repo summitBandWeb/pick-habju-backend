@@ -84,14 +84,7 @@ class GrooveCrawler(BaseCrawler):
 
         slots = {hour_str: self._check_hour_slot(soup, rm_ix, hour_str) for hour_str in hour_slots}
         
-        all_true = all(slots.values())
-        any_true = any(slots.values())
-        if all_true:
-            overall = True
-        elif any_true:
-            overall = "unknown"
-        else:
-            overall = False
+        overall = self.resolve_tri_state(slots)
 
         return RoomAvailability(
             room_detail=room,

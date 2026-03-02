@@ -81,14 +81,7 @@ class NaverCrawler(BaseCrawler):
         except Exception as e:
             raise NaverAvailabilityError(f"[{room.name}] 응답 파싱 오류: {e}")
 
-        all_true = all(val for hour, val in available_slots.items() if hour in hour_slots)
-        any_true = any(val for hour, val in available_slots.items() if hour in hour_slots)
-        if all_true:
-            available = True
-        elif any_true:
-            available = "unknown"
-        else:
-            available = False
+        available = self.resolve_tri_state(available_slots, hour_slots)
 
         return RoomAvailability(
             room_detail=room,

@@ -31,7 +31,7 @@ from app.models.dto import (
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
 from app.exception.base_exception import BaseCustomException, ErrorCode
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime, timedelta
 from app.utils.room_loader import get_rooms_by_criteria
 from fastapi import HTTPException
@@ -224,7 +224,7 @@ class AvailabilityService:
             
         # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
         billable_slots = hour_slots[:-1]
-        if available_slots:
+        if available_slots is not None:
             billable_slots = [slot for slot in billable_slots if available_slots.get(slot) is True]
             
         total_price = 0
@@ -629,7 +629,7 @@ class AvailabilityService:
                                 e_dt = s_dt + timedelta(hours=1)
                                 
                                 # 심야 예약 대응
-                                if s_dt.hour > e_dt.hour:
+                                if e_dt <= s_dt:
                                     e_dt += timedelta(days=1)
                                     
                                 price += self.pricing_service.calculate_total_price(
