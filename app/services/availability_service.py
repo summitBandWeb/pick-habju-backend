@@ -473,6 +473,7 @@ class AvailabilityService:
             if branch_obj.min_price_partial is None or total_price < branch_obj.min_price_partial:
                 branch_obj.min_price_partial = total_price
 
+
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
         """병렬 크롤러 결과에서 에러(Exception)만 추출하여 로깅합니다.
         
@@ -618,6 +619,7 @@ class AvailabilityService:
                         # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
+
                         # 부분 예약 가능(unknown)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
                         if res.available == "unknown":
                             longest_block = []
@@ -634,12 +636,21 @@ class AvailabilityService:
                                 longest_block = current_block
 
                             price = 0
+                            day_offset = 0
+                            prev_min = -1
+                            
                             for slt in longest_block:
-                                s_dt = datetime.strptime(f"{request.date} {slt}", "%Y-%m-%d %H:%M")
+                                curr_min = self._slot_to_minutes(slt)
+                                if prev_min != -1 and curr_min < prev_min:
+                                    day_offset += 1
+                                    
+                                base_dt = datetime.strptime(request.date, "%Y-%m-%d") + timedelta(days=day_offset)
+                                s_dt = datetime.strptime(f"{base_dt.strftime('%Y-%m-%d')} {slt}", "%Y-%m-%d %H:%M")
+                                
                                 # 다음 슬롯 시간 (1시간 추가)
                                 e_dt = s_dt + timedelta(hours=1)
                                 
-                                # 심야 예약 대응
+                                # 심야 예약 대응 (단일 슬롯 내에서의 익일 갱신)
                                 if e_dt <= s_dt:
                                     e_dt += timedelta(days=1)
                                     
@@ -652,6 +663,7 @@ class AvailabilityService:
                                     end_dt=e_dt,
                                     people_count=request.capacity,
                                 )
+                                prev_min = curr_min
                         else:
                             price = self.pricing_service.calculate_total_price(
                                 base_price=room.pricePerHour,

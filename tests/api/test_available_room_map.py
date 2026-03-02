@@ -131,6 +131,7 @@ async def test_map_search_success(
         assert "branch_summary" not in data
         assert "results" not in data["branches"][0]
         assert "branch_summary" not in data["branches"][0]
+        assert "min_price" not in data["branches"][0]
         assert data["branches"][0]["rooms"][0]["name"] == "Refactored Room"
         
         # Mock 호출 파라미터 검증

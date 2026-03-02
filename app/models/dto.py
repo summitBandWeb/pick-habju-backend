@@ -1,9 +1,13 @@
 import re
 from datetime import datetime, date
-
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
 import logging
-from typing import List, Dict, Union, Any, Optional, ClassVar
+from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
+
+class HealthResponse(BaseModel):
+    """Health Check Response Model"""
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(description="Health status of the system (healthy, degraded, unhealthy)")
+    dependencies: Dict[str, str] = Field(description="Health status of individual dependencies (e.g., database)")
 
 logger = logging.getLogger(__name__)
 
@@ -322,8 +326,6 @@ class BranchResponse(BaseModel):
     phone_number: Optional[str] = None
     display_name: Optional[str] = None
     rooms: List[RoomResponse] = Field(default_factory=list)
-
-
 
 # Full Response DTO (Nested Branch Structure)
 class AvailabilityResponse(BaseModel):

@@ -31,6 +31,13 @@ CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
 
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
+# NOTE: Supabase 연결을 위한 헬스체크 타임아웃 기본값은 2.0초입니다.
+# Cloud Run 등 외부 인프라에서 Supabase로의 레이턴시(P99)가 1.5초 이상 지연될 경우 
+# 간헐적인 503 에러가 발생하여 불필요한 인스턴스 재시작으로 이어질 수 있습니다. 
+# 운영 환경 배포 전에 실제 RTT를 측정하고 필요 시 환경변수를 통해 이 값을 조정해야 합니다.
+HEALTH_CHECK_TIMEOUT = float(os.getenv("HEALTH_CHECK_TIMEOUT", "2.0"))
+if HEALTH_CHECK_TIMEOUT <= 0:
+    raise ValueError("HEALTH_CHECK_TIMEOUT must be strictly greater than 0")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL과 SUPABASE_KEY 환경변수가 필요합니다.")

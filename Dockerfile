@@ -56,7 +56,10 @@ ENV PORT=8080
 # Python 출력 버퍼링 비활성화 (실시간 로그, 크래시 시 로그 유실 방지)
 ENV PYTHONUNBUFFERED=1
 
-# Health check (선택적)
+# Health check
+# NOTE: 앱 컨테이너의 생존 여부(Liveness)만 확인하여 DB 일시 장애 시 
+# 불필요한 컨테이너 연쇄 재시작(Restart loop) 및 Cold start 비용을 방지하기 위해 /ping을 사용합니다.
+# 외부 로드밸런서 등의 트래픽 라우팅 기준(Readiness)으로는 /health 엔드포인트를 지정해야 합니다.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/ping')" || exit 1
 
