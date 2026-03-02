@@ -48,6 +48,7 @@ class OllamaClient:
         self.base_url = base_url or os.getenv("OLLAMA_URL", self.OLLAMA_URL)
         self.timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
+        self._disabled_reason: Optional[str] = None
 
     def _get_client(self) -> httpx.AsyncClient:
         """httpx.AsyncClient를 lazy-init으로 반환합니다."""
@@ -83,6 +84,10 @@ class OllamaClient:
         Returns:
             JSON 문자열 응답, 실패 시 None
         """
+        if self._disabled_reason:
+            logger.debug("Ollama generate skipped: %s", self._disabled_reason)
+            return None
+
         try:
             client = self._get_client()
             response = await client.post(
@@ -110,7 +115,15 @@ class OllamaClient:
             return response_text
 
         except httpx.HTTPStatusError as e:
-            logger.warning(f"Ollama HTTP 에러 (status {e.response.status_code}): {e}")
+            response_text = e.response.text if e.response is not None else ""
+            if "requires more system memory" in response_text:
+                self._disabled_reason = "insufficient system memory for configured model"
+                logger.warning(
+                    "Ollama disabled for this process: %s",
+                    self._disabled_reason,
+                )
+            status_code = e.response.status_code if e.response is not None else "unknown"
+            logger.warning(f"Ollama HTTP 에러 (status {status_code}): {e}")
             return None
 
         except httpx.ConnectError:
