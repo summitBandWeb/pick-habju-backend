@@ -225,7 +225,18 @@ class AvailabilityService:
         # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
         billable_slots = hour_slots[:-1]
         if available_slots is not None:
-            billable_slots = [slot for slot in billable_slots if available_slots.get(slot) is True]
+            longest_block = []
+            current_block = []
+            for slt in billable_slots:
+                if available_slots.get(slt) is True:
+                    current_block.append(slt)
+                else:
+                    if len(current_block) > len(longest_block):
+                        longest_block = current_block
+                    current_block = []
+            if len(current_block) > len(longest_block):
+                longest_block = current_block
+            billable_slots = longest_block
             
         total_price = 0
         current_date = date_str
