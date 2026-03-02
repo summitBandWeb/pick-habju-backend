@@ -40,7 +40,8 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                                     "branch": "그라운드합주실 신촌1호점",
                                     "lat": 37.5560505,
                                     "lng": 126.9409629,
-                                    "min_price": 15000,
+                                    "min_price_available": 15000,
+                                    "min_price_partial": None,
                                     "available_count": 1,
                                     "rooms": [
                                         {
@@ -58,7 +59,12 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                                             "min_capacity": 1,
                                             "min_hours": 1,
                                             "standby_days": 1,
-                                            "policy_warnings": []
+                                            "policy_warnings": [
+                                                {
+                                                    "type": "call_required_today",
+                                                    "message": "당일 예약은 전화 문의가 필요합니다."
+                                                }
+                                            ]
                                         }
                                     ]
                                 }
