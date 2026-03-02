@@ -195,13 +195,14 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status_code = response.status_code
-        except Exception as e:
+        except Exception:
             status_code = 500
-            raise e
+            raise
         finally:
             process_time = time.perf_counter() - start_time
-            # 라우팅 매개변수(예: /rooms/{id}) 처리는 향후 고도화 시 정규화(Route Path) 기반으로 수정 가능
-            path = request.url.path
+            # 라우팅 매개변수 처리를 위해 FastAPI 라우트 템플릿 기반 정규화 적용
+            route = request.scope.get("route")
+            path = route.path if route else request.url.path
             
             http_requests_total.labels(
                 method=request.method,

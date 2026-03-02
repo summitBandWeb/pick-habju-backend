@@ -1,7 +1,7 @@
 import logging
 from prometheus_client import REGISTRY
 import httpx
-from app.core.config import DISCORD_WEBHOOK_URL
+from app.core.config import DISCORD_WEBHOOK_URL, APP_ENV
 
 logger = logging.getLogger(__name__)
 
@@ -22,28 +22,31 @@ async def send_discord_report():
     try:
         # 2. Prometheus REGISTRY 분석
         for metric in REGISTRY.collect():
-            if metric.name == "http_requests_total":
+            if metric.name == "http_requests":
                 for sample in metric.samples:
-                    # sample.labels['status_code']로 접근
-                    total_requests += sample.value
-                    if str(sample.labels.get('status_code', '')).startswith('5'):
-                        total_errors += sample.value
-            elif metric.name == "http_request_duration_seconds_sum":
+                    if sample.name == "http_requests_total":
+                        # sample.labels['status_code']로 접근
+                        total_requests += sample.value
+                        if str(sample.labels.get('status_code', '')).startswith('5'):
+                            total_errors += sample.value
+            elif metric.name == "http_request_duration_seconds":
                 # Histogram의 sum을 통해 총 지연 시간 획득
                 for sample in metric.samples:
-                    total_duration += sample.value
+                    if sample.name == "http_request_duration_seconds_sum":
+                        total_duration += sample.value
                     
         # 3. 통계 산출
         avg_latency = (total_duration / total_requests) if total_requests > 0 else 0
         uptime_percent = ((total_requests - total_errors) / total_requests * 100) if total_requests > 0 else 100.0
         
         # 4. 디스코드 메시지 포맷팅
+        env_label = APP_ENV.upper()
         message = {
             "content": None,
             "embeds": [
                 {
-                    "title": "📊 픽합주 데일리 헬스체크 리포트",
-                    "description": "최근 수집된 모니터링 메트릭 요약 결과입니다.",
+                    "title": f"📊 픽합주 데일리 헬스체크 리포트 [{env_label}]",
+                    "description": "최근 수집된 모니터링 메트릭 요약 결과입니다. (서버 기동 후 누적 데이터 기준)",
                     "color": 65280 if uptime_percent >= 99.0 else 16711680,
                     "fields": [
                         {
@@ -57,7 +60,7 @@ async def send_discord_report():
                             "inline": True
                         },
                         {
-                            "name": "가동률 (Uptime)",
+                            "name": "요청 성공률 (Success Rate)",
                             "value": f"{uptime_percent:.2f}%",
                             "inline": True
                         },
