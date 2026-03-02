@@ -5,7 +5,7 @@ from app.core.config import DISCORD_WEBHOOK_URL
 
 logger = logging.getLogger(__name__)
 
-async def generate_and_send_daily_report():
+async def send_discord_report():
     """
     Prometheus in-memory REGISTRY를 분석하여 지난 24시간(실질적으로 프로세스 기동 후 누적)
     통계를 계산하고, Discord 웹훅으로 전송합니다.
