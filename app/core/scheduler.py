@@ -1,12 +1,12 @@
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from tzlocal import get_localzone
+from zoneinfo import ZoneInfo
 from app.services.monitoring_service import send_discord_report
 
 logger = logging.getLogger(__name__)
 
 # 전역 스케줄러 인스턴스
-scheduler = AsyncIOScheduler(timezone=str(get_localzone()))
+scheduler = AsyncIOScheduler(timezone=ZoneInfo("Asia/Seoul"))
 
 def start_scheduler():
     """

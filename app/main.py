@@ -34,15 +34,13 @@ import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
 from app.core.scheduler import start_scheduler, shutdown_scheduler
-# import asyncio
-# from app.services.monitoring_service import send_discord_report
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 및 스케줄러 설정
     await set_global_client()
     start_scheduler()
-    # asyncio.create_task(send_discord_report())
     yield
     # 종료 시 정리
     shutdown_scheduler()
@@ -94,7 +92,7 @@ app.add_middleware(CacheControlMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(TraceIDMiddleware)
 
-if ENABLE_METRICS:
+if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true") != "true":
     metrics_app = make_asgi_app()
     app.mount("/metrics", metrics_app)
 
@@ -102,6 +100,14 @@ if ENABLE_METRICS:
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+@app.get("/test-report", include_in_schema=False)
+async def trigger_test_report():
+    """임시 리포트 발송 테스트용 API (확인 후 삭제 권장)"""
+    from app.services.monitoring_service import send_discord_report
+    import asyncio
+    asyncio.create_task(send_discord_report())
+    return {"message": "Discord report triggered"}
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check(response: Response) -> HealthResponse:
