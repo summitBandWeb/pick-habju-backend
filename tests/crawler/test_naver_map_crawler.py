@@ -117,3 +117,38 @@ class TestCrawlerRobustness:
         calls = mock_p.chromium.launch.call_args_list
         assert calls[0].kwargs.get("channel") == "chrome"
         assert "channel" not in calls[1].kwargs
+
+    def test_goto_search_page_retries_on_429_then_succeeds(self, crawler):
+        page = MagicMock()
+        crawler.RATE_LIMIT_RETRIES = 2
+        crawler.RATE_LIMIT_BACKOFF_SEC = 0.0
+        crawler.PAGE_WAIT_JITTER_MS = 0
+
+        rate_limited_resp = MagicMock()
+        rate_limited_resp.status = 429
+        ok_resp = MagicMock()
+        ok_resp.status = 200
+        page.goto.side_effect = [rate_limited_resp, ok_resp]
+
+        ok = crawler._goto_search_page_with_retry(page, "https://example.com")
+
+        assert ok is True
+        assert page.goto.call_count == 2
+        page.wait_for_load_state.assert_called_once_with("networkidle")
+        page.wait_for_timeout.assert_called_once()
+
+    def test_goto_search_page_retries_exhausted_on_429(self, crawler):
+        page = MagicMock()
+        crawler.RATE_LIMIT_RETRIES = 2
+        crawler.RATE_LIMIT_BACKOFF_SEC = 0.0
+        crawler.PAGE_WAIT_JITTER_MS = 0
+
+        rate_limited_resp = MagicMock()
+        rate_limited_resp.status = 429
+        page.goto.side_effect = [rate_limited_resp, rate_limited_resp, rate_limited_resp]
+
+        ok = crawler._goto_search_page_with_retry(page, "https://example.com")
+
+        assert ok is False
+        assert page.goto.call_count == 3
+        page.wait_for_load_state.assert_not_called()
