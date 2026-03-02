@@ -3,7 +3,6 @@ from app.models.dto import RoomDetail, RoomAvailability, AvailabilityResponse
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.models.dto import BranchResponse
-
 import pytest_asyncio
 
 @pytest_asyncio.fixture
@@ -73,7 +72,6 @@ def mock_room_response_factory():
 def mock_branch_response_factory(mock_room_response_factory):
     """ BranchResponse 객체 Factory """
     def _create(business_id="12345", branch="Test Branch", min_price_available=None, min_price_partial=None, count=None, lat=37.5, lng=127.0, rooms=None, **kwargs):
-        from app.models.dto import BranchResponse
         if rooms is None:
             # 기본적으로 방 하나를 생성. 가격은 available 또는 partial 중 있는 값을 사용.
             price = min_price_available if min_price_available is not None else min_price_partial if min_price_partial is not None else 15000

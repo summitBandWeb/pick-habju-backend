@@ -473,6 +473,7 @@ class AvailabilityService:
             if branch_obj.min_price_partial is None or total_price < branch_obj.min_price_partial:
                 branch_obj.min_price_partial = total_price
 
+
     def _log_errors(self, results: list[RoomAvailability | Exception], date_context: str):
         """병렬 크롤러 결과에서 에러(Exception)만 추출하여 로깅합니다.
         
@@ -618,6 +619,7 @@ class AvailabilityService:
                         # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
+
                         # 부분 예약 가능(unknown)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
                         if res.available == "unknown":
                             longest_block = []
