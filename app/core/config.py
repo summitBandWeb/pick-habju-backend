@@ -78,6 +78,7 @@ CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
 
 
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
 
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
 # NOTE: Supabase 연결을 위한 헬스체크 타임아웃 기본값은 2.0초입니다.
