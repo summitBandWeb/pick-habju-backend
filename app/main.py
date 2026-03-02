@@ -34,12 +34,15 @@ import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
 from app.core.scheduler import start_scheduler, shutdown_scheduler
+# import asyncio
+# from app.services.monitoring_service import send_discord_report
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 및 스케줄러 설정
     await set_global_client()
     start_scheduler()
+    # asyncio.create_task(send_discord_report())
     yield
     # 종료 시 정리
     shutdown_scheduler()
