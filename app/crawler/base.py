@@ -37,3 +37,27 @@ class BaseCrawler(ABC):
             - 실패 시: Exception 반환 (로깅용)
         """
         pass
+
+    @staticmethod
+    def resolve_tri_state(available_slots: dict[str, bool], hour_slots: List[str] = None) -> Union[bool, str]:
+        """
+        주어진 슬롯 중 예약 가능한 시간(True)이 전부인지, 일부인지, 아예 없는지에 따라
+        True, "unknown", False를 반환합니다.
+        
+        Args:
+            available_slots: 시간대별 예약 가능 여부 (예: {"18:00": True, "19:00": False})
+            hour_slots: 검사할 시간대 리스트. None이면 available_slots 전체를 검사합니다.
+        """
+        values = [val for hour, val in available_slots.items() if (hour_slots is None or hour in hour_slots)]
+        if not values:
+            return False
+            
+        all_true = all(values)
+        any_true = any(values)
+        
+        if all_true:
+            return True
+        elif any_true:
+            return "unknown"
+        else:
+            return False
