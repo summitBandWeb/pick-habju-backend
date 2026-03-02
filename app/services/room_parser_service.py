@@ -37,21 +37,20 @@ ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 3:
 Input: "[주말] 스튜디오A", "당일 예약은 전화 문의, 최소 2시간부터 예약"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": true, "can_reserve_one_hour": false}}
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": true, "can_reserve_one_hour": false}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
 - day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
 - max_capacity: Max people (number)
-- recommend_capacity: Recommended people. Use mid-value for ranges (4~6 -> 5)
 - recommend_capacity_range: [min, max] array from ranges like "4~6인 권장". null if no range found
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)

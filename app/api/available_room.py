@@ -57,6 +57,7 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                                             "extra_charge": 2000,
                                             "min_capacity": 1,
                                             "min_hours": 1,
+                                            "standby_days": 1,
                                             "policy_warnings": []
                                         }
                                     ]
@@ -99,7 +100,7 @@ async def check_room_availability(
         neLng: 북동쪽 경도 (필수)
 
     Returns:
-        ApiResponse[AvailabilityResponse]: 예약 가능 여부 및 상세 정보 (branch_summary 포함)
+        ApiResponse[AvailabilityResponse]: 예약 가능 여부 및 상세 정보 (branches 배열을 포함한 계층형 구조)
 
     Raises:
         HTTPException: 유효하지 않은 파라미터 시 400 에러

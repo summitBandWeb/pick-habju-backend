@@ -131,6 +131,13 @@ class PricingService:
         """JSONB 원본을 PriceRule 리스트로 변환"""
         return [PriceRule(**cfg) for cfg in raw]
 
+    def _is_season_active(self, season: str, target: datetime) -> bool:
+        """시즌 기간을 검증합니다.
+        현재는 명시적인 시즌 기간 정보가 없으므로 fail-safe(기본 비활성)로 동작합니다.
+        """
+        # TODO: 추후 크롤러에서 season 시작/종료일 데이터를 추가로 수집 시 로직 연동
+        return False
+
     def _match_price(
         self, base_price: int, rules: List[PriceRule], target: datetime
     ) -> int:
@@ -145,12 +152,9 @@ class PricingService:
         hour = target.hour
 
         for rule in rules:
-            # [이슈 5 - A안] season 체크: 크롤링 시 수집된 season 태그는 별도 기간 검증 없이 활성으로 간주.
-            # Rationale: 크롤러가 특가 정보를 수집했다면 해당 룰은 현재 유효한 것으로 처리함.
-            #            season 유효 기간 검증은 crawler 주기가 안정화되면 재논의 예정 (PR 참고).
-            # (이전: rule.season is not None → continue 로 스킵)
             if rule.season is not None:
-                logger.info(f"[season_price] season={rule.season} applied for {target.date()}")
+                if not self._is_season_active(rule.season, target):
+                    continue
 
             # 요일 체크
             if rule.week is not None and day not in rule.week:
@@ -160,6 +164,9 @@ class PricingService:
             if rule.time_band is not None:
                 if not (rule.time_band.start_hour <= hour < rule.time_band.end_hour):
                     continue
+
+            if rule.season is not None:
+                logger.info(f"[season_price] season={rule.season} applied for {target.date()}")
 
             return rule.price
 

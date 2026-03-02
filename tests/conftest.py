@@ -1,5 +1,5 @@
 import pytest
-from app.models.dto import RoomDetail, RoomAvailability, BranchStats, AvailabilityResponse
+from app.models.dto import RoomDetail, RoomAvailability, AvailabilityResponse
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
@@ -29,14 +29,14 @@ def mock_room_detail_factory():
             "branch": branch,
             "business_id": business_id,
             "biz_item_id": biz_item_id,
-            "imageUrls": ["http://test.com/img.jpg"],
-            "maxCapacity": 10,
+            "image_urls": ["http://test.com/img.jpg"],
+            "max_capacity": 10,
             "recommend_capacity_range": [3, 5],
-            "baseCapacity": None,
-            "extraCharge": None,
-            "pricePerHour": price,
-            "canReserveOneHour": True,
-            "requiresContactOnSameDay": False,
+            "base_capacity": None,
+            "extra_charge": None,
+            "price_per_hour": price,
+            "can_reserve_one_hour": True,
+            "requires_contact_on_sameday": False,
             "lat": lat,
             "lng": lng
         }
@@ -61,6 +61,7 @@ def mock_room_response_factory():
             "recommend_capacity": 5,
             "min_capacity": 1,
             "min_hours": 1,
+            "standby_days": None,
             "policy_warnings": []
         }
         defaults.update(kwargs)

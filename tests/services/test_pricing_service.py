@@ -11,6 +11,7 @@ PricingService 단위 테스트
 실행: pytest tests/services/test_pricing_service.py -v
 """
 import pytest
+from unittest.mock import patch
 from datetime import datetime
 from app.services.pricing_service import PricingService
 
@@ -205,7 +206,8 @@ class TestComplexCase:
 class TestSeasonPricing:
     """시즌 가격 적용 (A안: 크롤링 수집 season 태그는 활성으로 간주)"""
 
-    def test_season_rule_applied_on_match(self, svc):
+    @patch.object(PricingService, '_is_season_active', return_value=True)
+    def test_season_rule_applied_on_match(self, mock_is_active, svc):
         """season 룰이 있어도 week 조건을 만족해야 적용됨"""
         config = [
             {"season": "Summer", "week": [5, 6], "price": 25000},
@@ -223,7 +225,8 @@ class TestSeasonPricing:
         )
         assert price == 50000  # 25000 * 2h
 
-    def test_season_rule_weekday_fallback(self, svc):
+    @patch.object(PricingService, '_is_season_active', return_value=True)
+    def test_season_rule_weekday_fallback(self, mock_is_active, svc):
         """season 룰이 있어도 week 조건 불일치 시 기본가 적용"""
         config = [
             {"season": "Summer", "week": [5, 6], "price": 25000},
@@ -241,7 +244,8 @@ class TestSeasonPricing:
         )
         assert price == 20000  # 10000 * 2h (기본가)
 
-    def test_season_only_rule_always_applied(self, svc):
+    @patch.object(PricingService, '_is_season_active', return_value=True)
+    def test_season_only_rule_always_applied(self, mock_is_active, svc):
         """week/timeBand 없는 season 룰은 모든 시간대에 적용됨 (A안 핵심)"""
         config = [
             {"season": "개강특가", "price": 12000},

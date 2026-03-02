@@ -154,11 +154,15 @@ class RoomCollectionService:
         
         # 1. Save Branch
         coords = business.get("coordinates")
-        # standby_days 추출: 지점 단위 속성이므로 첫 번째 룸의 파싱 결과를 대표로 사용
+        # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
         # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
-        #            같은 지점 소속 룸들은 동일한 standby_days를 가지므로 첫 번째 룸 값을 사용.
-        first_room_id = rooms[0]["bizItemId"] if rooms else None
-        first_parsed = parsed_results.get(first_room_id, {}) if first_room_id else {}
+        branch_standby_days = None
+        for room in rooms:
+            rid = room.get("bizItemId")
+            parsed = parsed_results.get(rid)
+            if parsed and parsed.get("standby_days") is not None:
+                branch_standby_days = parsed.get("standby_days")
+                break
 
         branch_data = {
             "business_id": business["businessId"],
@@ -166,7 +170,7 @@ class RoomCollectionService:
             "display_name": business.get("businessDisplayName"), 
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
-            "standby_days": first_parsed.get("standby_days"), 
+            "standby_days": branch_standby_days, 
         }
         
         # Upsert Branch
@@ -247,6 +251,10 @@ class RoomCollectionService:
             
             existing_requires_call = existing.get("requires_contact_on_sameday", False) if existing else False
             parsed_requires_call = parsed.get("requires_contact_on_sameday")
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_same_day_contact")
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_contact_same_day")
             final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
 
             # Room Data
@@ -271,6 +279,7 @@ class RoomCollectionService:
                 "extra_charge": final_extra_charge,
                 # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
                 "requires_contact_on_sameday": final_requires_call,
+                "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }

@@ -22,6 +22,7 @@ def get_rooms_by_criteria(
     try:
         # Deploy 환경마다 branch 컬럼 반영 시점이 다를 수 있어 select를 순차 fallback.
         select_candidates = [
+            "*, branch(name, lat, lng, phone_number, display_name, open_wait_rule, standby_days)",
             "*, branch(name, lat, lng, phone_number, display_name, open_wait_rule)",
             "*, branch(name, lat, lng, phone_number, display_name)",
             "*, branch(name, lat, lng)",
@@ -57,6 +58,7 @@ def get_rooms_by_criteria(
                 row["phone_number"] = branch.get("phone_number")
                 row["display_name"] = branch.get("display_name")
                 row["open_wait_rule"] = branch.get("open_wait_rule")
+                row["standby_days"] = branch.get("standby_days")
             else:
                 row["branch"] = RoomDetail.BRANCH_FALLBACK_NAME
                 row["lat"] = None
@@ -64,6 +66,7 @@ def get_rooms_by_criteria(
                 row["phone_number"] = None
                 row["display_name"] = None
                 row["open_wait_rule"] = {}
+                row["standby_days"] = None
 
             # branch 좌표가 있는 경우에만 지도 경계 필터 적용.
             if all(v is not None for v in [swLat, swLng, neLat, neLng]):

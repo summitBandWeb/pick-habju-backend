@@ -2,7 +2,10 @@ import re
 from datetime import datetime, date
 
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
+import logging
 from typing import List, Dict, Union, Any, Optional, ClassVar
+
+logger = logging.getLogger(__name__)
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -98,6 +101,7 @@ class RoomDetail(BaseModel):
         if isinstance(v, list):
             if len(v) == 2:
                 return [int(v[0]), int(v[1])]
+            logger.warning(f"[dto_validation] Invalid recommend_capacity_range list length: {len(v)} (value: {v})")
             return None
         if isinstance(v, str):
             # NOTE: DB backfill/int4range는 inclusive("[]")만 사용하므로 해당 형식만 허용
@@ -296,13 +300,14 @@ class RoomResponse(BaseModel):
     estimated_price: Optional[int] = None
     image_urls: List[str]
     max_capacity: int
-    recommend_capacity: int
+    recommend_capacity: Optional[int] = None
     recommend_capacity_range: Optional[List[int]] = None
     base_capacity: Optional[int] = None
     extra_charge: Optional[int] = None
     min_capacity: int
     min_hours: int
     max_hours: Optional[int] = None
+    standby_days: Optional[int] = None
     policy_warnings: List[PolicyWarning] = Field(default_factory=list)
 
 class BranchResponse(BaseModel):
@@ -317,13 +322,7 @@ class BranchResponse(BaseModel):
     display_name: Optional[str] = None
     rooms: List[RoomResponse] = Field(default_factory=list)
 
-# Branch Summary Stat Model
-class BranchStats(BaseModel):
-    """지점별 요약 정보"""
-    min_price: int = Field(..., description="Minimum price in this branch")
-    available_count: int = Field(..., description="Number of available rooms")
-    lat: Optional[float] = Field(None, description="Branch latitude")
-    lng: Optional[float] = Field(None, description="Branch longitude")
+
 
 # Full Response DTO (Nested Branch Structure)
 class AvailabilityResponse(BaseModel):

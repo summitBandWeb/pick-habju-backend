@@ -400,13 +400,14 @@ class AvailabilityService:
                     image_urls=room_detail.imageUrls,
                     max_capacity=room_detail.maxCapacity,
                     # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)
-                    recommend_capacity=room_detail.recommendCapacityRange[1] if room_detail.recommendCapacityRange else 0, # TODO: 제거 예정 필드 (하위호환 유지용)
+                    recommend_capacity=room_detail.recommendCapacityRange[0] if room_detail.recommendCapacityRange else None, # TODO: 제거 예정 필드 (하위호환 유지용)
                     recommend_capacity_range=room_detail.recommendCapacityRange,
                     base_capacity=room_detail.baseCapacity,
                     extra_charge=room_detail.extraCharge,
                     min_capacity=room_detail.minCapacity,
                     min_hours=room_detail.minHours,
                     max_hours=room_detail.maxHours,
+                    standby_days=room_detail.standbyDays,
                     policy_warnings=res.policy_warnings
                 )
 
@@ -431,6 +432,10 @@ class AvailabilityService:
                     branch_obj.available_count += 1
                     if total_price < branch_obj.min_price:
                         branch_obj.min_price = total_price
+                    if not branch_obj.phone_number and room_detail.phoneNumber:
+                        branch_obj.phone_number = room_detail.phoneNumber
+                    if not branch_obj.display_name and room_detail.displayName:
+                        branch_obj.display_name = room_detail.displayName
 
         return AvailabilityResponse(
             date=request.date,
@@ -514,6 +519,7 @@ class AvailabilityService:
             #            이런 방에 정책이 적용되면 프론트에 전달할 type이 없으므로 제외함.
             #            장기 과제: 크롤러 phoneNumber/displayName 수집 안정화.
             if needs_1h_contact and not room.phoneNumber and not room.displayName:
+                logger.info(f"[metrics] policy_filter.excluded: reason=no_contact_for_1h biz_item_id={room.biz_item_id}")
                 logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no contact info for 1h reservation")
                 continue
             
@@ -522,30 +528,30 @@ class AvailabilityService:
             # 당일 예약은 명세에 따라 "전화 문의"만 가능하도록 결정됨.
             # 따라서 displayName이 있어도 phoneNumber가 없으면 당일 예약 필터링에서 배제함.
             if needs_today_contact and not room.phoneNumber:
+                logger.info(f"[metrics] policy_filter.excluded: reason=no_phone_for_today biz_item_id={room.biz_item_id}")
                 logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no phone number for today reservation")
                 continue
 
-            # 1시간 예약 불가 경고 생성
-            if needs_1h_contact:
-                if room.phoneNumber:
-                    policy_warnings.append(PolicyWarning(
-                        type="call_required_1h",
-                        message="1시간 예약은 전화 문의가 필요합니다.",
-                    ))
-                else:
-                    # displayName만 있는 경우 (위 필터링 통과 후 여기 도달)
-                    policy_warnings.append(PolicyWarning(
-                        type="chat_required_1h",
-                        message="1시간 예약은 채팅 문의가 필요합니다.",
-                    ))
-
-            # 당일 예약 연락 필요 경고 생성 (항상 1가지 type)
+            # 당일 예약 연락 필요 경고 생성 (항상 1가지 type, 1시간 경고보다 우선)
             if needs_today_contact:
                 # phoneNumber 있는 방만 여기 도달 (없으면 위 필터링에서 제외됨)
                 policy_warnings.append(PolicyWarning(
                     type="call_required_today",
                     message="당일 예약은 전화 문의가 필요합니다.",
                 ))
+            elif needs_1h_contact:
+                # 1시간 예약 불가 경고 생성 (당일 예약이 아닌 경우에만)
+                if room.phoneNumber:
+                    policy_warnings.append(PolicyWarning(
+                        type="call_required_1h",
+                        message="1시간 예약은 전화 문의가 필요합니다.",
+                    ))
+                else:
+                    # displayName만 있는 경우
+                    policy_warnings.append(PolicyWarning(
+                        type="chat_required_1h",
+                        message="1시간 예약은 채팅 문의가 필요합니다.",
+                    ))
 
             # 최소/최대 예약 시간 정책 검사
             # Rationale: 합주실마다 최소(예: 2시간)/최대(예: 4시간) 예약 제한이 있음.
