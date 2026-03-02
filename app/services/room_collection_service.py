@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Any, Tuple
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
+from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -19,18 +20,11 @@ class RoomCollectionService:
     """Service for collecting and parsing rehearsal room data."""
     
     # Tunable parameters for concurrency
-    BATCH_SIZE = 5           # Number of rooms per LLM batch call
-    MAX_CONCURRENT_BATCHES = 3  # Number of parallel LLM calls
-    DEFAULT_PRIORITY_AREA_QUERIES = [
-        "이수역 합주실",
-        "상도역 합주실",
-        "사당역 합주실",
-        "흑석역 합주실",
-        "홍대입구역 합주실",
-        "합정역 합주실",
-    ]
+    BATCH_SIZE = 5
+    MAX_CONCURRENT_BATCHES = 3
+    DEFAULT_PRIORITY_AREA_QUERIES = list(PRIORITY_AREA_QUERIES)
     
-    # Capacity value indicating LLM parsing failure - flags for manual review
+    # Capacity value indicating parsing failure - flags for manual review
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
     PRICE_MATCH_TOLERANCE = 1000
@@ -74,7 +68,11 @@ class RoomCollectionService:
 
         return list(cls.DEFAULT_PRIORITY_AREA_QUERIES)
 
-    async def collect_priority_areas(self, area_queries: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def collect_priority_areas(
+        self,
+        area_queries: Optional[List[str]] = None,
+        max_targets: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Collect room data only from configured priority station areas."""
         queries = self._resolve_priority_area_queries(area_queries)
         if not queries:
@@ -132,12 +130,17 @@ class RoomCollectionService:
             enriched["source_queries"] = sorted(list(business_query_map.get(business_id, set())))
             target_items.append(enriched)
 
+        total_unique_before_limit = len(target_items)
+        if isinstance(max_targets, int) and max_targets > 0:
+            target_items = target_items[:max_targets]
+
         success_count, failed_count, failures = await self._collect_items(target_items)
 
         return {
             "mode": "priority_areas",
             "queries": queries,
             "query_reports": query_reports,
+            "total_unique_before_limit": total_unique_before_limit,
             "total_unique": len(target_items),
             "success": success_count,
             "failed": failed_count,
@@ -146,7 +149,8 @@ class RoomCollectionService:
 
     async def collect_by_query(self, query: str) -> Dict[str, Any]:
         """
-        Search and collect rooms by query keyword.
+        Search and collect rooms.
+        Global policy: always constrained to configured priority areas.
         
         Args:
             query: Search keyword (e.g., "Hongdae practice room")
@@ -154,43 +158,21 @@ class RoomCollectionService:
         Returns:
             Dict containing counts of successful and failed collections.
         """
-        logger.info(f"Starting collection for query: {query}")
-        
-        # 1. 지도 검색으로 ID 확보
-        search_results = await self.map_crawler.search_rehearsal_rooms(query)
-        logger.info(f"Found {len(search_results)} businesses for {query}")
-        
-        success_count, failed_count, failures = await self._collect_items(search_results)
-                
-        return {
-            "query": query,
-            "total": len(search_results),
-            "success": success_count,
-            "failed": failed_count,
-            "failures": failures,
-        }
+        logger.info(
+            "Ignoring direct query '%s' due to global priority-area policy. "
+            "Collecting from fixed priority areas instead.",
+            query,
+        )
+        result = await self.collect_priority_areas()
+        result["requested_query"] = query
+        return result
 
     async def collect_all_regions(self) -> Dict[str, Any]:
         """
-        Collect rooms from all major regions nationwide.
+        Collect rooms from globally configured priority areas.
         """
-        logger.info("Starting nationwide collection...")
-        
-        # 1. Crawl all regions
-        # Note: crawl_all_regions returns list of Item dicts, but search_rehearsal_rooms returns same structure.
-        # We assume crawl_all_regions returns a list of items similar to search results.
-        all_items = await self.map_crawler.crawl_all_regions()
-        logger.info(f"Total unique businesses found nationwide: {len(all_items)}")
-        
-        # 2. Process each found business
-        success_count, failed_count, failures = await self._collect_items(all_items)
-                
-        return {
-            "total": len(all_items),
-            "success": success_count,
-            "failed": failed_count,
-            "failures": failures,
-        }
+        logger.info("Starting global-priority collection (fixed 6 areas)...")
+        return await self.collect_priority_areas()
 
     async def _collect_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int, List[Dict[str, Any]]]:
         """Collect by business id for each item and aggregate success/failure stats."""
@@ -241,7 +223,7 @@ class RoomCollectionService:
             logger.warning(f"No rooms found for business {business_id}")
             return
 
-        # 2. LLM Parsing (Batch with Concurrency)
+        # 2. Rule-based parsing (Batch with Concurrency)
         # Rationale: business.desc에 가게 전체 장비/규칙이 담겨 있으므로
         #            개별 룸 파싱 시 컨텍스트로 함께 전달하여 정확도를 높임
         business_desc = business.get("desc") or ""
@@ -337,7 +319,7 @@ class RoomCollectionService:
             # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
             # Priority for capacity:
             #   1) High-confidence text patterns in room name/desc
-            #   2) Parser output (LLM/regex)
+            #   2) Parser output
             #   3) Manual review flag
             text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
 
@@ -447,14 +429,27 @@ class RoomCollectionService:
                 final_requires_call = existing_requires_call
 
             # Room Data
+            final_max_cap_int = self._coerce_int(final_max_cap)
+            if final_max_cap_int is None:
+                final_max_cap_int = self.MANUAL_REVIEW_FLAG
+
+            final_rec_cap_int = self._coerce_int(final_rec_cap)
+            if final_rec_cap_int is None:
+                final_rec_cap_int = (
+                    final_max_cap_int // 2 if final_max_cap_int != self.MANUAL_REVIEW_FLAG else self.MANUAL_REVIEW_FLAG
+                )
+
+            final_base_cap_int = self._coerce_int(final_base_cap)
+            final_extra_charge_int = self._coerce_int(final_extra_charge)
+
             room_data = {
                 "business_id": business["businessId"],
                 "biz_item_id": rid,
                 "name": room["name"],
                 "price_per_hour": final_price,
                 # Schema constraint: Default to 1 if null
-                "max_capacity": final_max_cap,
-                "recommend_capacity": final_rec_cap,
+                "max_capacity": final_max_cap_int,
+                "recommend_capacity": final_rec_cap_int,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range
@@ -464,14 +459,14 @@ class RoomCollectionService:
                         if price_inferred and price_inferred_applied
                         else None
                     ),
-                    final_rec_cap,
-                    final_max_cap,
-                    final_base_cap,
-                    final_extra_charge
+                    final_rec_cap_int,
+                    final_max_cap_int,
+                    final_base_cap_int,
+                    final_extra_charge_int
                 ),
                 "price_config": final_price_config,
-                "base_capacity": final_base_cap,
-                "extra_charge": final_extra_charge,
+                "base_capacity": final_base_cap_int,
+                "extra_charge": final_extra_charge_int,
                 # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
                 "requires_contact_on_sameday": final_requires_call,
                 "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
@@ -599,7 +594,7 @@ class RoomCollectionService:
         return None
 
     def _extract_structured_extra_charge(self, room: Dict) -> Optional[int]:
-        """Extract extra charge from structured JSON fields before text/LLM fallback."""
+        """Extract extra charge from structured JSON fields before text fallback."""
         extra_fee_setting = room.get("extraFeeSettingJson")
         if isinstance(extra_fee_setting, str):
             try:
@@ -840,7 +835,7 @@ class RoomCollectionService:
         """추가 요금 유무에 따라 권장 인원 범위 계산
 
         Args:
-            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
+            parsed_range: 파서가 파싱한 범위 ([min, max] 형태)
             rec_cap: 권장 인원 수
             max_cap: 최대 인원 수
             base_cap: 기준 인원 수 (추가 요금 계산 기준)
@@ -856,7 +851,7 @@ class RoomCollectionService:
         """
         # 1. 파싱된 범위 검증 후 우선 사용
         # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
-        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
+        # NOTE: 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
@@ -903,7 +898,7 @@ class RoomCollectionService:
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """
-        Export unresolved parsing results to JSON file for manual LLM verification.
+        Export unresolved parsing results to JSON file for manual verification.
 
         Phase 6: When parsing is incomplete (especially when no capacity info is found),
         export the original crawled text to a JSON file for later manual verification.

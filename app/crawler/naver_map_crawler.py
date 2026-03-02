@@ -6,7 +6,7 @@ import time
 from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
-from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
+from app.core.constants import PRIORITY_AREA_QUERIES
 from fake_useragent import UserAgent
 
 logger = logging.getLogger(__name__)
@@ -277,12 +277,12 @@ class NaverMapCrawler:
 
     async def crawl_all_regions(self) -> List[Dict]:
         """
-        Crawl nationwide regions (Seoul 25 districts + Major Metropolitan Cities).
+        Crawl only globally configured priority station areas.
         Sequential execution for stability on Windows.
         Returns list of collected business Item dicts (deduplicated).
         """
-        all_queries = SEOUL_DISTRICTS + MAJOR_CITIES
-        logger.info(f"Starting sequential crawl for {len(all_queries)} regions...")
+        all_queries = list(PRIORITY_AREA_QUERIES)
+        logger.info(f"Starting sequential crawl for {len(all_queries)} priority areas...")
         
         all_results = {}
 
@@ -302,7 +302,7 @@ class NaverMapCrawler:
             except Exception as e:
                 logger.error(f"❌ Failed to crawl {query}: {e}")
             
-        logger.info(f"Total unique businesses found nationwide: {len(all_results)}")
+        logger.info(f"Total unique businesses found in priority areas: {len(all_results)}")
         return list(all_results.values())
 
 # Manual run helper

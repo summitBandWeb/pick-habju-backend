@@ -61,9 +61,9 @@
 ### 후속 하드닝 커밋 (74649be, 50f6707, 09e73cb, b99380a, ae474ee)
 - 주요 작업
   - 테스트 보강(16개)
-  - 운영 스크립트 추가(`ensure_ollama_resources.py`, `evaluate_parser_against_crawled.py`, `reparse_flagged_rooms.py`)
+  - 운영 스크립트 추가(`evaluate_parser_against_crawled.py`, `reparse_flagged_rooms.py`)
   - 구조화 우선 fallback 로직 강화(예약 가능/추가요금/당일전화/텍스트 capacity 신호)
-  - Ollama 메모리 부족 시 프로세스 내 disable 처리
+  - 파서 안정성 저하 시 프로세스 내 graceful fallback 처리
 - 확인 결과
   - 전체 방향성은 적절하고 회귀 방지 테스트가 잘 추가됨
 - 미흡/리스크 (우선순위 높음)
@@ -123,7 +123,7 @@
 
 ## 7) 검증 기록
 - 실행 명령:
-  - `python -m pytest -q tests/core/test_ollama_client.py tests/crawler/test_naver_map_crawler_apollo_enrichment.py tests/crawler/test_naver_room_fetcher_graphql_fields.py tests/services/test_room_collection_business_context.py tests/services/test_room_collection_structured_priority.py tests/services/test_room_parser_batch_context.py tests/integration/test_room_collection_reporting.py`
+  - `python -m pytest -q tests/crawler/test_naver_map_crawler_apollo_enrichment.py tests/crawler/test_naver_room_fetcher_graphql_fields.py tests/services/test_room_collection_business_context.py tests/services/test_room_collection_structured_priority.py tests/services/test_room_parser_batch_context.py tests/integration/test_room_collection_reporting.py`
 - 결과:
   - 16 passed, 0 failed
 

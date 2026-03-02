@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 
 @pytest.mark.asyncio
-async def test_collect_by_query_includes_failure_details():
+async def test_collect_by_query_forces_priority_area_mode():
     with patch("app.services.room_collection_service.NaverMapCrawler") as mock_crawler_cls, \
          patch("app.services.room_collection_service.NaverRoomFetcher"), \
          patch("app.services.room_collection_service.RoomParserService"), \
@@ -11,7 +11,7 @@ async def test_collect_by_query_includes_failure_details():
         from app.services.room_collection_service import RoomCollectionService
 
         mock_crawler = mock_crawler_cls.return_value
-        mock_crawler.search_rehearsal_rooms = AsyncMock(return_value=[{"name": "broken-item"}])
+        mock_crawler.search_rehearsal_rooms = AsyncMock(return_value=[{"id": "biz1", "name": "ok-room"}])
 
         service = RoomCollectionService()
         service.map_crawler = mock_crawler
@@ -19,14 +19,15 @@ async def test_collect_by_query_includes_failure_details():
 
         result = await service.collect_by_query("hongdae practice room")
 
-        assert result["success"] == 0
-        assert result["failed"] == 1
-        assert len(result["failures"]) == 1
-        assert "missing business id" in result["failures"][0]["reason"]
+        assert result["mode"] == "priority_areas"
+        assert result["requested_query"] == "hongdae practice room"
+        assert result["total_unique"] == 1
+        assert result["success"] == 1
+        assert mock_crawler.search_rehearsal_rooms.call_count == 6
 
 
 @pytest.mark.asyncio
-async def test_collect_all_regions_includes_failure_details():
+async def test_collect_all_regions_uses_priority_area_mode():
     with patch("app.services.room_collection_service.NaverMapCrawler") as mock_crawler_cls, \
          patch("app.services.room_collection_service.NaverRoomFetcher"), \
          patch("app.services.room_collection_service.RoomParserService"), \
@@ -34,9 +35,7 @@ async def test_collect_all_regions_includes_failure_details():
         from app.services.room_collection_service import RoomCollectionService
 
         mock_crawler = mock_crawler_cls.return_value
-        mock_crawler.crawl_all_regions = AsyncMock(
-            return_value=[{"id": "biz1", "name": "ok-room"}, {"name": "broken-room"}]
-        )
+        mock_crawler.search_rehearsal_rooms = AsyncMock(return_value=[{"id": "biz1", "name": "ok-room"}])
 
         service = RoomCollectionService()
         service.map_crawler = mock_crawler
@@ -44,11 +43,11 @@ async def test_collect_all_regions_includes_failure_details():
 
         result = await service.collect_all_regions()
 
-        assert result["total"] == 2
+        assert result["mode"] == "priority_areas"
+        assert result["total_unique"] == 1
         assert result["success"] == 1
-        assert result["failed"] == 1
-        assert len(result["failures"]) == 1
-        assert "missing business id" in result["failures"][0]["reason"]
+        assert result["failed"] == 0
+        assert mock_crawler.search_rehearsal_rooms.call_count == 6
 
 
 @pytest.mark.asyncio
@@ -109,3 +108,32 @@ async def test_collect_priority_areas_includes_source_queries_on_failure():
         assert len(result["failures"]) == 1
         assert result["failures"][0]["business_id"] == "biz1"
         assert result["failures"][0]["source_queries"] == ["사당역 합주실"]
+
+
+@pytest.mark.asyncio
+async def test_collect_priority_areas_respects_max_targets():
+    with patch("app.services.room_collection_service.NaverMapCrawler") as mock_crawler_cls, \
+         patch("app.services.room_collection_service.NaverRoomFetcher"), \
+         patch("app.services.room_collection_service.RoomParserService"), \
+         patch("app.services.room_collection_service.get_supabase_client"):
+        from app.services.room_collection_service import RoomCollectionService
+
+        mock_crawler = mock_crawler_cls.return_value
+        mock_crawler.search_rehearsal_rooms = AsyncMock(
+            return_value=[
+                {"id": "biz1", "name": "A"},
+                {"id": "biz2", "name": "B"},
+                {"id": "biz3", "name": "C"},
+            ]
+        )
+
+        service = RoomCollectionService()
+        service.map_crawler = mock_crawler
+        service.collect_by_id = AsyncMock()
+
+        result = await service.collect_priority_areas(["사당역 합주실"], max_targets=2)
+
+        assert result["total_unique_before_limit"] == 3
+        assert result["total_unique"] == 2
+        assert result["success"] == 2
+        assert service.collect_by_id.call_count == 2
