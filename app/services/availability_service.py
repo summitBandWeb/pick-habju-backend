@@ -603,28 +603,40 @@ class AvailabilityService:
                         # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
-                        # 부분 예약 가능(unknown)인 경우, 실제로 예약 가능한 시간만 합산
+                        # 부분 예약 가능(unknown)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
                         if res.available == "unknown":
-                            price = 0
+                            longest_block = []
+                            current_block = []
+                            
                             for slt in hour_slots[:-1]:
                                 if res.available_slots.get(slt) is True:
-                                    s_dt = datetime.strptime(f"{request.date} {slt}", "%Y-%m-%d %H:%M")
-                                    # 다음 슬롯 시간 (1시간 추가)
-                                    e_dt = s_dt + timedelta(hours=1)
+                                    current_block.append(slt)
+                                else:
+                                    if len(current_block) > len(longest_block):
+                                        longest_block = current_block
+                                    current_block = []
+                            if len(current_block) > len(longest_block):
+                                longest_block = current_block
+
+                            price = 0
+                            for slt in longest_block:
+                                s_dt = datetime.strptime(f"{request.date} {slt}", "%Y-%m-%d %H:%M")
+                                # 다음 슬롯 시간 (1시간 추가)
+                                e_dt = s_dt + timedelta(hours=1)
+                                
+                                # 심야 예약 대응
+                                if s_dt.hour > e_dt.hour:
+                                    e_dt += timedelta(days=1)
                                     
-                                    # 심야 예약 대응
-                                    if s_dt.hour > e_dt.hour:
-                                        e_dt += timedelta(days=1)
-                                        
-                                    price += self.pricing_service.calculate_total_price(
-                                        base_price=room.pricePerHour,
-                                        price_config=normalized_rules,
-                                        base_capacity=room.baseCapacity,
-                                        extra_charge=room.extraCharge,
-                                        start_dt=s_dt,
-                                        end_dt=e_dt,
-                                        people_count=request.capacity,
-                                    )
+                                price += self.pricing_service.calculate_total_price(
+                                    base_price=room.pricePerHour,
+                                    price_config=normalized_rules,
+                                    base_capacity=room.baseCapacity,
+                                    extra_charge=room.extraCharge,
+                                    start_dt=s_dt,
+                                    end_dt=e_dt,
+                                    people_count=request.capacity,
+                                )
                         else:
                             price = self.pricing_service.calculate_total_price(
                                 base_price=room.pricePerHour,
