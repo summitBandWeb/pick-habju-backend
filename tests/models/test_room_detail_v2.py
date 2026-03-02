@@ -62,3 +62,12 @@ def test_alias_choices_new_field_name():
     room = RoomDetail.model_validate(payload)
     assert room.requiresContactOnSameDay is True
 
+
+def test_alias_choices_precedence():
+    """우선순위(새 컬럼명 > 구 컬럼명) 검증"""
+    payload = _room_payload()
+    payload["requires_contact_on_sameday"] = False
+    payload["requires_call_on_sameday"] = True
+    room = RoomDetail.model_validate(payload)
+    assert room.requiresContactOnSameDay is False
+

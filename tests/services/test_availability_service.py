@@ -49,6 +49,44 @@ class TestApplyPolicies:
         assert len(results[0].policy_warnings) == 1
         assert results[0].policy_warnings[0].type == "call_required_1h"
 
+    def test_1h_reservation_chat_required(self, service):
+        """1시간 예약 불가 방(전화번호 없음, displayName 있음) → 채팅 문의 경고 추가"""
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="15:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        slots = ["14:00", "15:00"]
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            phoneNumber=None, displayName="테스트 톡톡"
+        )
+        avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
+        results = service._apply_policies([avail], req, slots)
+
+        assert len(results) == 1
+        assert len(results[0].policy_warnings) == 1
+        assert results[0].policy_warnings[0].type == "chat_required_1h"
+
+    def test_1h_reservation_excluded_no_contact(self, service):
+        """1시간 예약 불가 방 + 연락수단 모두 없음 → 검색 대상에서 제외됨"""
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="15:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        slots = ["14:00", "15:00"]
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            phoneNumber=None, displayName=None
+        )
+        avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
+        results = service._apply_policies([avail], req, slots)
+
+        assert len(results) == 0
+
     def test_sameday_reservation_warning(self, service):
         """당일 예약인데 requiresCallOnSameDay=True면 경고 발생"""
         # 테스트 시점에 따라 과거 시간 유효성 검사 실패가 발생하지 않도록 시간을 명시적으로 고정
@@ -147,7 +185,7 @@ class TestApplyPolicies:
         assert results[0].estimated_price == 20000
 
 
-class TestCheckAvailabilityFlow:
+class TestAvailabilityServiceFlow:
     """check_availability 전체 흐름 테스트 (DB/Crawler Mocking)
 
     Rationale:

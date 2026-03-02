@@ -261,6 +261,28 @@ class TestDataPreservationLogic:
         assert upsert_data["can_reserve_one_hour"] is False
         assert upsert_data["requires_contact_on_sameday"] is True
 
+    @pytest.mark.asyncio
+    async def test_legacy_boolean_parsing(self, service, mock_supabase):
+        """Legacy contact flag로 파싱될 경우의 fallback 정상 작동 검증"""
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_contact_on_sameday": False}]
+        )
+        business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
+        rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {
+            "room1": {
+                "max_capacity": 5, 
+                "recommend_capacity": 4, 
+                "requires_same_day_contact": True
+            }
+        }
+        await service._save_to_db(business, rooms, parsed_results)
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        upsert_data = upsert_call[0][0]
+        assert upsert_data["can_reserve_one_hour"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
+        assert upsert_data["requires_contact_same_day"] is True
+
 
 class TestV2NewFields:
     """[v2.0.0] 신규 필드(recommend_capacity_range, price_config, display_name) 저장 검증"""
@@ -369,17 +391,17 @@ class TestV2NewFields:
         # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
         assert room_data["recommend_capacity_range"] == [4, 6]
     
-    # ============== TC: display_name 저장 ==============
+    # ============== TC: display_name 및 standby_days 저장 ==============
     @pytest.mark.asyncio
-    async def test_saves_display_name_to_branch(self, service, mock_supabase):
-        """Branch upsert 시 display_name이 포함되는지 검증"""
+    async def test_saves_display_name_and_standby_days_to_branch(self, service, mock_supabase):
+        """Branch upsert 시 display_name과 standby_days가 포함되는지 검증"""
         business = {
             "businessId": "biz1",
             "businessDisplayName": "테스트 합주실 1호점",
             "coordinates": {"latitude": 37.5, "longitude": 127.0}
         }
-        rooms = []
-        parsed_results = {}
+        rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"standby_days": 3}}
         
         await service._save_to_db(business, rooms, parsed_results)
         
@@ -390,6 +412,7 @@ class TestV2NewFields:
         assert branch_data["display_name"] == "테스트 합주실 1호점"
         assert branch_data["lat"] == 37.5
         assert branch_data["lng"] == 127.0
+        assert branch_data["standby_days"] == 3
     
     # ============== TC: price_config 저장 ==============
     @pytest.mark.asyncio
