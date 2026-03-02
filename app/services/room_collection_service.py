@@ -529,10 +529,44 @@ class RoomCollectionService:
                         return nested
             return None
 
+        def collect_texts(obj: Any, out: List[str]):
+            if isinstance(obj, dict):
+                for value in obj.values():
+                    collect_texts(value, out)
+            elif isinstance(obj, list):
+                for item in obj:
+                    collect_texts(item, out)
+            elif isinstance(obj, str):
+                out.append(obj)
+
         for candidate in parsed_candidates:
             result = walk(candidate)
             if result is not None:
                 return result
+
+            # Fallback on structured text blocks (e.g., extraDescJson[].title/context)
+            texts: List[str] = []
+            collect_texts(candidate, texts)
+            if texts:
+                joined = " ".join(texts).lower()
+
+                has_same_day = any(token in joined for token in ["당일", "same day", "same-day", "today", "오늘"])
+                has_call = any(
+                    token in joined
+                    for token in ["전화", "문의", "call", "phone", "contact", "inquiry", "consult", "confirm"]
+                )
+                has_negative = any(
+                    token in joined
+                    for token in ["없이", "불필요", "필요없", "not required", "no need", "without"]
+                )
+
+                # Strong positive: same-day + call/contact signals
+                if has_same_day and has_call and not has_negative:
+                    return True
+
+                # Explicit negative phrase in structured text
+                if has_same_day and has_call and has_negative:
+                    return False
         return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:

@@ -276,3 +276,85 @@ async def test_parser_requires_call_used_when_structured_missing(service, mock_s
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["requires_call_on_sameday"] is True
+
+
+@pytest.mark.asyncio
+async def test_structured_text_requires_call_overrides_parser(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Room A",
+            "desc": "",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+            "extraDescJson": [
+                {
+                    "title": "예약 안내",
+                    "context": "당일 예약은 전화 문의 필수입니다.",
+                    "images": [],
+                }
+            ],
+        }
+    ]
+    parsed_results = {
+        "room1": {
+            "max_capacity": 6,
+            "recommend_capacity": 4,
+            "requires_call_on_same_day": False,
+        }
+    }
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["requires_call_on_sameday"] is True
+
+
+@pytest.mark.asyncio
+async def test_structured_text_negative_requires_call_overrides_parser(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Room A",
+            "desc": "",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+            "extraDescJson": [
+                {
+                    "title": "예약 안내",
+                    "context": "당일 예약도 전화 문의 없이 가능합니다.",
+                    "images": [],
+                }
+            ],
+        }
+    ]
+    parsed_results = {
+        "room1": {
+            "max_capacity": 6,
+            "recommend_capacity": 4,
+            "requires_call_on_same_day": True,
+        }
+    }
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["requires_call_on_sameday"] is False
