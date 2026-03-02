@@ -82,7 +82,7 @@ async def test_map_search_success(
     """
     # given
     room_resp = mock_room_response_factory(name="Refactored Room", price=20000)
-    branch_resp = mock_branch_response_factory(min_price=20000, rooms=[room_resp])
+    branch_resp = mock_branch_response_factory(min_price_available=20000, rooms=[room_resp])
     
     # Mock 응답 생성
     mock_response = mock_availability_response_factory(
@@ -120,8 +120,10 @@ async def test_map_search_success(
             assert "rooms" in branch
             assert isinstance(branch["rooms"], list)
             assert len(branch["rooms"]) > 0
-            assert "min_price" in branch
-            assert isinstance(branch["min_price"], int)
+            assert "min_price_available" in branch
+            assert "min_price_partial" in branch
+            assert isinstance(branch["min_price_available"], int)
+            assert branch["min_price_partial"] is None
             assert "available_count" in branch
             assert isinstance(branch["available_count"], int)
         # branch_summary는 제거됨
