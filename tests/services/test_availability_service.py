@@ -278,7 +278,7 @@ class TestAvailabilityServiceFlow:
             room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}
         )
 
-        # 방 2: 부분 예약 가능 (available="unknown"), 2시간 기준 15000원 -> min_price_partial 후보
+        # 방 2: 부분 예약 가능 (available="unknown"), 예약가능한 1시간 기준 7500원 -> min_price_partial 후보
         room2 = RoomDetail(
             name="Room2", branch="Branch", business_id=branch_id, biz_item_id="r2",
             pricePerHour=7500, max_capacity=10,
@@ -287,7 +287,7 @@ class TestAvailabilityServiceFlow:
         )
         avail_2 = RoomAvailability(
             room_detail=room2, available="unknown", available_slots={"14:00": True, "15:00": False},
-            estimated_price=15000
+            estimated_price=7500
         )
 
         # 방 3: 완전 예약 가능 (available=True), 2시간 기준 25000원 -> 최저가가 아니므로 무시됨
@@ -330,4 +330,4 @@ class TestAvailabilityServiceFlow:
         
         # 최저가 집계 검증
         assert branch.min_price_available == 20000
-        assert branch.min_price_partial == 15000
+        assert branch.min_price_partial == 7500

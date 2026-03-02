@@ -217,14 +217,16 @@ class AvailabilityService:
 
         return max(slot_price, 0)
 
-    def calculate_total_price(self, room_detail, date_str: str, hour_slots: List[str]) -> int:
+    def calculate_total_price(self, room_detail, date_str: str, hour_slots: List[str], available_slots: Optional[Dict[str, Union[bool, str]]] = None) -> int:
         """요청 슬롯 전체의 총 가격 계산. (심야 예약 시 익일 날짜 반영 로직 포함)"""
         if len(hour_slots) < 2:
             return 0
             
         # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
         billable_slots = hour_slots[:-1]
-        
+        if available_slots:
+            billable_slots = [slot for slot in billable_slots if available_slots.get(slot) is True]
+            
         total_price = 0
         current_date = date_str
         last_minutes = -1
@@ -386,6 +388,7 @@ class AvailabilityService:
                         room_detail=room_detail,
                         date_str=request.date,
                         hour_slots=hour_slots,
+                        available_slots=res.available_slots if res.available == "unknown" else None,
                     )
 
                 room_resp = RoomResponse(
@@ -575,10 +578,13 @@ class AvailabilityService:
                     message=f"최대 {room.maxHours}시간까지만 예약할 수 있습니다.",
                 ))
 
-            if res.available is True:
+            if res.available is True or res.available == "unknown":
                 try:
                     if isinstance(room.priceConfig, dict):
-                        price = self.calculate_total_price(room, request.date, hour_slots)
+                        price = self.calculate_total_price(
+                            room, request.date, hour_slots,
+                            available_slots=res.available_slots if res.available == "unknown" else None,
+                        )
                     else:
                         normalized_rules = (
                             room.priceConfig
@@ -597,15 +603,38 @@ class AvailabilityService:
                         # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
-                        price = self.pricing_service.calculate_total_price(
-                            base_price=room.pricePerHour,
-                            price_config=normalized_rules,
-                            base_capacity=room.baseCapacity,
-                            extra_charge=room.extraCharge,
-                            start_dt=start_dt,
-                            end_dt=end_dt,
-                            people_count=request.capacity,
-                        )
+                        # 부분 예약 가능(unknown)인 경우, 실제로 예약 가능한 시간만 합산
+                        if res.available == "unknown":
+                            price = 0
+                            for slt in hour_slots[:-1]:
+                                if res.available_slots.get(slt) is True:
+                                    s_dt = datetime.strptime(f"{request.date} {slt}", "%Y-%m-%d %H:%M")
+                                    # 다음 슬롯 시간 (1시간 추가)
+                                    e_dt = s_dt + timedelta(hours=1)
+                                    
+                                    # 심야 예약 대응
+                                    if s_dt.hour > e_dt.hour:
+                                        e_dt += timedelta(days=1)
+                                        
+                                    price += self.pricing_service.calculate_total_price(
+                                        base_price=room.pricePerHour,
+                                        price_config=normalized_rules,
+                                        base_capacity=room.baseCapacity,
+                                        extra_charge=room.extraCharge,
+                                        start_dt=s_dt,
+                                        end_dt=e_dt,
+                                        people_count=request.capacity,
+                                    )
+                        else:
+                            price = self.pricing_service.calculate_total_price(
+                                base_price=room.pricePerHour,
+                                price_config=normalized_rules,
+                                base_capacity=room.baseCapacity,
+                                extra_charge=room.extraCharge,
+                                start_dt=start_dt,
+                                end_dt=end_dt,
+                                people_count=request.capacity,
+                            )
                     res.estimated_price = price
                 except ValueError as e:
                     logger.warning(f"Price calculation failed for {room.name}: {e}")
