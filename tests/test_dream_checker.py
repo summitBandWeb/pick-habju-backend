@@ -33,10 +33,10 @@ def sample_dream_rooms():
             biz_item_id=str(i),
             imageUrls=[],
             maxCapacity=6,
-            recommendCapacity=4,
+            recommend_capacity_range=[2, 4],
             pricePerHour=15000,
             canReserveOneHour=True,
-            requiresCallOnSameDay=False
+            requiresContactOnSameDay=False
         ))
     return rooms
 
@@ -101,7 +101,7 @@ async def test_dream_partial_availability(sample_dream_rooms):
 
     room_result = result[0]
     assert isinstance(room_result, RoomAvailability)
-    assert room_result.available is False  # 하나라도 불가능하면 False
+    assert room_result.available == "unknown"  # 일부만 가능하면 "unknown" (mixed availability)
     assert room_result.available_slots["13:00"] is True
     assert room_result.available_slots["14:00"] is False
 
