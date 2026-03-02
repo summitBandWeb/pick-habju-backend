@@ -17,7 +17,9 @@ from app.api._dev.debug_envelope import router as demo_router
 from app.core.config import ALLOWED_ORIGINS, CORS_ORIGIN_REGEX
 from app.core.limiter import limiter
 from app.core.logging_config import setup_logging
-from app.core.middleware import CacheControlMiddleware, RealIPMiddleware, TraceIDMiddleware
+from app.core.middleware import CacheControlMiddleware, RealIPMiddleware, TraceIDMiddleware, MetricsMiddleware
+from prometheus_client import make_asgi_app
+from app.core.metrics import ENABLE_METRICS
 from app.exception.base_exception import BaseCustomException
 from app.exception.envelope_handlers import (
     custom_exception_handler,
@@ -77,12 +79,18 @@ app.add_middleware(
 
 # 미들웨어 설정 (FastAPI는 LIFO: 마지막에 추가된 것이 가장 먼저 실행됨)
 # 따라서 아래에서 위로 읽으면 실제 실행 순서와 일치합니다.
-# INNERMOST (실행 순서 3) -> Real IP: 실제 IP 추출 및 요청 정보 로깅
-# MIDDLE    (실행 순서 2) -> Cache-Control: API 응답 캐시 방지
+# INNERMOST (실행 순서 4) -> Real IP: 실제 IP 추출 및 요청 정보 로깅
+# MIDDLE    (실행 순서 3) -> Cache-Control: API 응답 캐시 방지
+# MIDDLE    (실행 순서 2) -> Metrics: Prometheus 메트릭 수집
 # OUTERMOST (실행 순서 1) -> Trace ID: 모든 요청에 고유 ID 부여 및 로깅 컨텍스트 설정
 app.add_middleware(RealIPMiddleware)
 app.add_middleware(CacheControlMiddleware)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(TraceIDMiddleware)
+
+if ENABLE_METRICS:
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
 
 
 @app.get("/ping")

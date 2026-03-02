@@ -8,10 +8,12 @@
 import logging
 import uuid
 import re
+import time
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from app.core.context import set_trace_id
+from app.core.metrics import http_requests_total, http_request_duration_seconds, ENABLE_METRICS
 
 logger = logging.getLogger(__name__)
 
@@ -105,12 +107,22 @@ class RealIPMiddleware(BaseHTTPMiddleware):
 
         # request.state에 저장하여 다른 곳에서 사용 가능
         request.state.real_ip = real_ip
+        
+        start_time = time.perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception as e:
+            # 예상치 못한 에러 발생 시 로깅을 위해 캐치 (글로벌 핸들러에서 다시 처리됨)
+            logger.exception(f"Unhandled exception in RealIPMiddleware: {e}")
+            raise
 
-        response = await call_next(request)
-
-        # 로깅 (정상 헬스체크는 스킵하되, 500번대 에러 발생 시 상태 코드 포함시켜 로깅)
-        if request.url.path not in ("/ping", "/health") or (response is not None and response.status_code >= 500):
-            status_code = response.status_code if response else 500
+        process_time = time.perf_counter() - start_time
+        status_code = response.status_code if response else 500
+        
+        is_health_endpoint = request.url.path in ("/ping", "/health")
+        
+        # 로깅 (정상 헬스체크는 스킵하되, 500번대 에러 발생 시 상태 코드 포함시켜 상세 로깅)
+        if not is_health_endpoint or status_code >= 500:
             log_level = logging.ERROR if status_code >= 500 else logging.INFO
             
             log_msg = f"[{real_ip}] {request.method} {request.url.path} {status_code}"
@@ -119,11 +131,17 @@ class RealIPMiddleware(BaseHTTPMiddleware):
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": status_code,
+                "latency_sec": round(process_time, 4),
                 "user_agent": request.headers.get("User-Agent", ""),
                 "referer": request.headers.get("Referer", ""),
                 "request_id": request.headers.get("X-Request-ID", ""),
             }
             
+            # /health 경로의 500 에러는 더욱 상세하게 기록 (Trace ID 포함)
+            if is_health_endpoint and status_code >= 500:
+                extra_data["trace_id"] = getattr(request.state, "trace_id", "unknown")
+                extra_data["health_check_failed"] = True
+                
             if log_level == logging.ERROR:
                 logger.error(log_msg, extra=extra_data)
             else:
@@ -163,3 +181,38 @@ def get_real_ip(request: Request) -> str:
     RealIPMiddleware가 적용된 후에만 사용 가능.
     """
     return getattr(request.state, "real_ip", "unknown")
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """
+    HTTP 요청의 상태 코드와 소요 시간을 실시간으로 수집하여 Prometheus 메트릭으로 기록합니다.
+    """
+    async def dispatch(self, request: Request, call_next) -> Response:
+        if not ENABLE_METRICS or request.url.path == "/metrics":
+            return await call_next(request)
+            
+        start_time = time.perf_counter()
+        
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+        except Exception as e:
+            status_code = 500
+            raise e
+        finally:
+            process_time = time.perf_counter() - start_time
+            # 라우팅 매개변수(예: /rooms/{id}) 처리는 향후 고도화 시 정규화(Route Path) 기반으로 수정 가능
+            path = request.url.path
+            
+            http_requests_total.labels(
+                method=request.method,
+                path=path,
+                status_code=status_code
+            ).inc()
+            
+            http_request_duration_seconds.labels(
+                method=request.method,
+                path=path,
+                status_code=status_code
+            ).observe(process_time)
+            
+        return response
