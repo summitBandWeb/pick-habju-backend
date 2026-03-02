@@ -136,10 +136,41 @@ API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. �
 }
 ```
 ### 4-1. `available` 필드 상태값 (Enum)
-*   `true` (Boolean): 예약 가능
+*   `true` (Boolean): 예약 가능 (요청한 전체 시간에 대해 빈 방)
 *   `false` (Boolean): 예약 불가 (이미 예약됨)
-*   `"unknown"` (String): **상태 알 수 없음** (오픈 대기 기간 등)
-    *   UI 처리: 회색 처리 또는 "오픈 예정" 뱃지 표시 권장
+*   `"unknown"` (String): **부분 예약 가능** (요청한 시간 중 일부 시간만 비어있음)
+
+### 4-2. `min_price_available` 및 `min_price_partial` 필드 정책
+두 필드의 키(key)는 결괏값에 **항상 포함**되며 조건부로 생략되지 않습니다.
+값이 `null`이 되는 경우는 다음과 같습니다.
+
+*   `min_price_available`: 결과 룸들 중 `available: true`인 방이 **하나도 없을 때** `null`이 됩니다. 예약 가능한 방이 하나라도 있으면 최소 가격(숫자)이 들어갑니다.
+*   `min_price_partial`: 결과 룸들 중 `available: "unknown"`인 방이 **하나도 없을 때** `null`이 됩니다. 부분 예약 가능한 방이 하나라도 있으면 가장 길게 연속된 예약가능 시간 기준의 최소 가격(숫자)이 들어갑니다.
+
+**예시 JSON:**
+1) 부분 예약만 가능한 방만 있는 경우
+```json
+{
+  "min_price_available": null,
+  "min_price_partial": 15000
+}
+```
+
+2) 완전 예약 가능한 방만 있는 경우
+```json
+{
+  "min_price_available": 12000,
+  "min_price_partial": null
+}
+```
+
+3) 두 가지 경우 모두 없거나 예약 불가인 방만 있는 경우
+```json
+{
+  "min_price_available": null,
+  "min_price_partial": null
+}
+```
 
 ## 3. 트러블슈팅 이력 (참고)
 
