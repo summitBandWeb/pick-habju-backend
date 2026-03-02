@@ -41,6 +41,14 @@ from app.validate.room_detail_validator import validate_room_detail_list
 
 logger = logging.getLogger("app")
 
+def is_partial_available(res: RoomAvailability) -> bool:
+    """방이 부분적으로 예약 가능한지 (available은 False이지만 내부에 빈 슬롯이 있는지) 확인합니다."""
+    return (
+        res.available is False 
+        and isinstance(res.available_slots, dict) 
+        and any(v is True for v in res.available_slots.values())
+    )
+
 class AvailabilityService:
     """합주실 예약 가능 여부 조회 서비스
     
@@ -410,7 +418,7 @@ class AvailabilityService:
             if res.available not in (True, False, "unknown"):
                 logger.warning(f"Unexpected available value: {res.available!r} for biz_item_id={room_detail.biz_item_id}")
 
-            is_partial = (res.available is False and isinstance(res.available_slots, dict) and any(v is True for v in res.available_slots.values()))
+            is_partial = is_partial_available(res)
 
             # 예약 가능한 룸, 부분 예약 룸, 결제 불가능한 오픈대기 룸만 포함
             if res.available is True or res.available == "unknown" or is_partial:
@@ -624,7 +632,7 @@ class AvailabilityService:
                     message=f"최대 {room.maxHours}시간까지만 예약할 수 있습니다.",
                 ))
 
-            is_partial = (res.available is False and isinstance(res.available_slots, dict) and any(v is True for v in res.available_slots.values()))
+            is_partial = is_partial_available(res)
             
             if res.available is True or is_partial:
                 try:
