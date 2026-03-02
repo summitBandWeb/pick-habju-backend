@@ -68,8 +68,15 @@ class NaverRoomFetcher:
                 businessId
                 name
                 businessDisplayName
+                desc
                 coordinates
                 placeId
+                addressJson
+                phoneInformationJson
+                placeScheduleJson
+                extraDescJson
+                additionalPropertyJson
+                eventDescJson
             }
         }
         """
