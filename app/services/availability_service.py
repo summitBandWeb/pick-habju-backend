@@ -307,7 +307,7 @@ class AvailabilityService:
                 standby_results.append(RoomAvailability(
                     room_detail=room,
                     available="unknown",
-                    available_slots={hour_str: "unknown" for hour_str in hour_slots}
+                    available_slots={hour_str: False for hour_str in hour_slots[:-1]}
                 ))
             else:
                 crawling_rooms.append(room)
@@ -445,7 +445,8 @@ class AvailabilityService:
                     policy_warnings=res.policy_warnings
                 )
 
-                available_ids.append(room_detail.biz_item_id)
+                if res.available != "unknown":
+                    available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
                 
                 if bid not in branch_dict:
@@ -456,7 +457,7 @@ class AvailabilityService:
                         lng=room_detail.lng,
                         min_price_available=None,
                         min_price_partial=None,
-                        available_count=1,
+                        available_count=1 if res.available != "unknown" else 0,
                         phone_number=room_detail.phoneNumber,
                         display_name=room_detail.displayName,
                         rooms=[room_resp]
@@ -465,7 +466,8 @@ class AvailabilityService:
                 else:
                     branch_obj = branch_dict[bid]
                     branch_obj.rooms.append(room_resp)
-                    branch_obj.available_count += 1
+                    if res.available is not "unknown":
+                        branch_obj.available_count += 1
                     
                     AvailabilityService._update_min_prices(branch_obj, res.available, total_price, is_partial)
                     
@@ -485,6 +487,15 @@ class AvailabilityService:
 
     @staticmethod
     def _update_min_prices(branch_obj: BranchResponse, available: bool | str, total_price: int, is_partial: bool = False) -> None:
+        """
+        지점(Branch) 단위의 최소 예약 가능 가격을 갱신합니다.
+        
+        Args:
+            branch_obj: 대상 지점 응답 모델
+            available: 방의 현재 예약 상태 (True, False, "unknown")
+            total_price: 계산된 총 가격
+            is_partial: 해당 방이 예약 상태는 False지만 부분적으로 이용 가능한 슬롯이 있는지 여부
+        """
         if available is True:
             if branch_obj.min_price_available is None or total_price < branch_obj.min_price_available:
                 branch_obj.min_price_available = total_price
@@ -637,7 +648,7 @@ class AvailabilityService:
                             f"{request.date} {end_slot}", "%Y-%m-%d %H:%M"
                         )
                         
-                        # 심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
+                        # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
 

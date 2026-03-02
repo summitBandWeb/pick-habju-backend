@@ -106,11 +106,11 @@ API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. �
           "name": "A룸",
           "available": "unknown",         // true / false / "unknown"
           "available_slots": {
-            "17:00": true,
+            "17:00": false,
             "18:00": false
           },
           "price_per_hour": 15000,
-          "estimated_price": 45000,       // [NEW] 계산된 최종 예상 금액 (시간/인동 동적 계산)
+          "estimated_price": null,        // [NEW] 계산된 최종 예상 금액 (unknown일 경우 null)
           "image_urls": [
             "https://example.com/image1.jpg"
           ],

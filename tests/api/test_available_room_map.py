@@ -149,7 +149,7 @@ async def test_map_search_success_partial(
 ):
     """
     [통합 시나리오 테스트]
-    방이 'unknown' (예약 일부 가능) 상태일 때 min_price_partial 에 가격이 들어가고,
+    방이 False (예약 일부 가능 - is_partial) 상태일 때 min_price_partial 에 가격이 들어가고,
     min_price_available 은 None 이어야 한다.
     """
     room_resp = mock_room_response_factory(name="Partial Room", price=30000, available=False)
