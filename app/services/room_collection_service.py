@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -254,17 +255,29 @@ class RoomCollectionService:
             existing_price_config = existing.get("price_config", []) if existing else []
             existing_base_cap = existing.get("base_capacity") if existing else None
             existing_extra_charge = existing.get("extra_charge") if existing else None
+            structured_extra_charge = self._extract_structured_extra_charge(room)
 
             final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
             if not final_price_config and existing_price_config:
                 final_price_config = existing_price_config
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
-            final_extra_charge = parsed["extra_charge"] if "extra_charge" in parsed else existing_extra_charge
+            if "extra_charge" in parsed:
+                final_extra_charge = parsed["extra_charge"]
+            elif structured_extra_charge is not None:
+                final_extra_charge = structured_extra_charge
+            else:
+                final_extra_charge = existing_extra_charge
 
             # Boolean fields fallback
             existing_can_reserve = existing.get("can_reserve_one_hour", True) if existing else True
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
-            final_can_reserve = parsed_can_reserve if parsed_can_reserve is not None else existing_can_reserve
+            structured_can_reserve = self._extract_structured_can_reserve_one_hour(room)
+            if structured_can_reserve is not None:
+                final_can_reserve = structured_can_reserve
+            elif parsed_can_reserve is not None:
+                final_can_reserve = parsed_can_reserve
+            else:
+                final_can_reserve = existing_can_reserve
             
             existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
             parsed_requires_call = parsed.get("requires_call_on_same_day")
@@ -297,6 +310,88 @@ class RoomCollectionService:
             
             # Upsert Room
             self.supabase.table("room").upsert(room_data).execute()
+
+    def _extract_structured_can_reserve_one_hour(self, room: Dict) -> Optional[bool]:
+        """Infer one-hour reservation availability from structured booking policy fields."""
+        unit_code = (room.get("bookingTimeUnitCode") or "").upper()
+        min_booking_time = room.get("minBookingTime")
+
+        if isinstance(min_booking_time, (int, float)):
+            if "MIN" in unit_code:
+                return min_booking_time <= 60
+            return min_booking_time <= 1
+
+        booking_count_setting = room.get("bookingCountSettingJson")
+        if isinstance(booking_count_setting, dict):
+            for key in ("minBookingTime", "minimumBookingTime", "minTime", "minimumTime"):
+                value = booking_count_setting.get(key)
+                if isinstance(value, (int, float)):
+                    if "MIN" in unit_code:
+                        return value <= 60
+                    return value <= 1
+
+        return None
+
+    def _extract_structured_extra_charge(self, room: Dict) -> Optional[int]:
+        """Extract extra charge from structured JSON fields before text/LLM fallback."""
+        extra_fee_setting = room.get("extraFeeSettingJson")
+        if isinstance(extra_fee_setting, str):
+            try:
+                extra_fee_setting = json.loads(extra_fee_setting)
+            except json.JSONDecodeError:
+                extra_fee_setting = None
+
+        if not isinstance(extra_fee_setting, dict):
+            return None
+
+        key_hints = (
+            "extrafee",
+            "extra_fee",
+            "extracharge",
+            "extra_charge",
+            "additionalfee",
+            "additional_fee",
+            "surcharge",
+            "amount",
+        )
+
+        def walk(obj: Any) -> Optional[int]:
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    lowered = str(key).lower()
+                    if any(hint in lowered for hint in key_hints):
+                        parsed = self._coerce_int(value)
+                        if parsed is not None:
+                            return parsed
+                    nested = walk(value)
+                    if nested is not None:
+                        return nested
+            elif isinstance(obj, list):
+                for item in obj:
+                    nested = walk(item)
+                    if nested is not None:
+                        return nested
+            return None
+
+        return walk(extra_fee_setting)
+
+    @staticmethod
+    def _coerce_int(value: Any) -> Optional[int]:
+        """Best-effort conversion of number-like values to int."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            digits = re.sub(r"[^\d]", "", value)
+            if digits:
+                try:
+                    return int(digits)
+                except ValueError:
+                    return None
+        return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:
         """Extract pricing information."""
@@ -460,5 +555,6 @@ class RoomCollectionService:
                 logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
             else:
                 logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
+
 
 
