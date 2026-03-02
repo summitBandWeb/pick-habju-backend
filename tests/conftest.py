@@ -71,11 +71,13 @@ def mock_room_response_factory():
 @pytest.fixture
 def mock_branch_response_factory(mock_room_response_factory):
     """ BranchResponse 객체 Factory """
-    def _create(business_id="12345", branch="Test Branch", min_price_available=15000, min_price_partial=None, count=1, lat=37.5, lng=127.0, rooms=None, **kwargs):
+    def _create(business_id="12345", branch="Test Branch", min_price_available=15000, min_price_partial=None, count=None, lat=37.5, lng=127.0, rooms=None, **kwargs):
         from app.models.dto import BranchResponse
         if rooms is None:
             safe_price = min_price_available if min_price_available is not None else (min_price_partial if min_price_partial is not None else 0)
             rooms = [mock_room_response_factory(price=safe_price)]
+        if count is None:
+            count = len(rooms)
         defaults = {
             "business_id": business_id,
             "branch": branch,
