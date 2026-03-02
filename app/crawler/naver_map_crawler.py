@@ -148,16 +148,24 @@ class NaverMapCrawler:
         return list(results.values())
 
     def _extract_apollo_state_sync(self, page) -> List[Dict]:
-        """window.__APOLLO_STATE__ 변수에서 PlaceSummary 데이터 추출 (Sync version)"""
+        """window.__APOLLO_STATE__ 변수에서 PlaceSummary + 추가 데이터 추출 (Sync version)
+
+        Rationale:
+            PlaceSummary 외에 PlaceDetail(상세설명, 영업시간)과
+            BookingBusiness(예약 메타데이터) 접두사도 수집하여
+            GraphQL 호출 전에 확보 가능한 데이터를 최대화합니다.
+            추가 데이터가 없어도 기존 동작에는 영향 없습니다.
+        """
         return page.evaluate("""
             () => {
                 const state = window.__APOLLO_STATE__;
-                // Debug: Return useful message if state is missing
                 if (!state) {
                      return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY_HIDDEN_FOR_SECURITY"];
                 }
                 
                 const places = [];
+                const details = {};    // placeId -> PlaceDetail 필드
+                const bookings = {};   // placeId -> BookingBusiness 필드
                 const keys = Object.keys(state);
                 
                 for (const key of keys) {
@@ -165,6 +173,7 @@ class NaverMapCrawler:
                         const place = state[key];
                         places.push({
                             id: place.bookingBusinessId ?? key.split(':')[1],
+                            placeId: key.split(':')[1],
                             name: place.name,
                             category: place.category,
                             address: place.address,
@@ -172,10 +181,38 @@ class NaverMapCrawler:
                             x: place.x,
                             y: place.y
                         });
+                    } else if (key.startsWith('PlaceDetail:')) {
+                        const d = state[key];
+                        const pid = key.split(':')[1];
+                        details[pid] = {
+                            description: d.description ?? d.desc ?? null,
+                            businessHours: d.businessHours ?? null,
+                            phone: d.phone ?? d.tel ?? null,
+                            homepageUrl: d.homepageUrl ?? null
+                        };
+                    } else if (key.startsWith('BookingBusiness:')) {
+                        const b = state[key];
+                        const bid = key.split(':')[1];
+                        bookings[bid] = {
+                            bookingBusinessId: bid,
+                            bookingUrl: b.bookingUrl ?? null,
+                            businessCategory: b.businessCategory ?? null
+                        };
                     }
                 }
                 
-                // If no places found, return some keys to help debugging
+                // PlaceDetail/BookingBusiness 데이터를 PlaceSummary에 병합 (enrich)
+                for (const place of places) {
+                    const pid = place.placeId;
+                    if (pid && details[pid]) {
+                        Object.assign(place, details[pid]);
+                    }
+                    // bookingBusinessId가 있으면 BookingBusiness 데이터 병합
+                    if (place.id && bookings[place.id]) {
+                        Object.assign(place, bookings[place.id]);
+                    }
+                }
+                
                 if (places.length === 0) {
                     return ["NO_PLACES_FOUND_IN_APOLLO_STATE"];
                 }
