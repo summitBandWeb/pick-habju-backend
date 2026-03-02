@@ -239,6 +239,38 @@ async def test_text_recommend_range_used_for_capacity_range(service, mock_supaba
 
 
 @pytest.mark.asyncio
+async def test_text_range_wins_when_both_text_and_parser_ranges_exist(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "화이트룸",
+            "desc": "권장 4~6명, 최대 8명",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+        }
+    ]
+    parsed_results = {
+        "room1": {"max_capacity": 7, "recommend_capacity": 5, "recommend_capacity_range": [5, 7]}
+    }
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 8
+    assert room_data["recommend_capacity"] == 5
+    assert room_data["recommend_capacity_range"] == [4, 6]
+
+
+@pytest.mark.asyncio
 async def test_structured_requires_call_overrides_parser(service, mock_supabase):
     business = {
         "businessId": "biz1",

@@ -1,3 +1,4 @@
+import re
 from unittest.mock import AsyncMock
 
 import pytest
@@ -48,7 +49,7 @@ async def test_fetch_business_query_contains_extended_fields():
         "eventDescJson",
     ]
     for field in required_fields:
-        assert field in query
+        assert re.search(rf"(?<!\w){re.escape(field)}(?!\w)", query), f"Missing field: {field}"
 
 
 @pytest.mark.asyncio
@@ -75,4 +76,4 @@ async def test_fetch_biz_items_query_contains_extended_fields():
         "extraDescJson",
     ]
     for field in required_fields:
-        assert field in query
+        assert re.search(rf"(?<!\w){re.escape(field)}(?!\w)", query), f"Missing field: {field}"

@@ -336,7 +336,7 @@ class RoomCollectionService:
                 "recommend_capacity": final_rec_cap,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
                 "recommend_capacity_range": self._calculate_capacity_range(
-                    parsed.get("recommend_capacity_range") or text_rec_range,
+                    text_rec_range or parsed.get("recommend_capacity_range"),
                     final_rec_cap,
                     final_max_cap,
                     final_base_cap,
@@ -375,10 +375,11 @@ class RoomCollectionService:
         if isinstance(booking_count_setting, dict):
             for key in ("minBookingTime", "minimumBookingTime", "minTime", "minimumTime"):
                 value = booking_count_setting.get(key)
-                if isinstance(value, (int, float)):
+                coerced_value = self._coerce_int(value)
+                if coerced_value is not None:
                     if "MIN" in unit_code:
-                        return value <= 60
-                    return value <= 1
+                        return coerced_value <= 60
+                    return coerced_value <= 1
 
         return None
 
