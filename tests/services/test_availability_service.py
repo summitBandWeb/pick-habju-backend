@@ -257,7 +257,7 @@ class TestAvailabilityServiceFlow:
         mock_db.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_aggregate_min_price_by_available_status(self, service, mock_crawler, mock_pricing_service):
+    async def test_aggregate_min_price_by_available_status(self, service, mock_crawler):
         """branch(지점)별 min_price_available 및 min_price_partial 집계 검증"""
         # Given
         req = AvailabilityRequest(
@@ -331,3 +331,82 @@ class TestAvailabilityServiceFlow:
         # 최저가 집계 검증
         assert branch.min_price_available == 20000
         assert branch.min_price_partial == 7500
+
+    @pytest.mark.asyncio
+    async def test_aggregate_min_price_only_available_rooms(self, service, mock_crawler):
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room1 = RoomDetail(
+            name="Room1", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}
+        )
+        avail_1 = RoomAvailability(
+            room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000
+        )
+        
+        mock_crawler.check_availability.return_value = [avail_1]
+        
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room1]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room1]
+            response = await service.check_availability(req)
+
+        branch = response.branches[0]
+        assert branch.min_price_partial is None
+        assert branch.min_price_available == 20000
+
+    @pytest.mark.asyncio
+    async def test_aggregate_min_price_only_partial_rooms(self, service, mock_crawler):
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room1 = RoomDetail(
+            name="Room1", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}
+        )
+        avail_1 = RoomAvailability(
+            room_detail=room1, available="unknown", available_slots={"14:00": True, "15:00": False}, estimated_price=10000
+        )
+        
+        mock_crawler.check_availability.return_value = [avail_1]
+        
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room1]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room1]
+            response = await service.check_availability(req)
+
+        branch = response.branches[0]
+        assert branch.min_price_available is None
+        assert branch.min_price_partial == 10000
+
+    @pytest.mark.asyncio
+    async def test_aggregate_min_price_no_available_rooms(self, service, mock_crawler):
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room1 = RoomDetail(
+            name="Room1", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}
+        )
+        avail_1 = RoomAvailability(
+            room_detail=room1, available=False, available_slots={"14:00": False, "15:00": False}, estimated_price=0
+        )
+        
+        mock_crawler.check_availability.return_value = [avail_1]
+        
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room1]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room1]
+            response = await service.check_availability(req)
+
+        assert len(response.branches) == 0
