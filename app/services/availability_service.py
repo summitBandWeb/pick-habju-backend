@@ -360,13 +360,11 @@ class AvailabilityService:
             if biz_id in merged_dict:
                 existing = merged_dict[biz_id]
                 
-                # 1. 예약 가능 여부 병합 (AND 로직, 보수적 평가)
-                if existing.available is True and r.available is True:
-                    existing.available = True
-                elif existing.available is False or r.available is False:
-                    existing.available = False
+                # 1. 예약 가능 여부 병합
+                if existing.available == r.available:
+                    pass # 동일 상태면 유지
                 else:
-                    existing.available = "unknown"
+                    existing.available = "unknown" # 상태가 엇갈리거나 이미 unknown이면 그대로 unknown
                     
                 # 2. 각 시간대별 슬롯 가능 여부 딕셔너리 병합
                 existing.available_slots.update(r.available_slots)
@@ -621,7 +619,7 @@ class AvailabilityService:
                         # [심야 예약 대응] 종료 시간이 시작 시간보다 같거나 빠르면 익일로 간주
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
-                        
+
                         # 부분 예약 가능(unknown)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
                         if res.available == "unknown":
                             longest_block = []

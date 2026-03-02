@@ -92,7 +92,7 @@ class DreamCrawler(BaseCrawler):
 
         # BeautifulSoup으로 파싱
         available_slots = self._parse_html_content(items_html, hour_slots)
-        available = all(available_slots.values())
+        available = self.resolve_tri_state(available_slots)
 
         return RoomAvailability(
             room_detail=room,
