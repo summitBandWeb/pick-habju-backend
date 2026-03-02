@@ -101,14 +101,6 @@ if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true") != "true":
 def ping():
     return {"ok": True}
 
-@app.get("/test-report", include_in_schema=False)
-async def trigger_test_report():
-    """임시 리포트 발송 테스트용 API (확인 후 삭제 권장)"""
-    from app.services.monitoring_service import send_discord_report
-    import asyncio
-    asyncio.create_task(send_discord_report())
-    return {"message": "Discord report triggered"}
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check(response: Response) -> HealthResponse:
     """

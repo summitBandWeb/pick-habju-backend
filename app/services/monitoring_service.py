@@ -35,18 +35,15 @@ async def send_discord_report():
     try:
         # 2. Prometheus REGISTRY 분석
         for metric in REGISTRY.collect():
-            if metric.name == "http_requests":
-                for sample in metric.samples:
-                    if sample.name == "http_requests_total":
-                        # sample.labels['status_code']로 접근
-                        total_requests += sample.value
-                        if str(sample.labels.get('status_code', '')).startswith('5'):
-                            total_errors += sample.value
-            elif metric.name == "http_request_duration_seconds":
-                # Histogram의 sum을 통해 총 지연 시간 획득
-                for sample in metric.samples:
-                    if sample.name == "http_request_duration_seconds_sum":
-                        total_duration += sample.value
+            for sample in metric.samples:
+                if sample.name == "http_requests_total":
+                    # sample.labels['status_code']로 접근
+                    total_requests += sample.value
+                    if str(sample.labels.get('status_code', '')).startswith('5'):
+                        total_errors += sample.value
+                elif sample.name == "http_request_duration_seconds_sum":
+                    # Histogram의 sum을 통해 총 지연 시간 획득
+                    total_duration += sample.value
                     
         # 3. 통계 산출
         avg_latency = (total_duration / total_requests) if total_requests > 0 else 0
