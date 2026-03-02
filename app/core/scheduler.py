@@ -1,7 +1,7 @@
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from tzlocal import get_localzone
-from app.services.monitoring_service import generate_and_send_daily_report
+from app.services.monitoring_service import send_discord_report
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +17,14 @@ def start_scheduler():
         try:
             # 매일 아침 9시에 실행
             scheduler.add_job(
-                generate_and_send_daily_report,
+                send_discord_report,
                 'cron',
                 hour=9,
                 minute=0,
                 id='daily_discord_report',
                 replace_existing=True
             )
+
             scheduler.start()
             logger.info("Scheduler started successfully: Daily report registered for 09:00.")
         except Exception as e:
