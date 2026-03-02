@@ -62,7 +62,7 @@ class TestParseWithRegex:
         """당일 예약 전화 문의 감지"""
         result = parser._parse_with_regex("레드룸", "당일 예약은 전화 문의 바랍니다")
         
-        assert result["requires_call_on_same_day"] is True
+        assert result["requires_contact_on_sameday"] is True
         
     # ============== TC: 최소 2시간 예약 감지 ==============
     def test_cannot_reserve_one_hour(self, parser):
@@ -99,7 +99,7 @@ class TestParseWithRegex:
         assert result["clean_name"] == "일반룸"
         assert result["day_type"] is None
         assert result["max_capacity"] is None
-        assert result["requires_call_on_same_day"] is False
+        assert result["requires_contact_on_sameday"] is False
         # [v2.0.0] 인원 정보 없으면 range도 None
         assert result["recommend_capacity_range"] is None
     
@@ -109,7 +109,7 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("테스트룸", None)
         
         assert result["clean_name"] == "테스트룸"
-        assert result["requires_call_on_same_day"] is False
+        assert result["requires_contact_on_sameday"] is False
     
     # ============== TC: "N명까지" 패턴 ==============
     def test_until_pattern_capacity(self, parser):
@@ -327,9 +327,9 @@ class TestValidateParsedResult:
         result = {"clean_name": "룸", "can_reserve_one_hour": "True"}
         assert parser._validate_parsed_result(result) is False
 
-    def test_invalid_requires_call_on_same_day_type(self, parser):
-        """requires_call_on_same_day 값이 불리언이 아닌 경우"""
-        result = {"clean_name": "룸", "requires_call_on_same_day": "False"}
+    def test_invalid_requires_contact_on_sameday_type(self, parser):
+        """requires_contact_on_sameday 값이 불리언이 아닌 경우"""
+        result = {"clean_name": "룸", "requires_contact_on_sameday": "False"}
         assert parser._validate_parsed_result(result) is False
 
 

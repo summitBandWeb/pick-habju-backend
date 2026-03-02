@@ -202,11 +202,13 @@ class TestCheckAvailabilityFlow:
             response = await service.check_availability(req)
 
         # Then
-        assert len(response.results) == 1
-        res = response.results[0]
+        assert len(response.branches) == 1
+        branch = response.branches[0]
+        assert len(branch.rooms) == 1
+        res = branch.rooms[0]
 
         # 1. 크롤러 결과가 잘 들어왔는지
-        assert res.room_detail.name == "MockRoom"
+        assert res.name == "MockRoom"
         assert res.available is True
 
         # 2. PricingService가 연동되었는지 (Phase 3 검증)

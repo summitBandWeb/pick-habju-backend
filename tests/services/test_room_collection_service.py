@@ -209,7 +209,7 @@ class TestDataPreservationLogic:
     async def test_preserve_boolean_fields(self, service, mock_supabase):
         """파서에서 추출하지 못한 불리언(None)은 대상 기존(DB)의 불리언 값 유지"""
         mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
-            data=[{"biz_item_id": "room1", "can_reserve_one_hour": False, "requires_call_on_sameday": True}]
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": False, "requires_contact_on_sameday": True}]
         )
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
@@ -220,7 +220,7 @@ class TestDataPreservationLogic:
                 "max_capacity": 5, 
                 "recommend_capacity": 4, 
                 "can_reserve_one_hour": None, 
-                "requires_call_on_same_day": None
+                "requires_contact_on_sameday": None
             }
         }
         
@@ -231,13 +231,13 @@ class TestDataPreservationLogic:
         
         # 기존 데이터를 유지해야 함
         assert upsert_data["can_reserve_one_hour"] is False
-        assert upsert_data["requires_call_on_sameday"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
 
     @pytest.mark.asyncio
     async def test_override_boolean_fields(self, service, mock_supabase):
         """파서에서 추출한 명시적 불리언(False/True)은 기존 DB를 덮어씀"""
         mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
-            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_call_on_sameday": False}]
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_contact_on_sameday": False}]
         )
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
@@ -248,7 +248,7 @@ class TestDataPreservationLogic:
                 "max_capacity": 5, 
                 "recommend_capacity": 4, 
                 "can_reserve_one_hour": False, # 새로 파싱됨
-                "requires_call_on_same_day": True # 새로 파싱됨
+                "requires_contact_on_sameday": True # 새로 파싱됨
             }
         }
         
@@ -259,7 +259,7 @@ class TestDataPreservationLogic:
         
         # 새로운 값으로 덮어써야 함
         assert upsert_data["can_reserve_one_hour"] is False
-        assert upsert_data["requires_call_on_sameday"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
 
 
 class TestV2NewFields:
@@ -327,7 +327,7 @@ class TestV2NewFields:
                 "price_config": [],
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         
@@ -357,7 +357,7 @@ class TestV2NewFields:
                 "recommend_capacity_range": None,
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         
@@ -409,7 +409,7 @@ class TestV2NewFields:
                 "price_config": price_cfg,
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         

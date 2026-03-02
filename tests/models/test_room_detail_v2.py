@@ -44,3 +44,21 @@ def test_room_detail_recommend_capacity_range_preserved():
     room = RoomDetail.model_validate(_room_payload(recommend_capacity_range=[3, 6]))
     assert room.recommendCapacityRange == [3, 6]
 
+
+def test_alias_choices_old_field_name():
+    """구 DB 컬럼명(requires_call_on_sameday)으로도 파싱되는지 검증"""
+    payload = _room_payload()
+    payload.pop("requires_call_on_sameday", None)
+    payload["requires_call_on_sameday"] = True
+    room = RoomDetail.model_validate(payload)
+    assert room.requiresContactOnSameDay is True
+
+
+def test_alias_choices_new_field_name():
+    """신 DB 컬럼명(requires_contact_on_sameday)으로도 파싱되는지 검증"""
+    payload = _room_payload()
+    payload.pop("requires_call_on_sameday", None)
+    payload["requires_contact_on_sameday"] = True
+    room = RoomDetail.model_validate(payload)
+    assert room.requiresContactOnSameDay is True
+
