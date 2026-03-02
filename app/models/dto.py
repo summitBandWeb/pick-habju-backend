@@ -1,13 +1,15 @@
 import re
 from datetime import datetime, date
-
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
+import logging
 from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
 
 class HealthResponse(BaseModel):
     """Health Check Response Model"""
     status: Literal["healthy", "degraded", "unhealthy"] = Field(description="Health status of the system (healthy, degraded, unhealthy)")
     dependencies: Dict[str, str] = Field(description="Health status of individual dependencies (e.g., database)")
+
+logger = logging.getLogger(__name__)
 
 # Room Information DTO (DB Query Result)
 class RoomDetail(BaseModel):
@@ -24,16 +26,7 @@ class RoomDetail(BaseModel):
 
     imageUrls: List[str] = Field(default_factory=list, alias="image_urls", description="List of room image URLs")
     maxCapacity: int = Field(alias="max_capacity", description="Maximum capacity")
-    recommendCapacity: int = Field(alias="recommend_capacity", description="Recommended capacity")
-
-    @field_validator("recommendCapacity", mode="before")
-    @classmethod
-    def normalize_recommend_capacity(cls, v: Any) -> int:
-        """레거시 데이터 호환: 리스트로 들어오면 첫 번째 값을 사용"""
-        if isinstance(v, list):
-            return v[0] if v else 0
-        return v
-
+    # [이슈 6] recommendCapacity(단일값 레거시) 제거. 범위형 recommendCapacityRange로 단일화.
     recommendCapacityRange: Optional[List[int]] = Field(
         default=None,
         alias="recommend_capacity_range",
@@ -58,10 +51,24 @@ class RoomDetail(BaseModel):
     phoneNumber: Optional[str] = Field(None, description="Branch phone number (if null, use chat)")
     displayName: Optional[str] = Field(None, description="Branch display name")
     openWaitRule: Dict[str, Any] = Field(default_factory=dict, description="Branch open wait rule (JSON)")
+    standbyDays: Optional[int] = Field(None, alias="standby_days", description="오픈대기일수 (현재일 기준 N일 이후 오픈 대기 여부 판단용)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
-    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available")
-    requiresCallOnSameDay: bool = Field(alias="requires_call_on_sameday", description="Whether same-day reservation requires a call")
+    # NOTE: 아래 두 필드는 내부 정책 판별 로직에서만 사용하며, 프론트엔드 응답에서는 policy_warnings로 대체됨
+    canReserveOneHour: bool = Field(alias="can_reserve_one_hour", description="Whether 1-hour reservation is available", exclude=True)
+    # [이슈 1] Python 필드명: requiresCallOnSameDay → requiresContactOnSameDay (전화뿐 아닌 모든 연락수단 포함)
+    # NOTE: AliasChoices로 DB 컬럼명 변경 전/후 모두 허용.
+    #       - 신규: requires_contact_on_sameday (DB 마이그레이션 완료 후 사용)
+    #       - 구형: requires_call_on_sameday    (기존 DB 컬럼명, 마이그레이션 후 이 항목 제거)
+    #       TODO: DB 마이그레이션 완료 후 AliasChoices에서 requires_call_on_sameday 제거
+    requiresContactOnSameDay: bool = Field(
+        validation_alias=AliasChoices(
+            "requires_contact_on_sameday",
+            "requires_call_on_sameday",
+        ),
+        description="당일 예약 시 연락(전화/채팅) 필요 여부",
+        exclude=True,
+    )
 
     @field_validator('branch', mode='before')
     @classmethod
@@ -98,6 +105,7 @@ class RoomDetail(BaseModel):
         if isinstance(v, list):
             if len(v) == 2:
                 return [int(v[0]), int(v[1])]
+            logger.warning(f"[dto_validation] Invalid recommend_capacity_range list length: {len(v)} (value: {v})")
             return None
         if isinstance(v, str):
             # NOTE: DB backfill/int4range는 inclusive("[]")만 사용하므로 해당 형식만 허용
@@ -123,16 +131,8 @@ class RoomDetail(BaseModel):
         if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
             self.maxCapacity = 0
 
-        if self.recommendCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
-            self.recommendCapacity = 0
-
-        if (
-            not self.recommendCapacityRange
-            and self.recommendCapacity
-            and self.recommendCapacity > 0
-        ):
-            min_cap = max(1, self.recommendCapacity - 2)
-            self.recommendCapacityRange = [min_cap, self.recommendCapacity]
+        # [이슈 6] recommendCapacity(단일값) fallback 로직 제거.
+        # recommendCapacityRange가 None이면 그대로 None. 파서/DB 보강으로 해결.
 
         if not self.priceConfig and self.pricePerHour:
             self.priceConfig = {"default": self.pricePerHour, "overrides": []}
@@ -269,8 +269,6 @@ class RoomInfo(BaseModel):
     baseCapacity: Optional[int] = None
     extraCharge: Optional[int] = None
     pricePerHour: int
-    canReserveOneHour: bool
-    requiresCallOnSameDay: bool
     
     # v2.0.0 추가 필드
     minCapacity: int
@@ -278,6 +276,7 @@ class RoomInfo(BaseModel):
     maxHours: Optional[int] = None
     phoneNumber: Optional[str] = None
     displayName: Optional[str] = None
+    standbyDays: Optional[int] = None
 
     # [v2.0.0] 계산된 정보
     estimatedPrice: Optional[int] = None
@@ -294,28 +293,51 @@ class RoomAvailability(BaseModel):
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
     policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
 
-# Branch Summary Stat Model
-class BranchStats(BaseModel):
-    """지점별 요약 정보"""
-    min_price: int = Field(..., description="Minimum price in this branch")
-    available_count: int = Field(..., description="Number of available rooms")
-    lat: Optional[float] = Field(None, description="Branch latitude")
-    lng: Optional[float] = Field(None, description="Branch longitude")
+# Branch-grouped Response DTOs
+class RoomResponse(BaseModel):
+    """지점 하위의 룸 단위 응답"""
+    biz_item_id: str
+    name: str
+    price_per_hour: int
+    available: Union[bool, str]
+    available_slots: Dict[str, Union[bool, str]]
+    estimated_price: Optional[int] = None
+    image_urls: List[str]
+    max_capacity: int
+    recommend_capacity: Optional[int] = None
+    recommend_capacity_range: Optional[List[int]] = None
+    base_capacity: Optional[int] = None
+    extra_charge: Optional[int] = None
+    min_capacity: int
+    min_hours: int
+    max_hours: Optional[int] = None
+    standby_days: Optional[int] = None
+    policy_warnings: List[PolicyWarning] = Field(default_factory=list)
 
-# Full Response DTO (Legacy + Map Extension)
+class BranchResponse(BaseModel):
+    """지점 단위 응답 (마커 및 리스트 표시용)"""
+    business_id: str
+    branch: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    min_price_available: Optional[int] = None
+    min_price_partial: Optional[int] = None
+    available_count: int
+    phone_number: Optional[str] = None
+    display_name: Optional[str] = None
+    rooms: List[RoomResponse] = Field(default_factory=list)
+
+# Full Response DTO (Nested Branch Structure)
 class AvailabilityResponse(BaseModel):
     """Response for availability check
     
-    기존 응답 구조를 유지하면서, 지도 검색을 위한 branch_summary를 추가했습니다.
+    프론트엔드 최적화를 위해 지점(Branch) 단위로 룸을 그룹핑하여 반환합니다.
     """
     date: str = Field(..., description="Checked date")
     start_hour: str = Field(..., description="Checked start time")
     end_hour: str = Field(..., description="Checked end time")
     
-    # 기존 필드 유지
     hour_slots: List[str] = Field(default_factory=list, description="List of checked hour slots")
     available_biz_item_ids: List[str] = Field(default_factory=list, description="List of available biz_item_ids")
-    results: List[RoomAvailability] = Field(..., description="List of rooms with availability info")
     
-    # 지도 검색을 위한 신규 필드
-    branch_summary: Dict[str, BranchStats] = Field(default_factory=dict, description="Summary stats per branch for map markers")
+    branches: List[BranchResponse] = Field(..., description="List of branches with their available rooms")

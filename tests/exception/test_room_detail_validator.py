@@ -17,15 +17,16 @@ def _room(**overrides) -> RoomDetail:
         "biz_item_id": "3968885",
         "name": "블랙룸",
         "branch": "비상합주실 1호점",
-        "imageUrls": [],
-        "maxCapacity": 0,
-        "recommendCapacity": 0,
-        "pricePerHour": 0,
-        "canReserveOneHour": False,
-        "requiresCallOnSameDay": False,
+        "image_urls": [],
+        "max_capacity": 6,
+        "recommend_capacity_range": [3, 5],
+        "price_per_hour": 0,
+        "can_reserve_one_hour": False,
+        # [이슈 1] Python 필드명은 requiresContactOnSameDay이나, 현재 DB 컬럼명인 alias를 사용
+        "requires_call_on_sameday": False,
     }
     payload.update(overrides)
-    return RoomDetail(**payload)
+    return RoomDetail.model_validate(payload)
 
 
 def test_validate_list_empty():
