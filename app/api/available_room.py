@@ -34,36 +34,34 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                             "end_hour": "16:00",
                             "hour_slots": ["14:00", "15:00", "16:00"],
                             "available_biz_item_ids": ["5979448", "5979471"],
-                            "rooms": [
+                            "branches": [
                                 {
-                                    "room_detail": {
-                                        "name": "A룸",
-                                        "branch": "그라운드합주실 신촌1호점",
-                                        "business_id": "1182602",
-                                        "biz_item_id": "5979448",
-                                        "image_urls": ["https://example.com/ground_a_room.jpg"],
-                                        "max_capacity": 10,
-                                        "recommend_capacity": 5,
-                                        "base_capacity": 4,
-                                        "extra_charge": 2000,
-                                        "price_per_hour": 15000,
-                                        "can_reserve_one_hour": True,
-                                        "requires_call_on_sameday": False
-                                    },
-                                    "available": True,
-                                    "available_slots": {"14:00": True, "15:00": True},
-                                    "estimated_price": 30000,
-                                    "policy_warnings": []
-                                }
-                            ],
-                            "branch_summary": {
-                                "1182602": {
-                                    "min_price": 15000,
-                                    "available_count": 3,
+                                    "business_id": "1182602",
+                                    "branch": "그라운드합주실 신촌1호점",
                                     "lat": 37.5560505,
-                                    "lng": 126.9409629
+                                    "lng": 126.9409629,
+                                    "min_price": 15000,
+                                    "available_count": 1,
+                                    "rooms": [
+                                        {
+                                            "biz_item_id": "5979448",
+                                            "name": "A룸",
+                                            "price_per_hour": 15000,
+                                            "available": True,
+                                            "available_slots": {"14:00": True, "15:00": True},
+                                            "estimated_price": 30000,
+                                            "image_urls": ["https://example.com/ground_a_room.jpg"],
+                                            "max_capacity": 10,
+                                            "recommend_capacity": 5,
+                                            "base_capacity": 4,
+                                            "extra_charge": 2000,
+                                            "min_capacity": 1,
+                                            "min_hours": 1,
+                                            "policy_warnings": []
+                                        }
+                                    ]
                                 }
-                            }
+                            ]
                         }
                     }
                 }

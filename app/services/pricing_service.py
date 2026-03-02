@@ -22,8 +22,11 @@ Rationale:
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, AliasChoices
 import math
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TimeBand(BaseModel):
@@ -60,7 +63,11 @@ class PriceRule(BaseModel):
     """
     season: Optional[str] = None
     # NOTE: 'week'는 이전 스키마의 'days'를 대체합니다. alias로 하위 호환성 유지.
-    week: Optional[List[int]] = Field(None, alias="week", validation_alias="week")
+    week: Optional[List[int]] = Field(
+        None, 
+        alias="week", 
+        validation_alias=AliasChoices("week", "days")
+    )
     time_band: Optional[TimeBand] = Field(None, alias="timeBand")
     price: int
 
@@ -142,6 +149,8 @@ class PricingService:
             # Rationale: 크롤러가 특가 정보를 수집했다면 해당 룰은 현재 유효한 것으로 처리함.
             #            season 유효 기간 검증은 crawler 주기가 안정화되면 재논의 예정 (PR 참고).
             # (이전: rule.season is not None → continue 로 스킵)
+            if rule.season is not None:
+                logger.info(f"[season_price] season={rule.season} applied for {target.date()}")
 
             # 요일 체크
             if rule.week is not None and day not in rule.week:

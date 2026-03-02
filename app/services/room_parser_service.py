@@ -37,15 +37,15 @@ ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 3:
 Input: "[주말] 스튜디오A", "당일 예약은 전화 문의, 최소 2시간부터 예약"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true, "can_reserve_one_hour": false}}
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": true, "can_reserve_one_hour": false}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
@@ -55,7 +55,7 @@ Rules:
 - recommend_capacity_range: [min, max] array from ranges like "4~6인 권장". null if no range found
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)
-- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- requires_contact_on_sameday: true if "당일" and ("전화" or "문의") found
 - can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Now extract:
@@ -76,7 +76,7 @@ Rules:
 - recommend_capacity_range: [min, max] array from ranges like "4~6인". null if no range
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only)
-- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- requires_contact_on_sameday: true if "당일" and ("전화" or "문의") found
 - can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Rooms:
@@ -250,8 +250,8 @@ class RoomParserService:
         if can_reserve_1h is not None and not isinstance(can_reserve_1h, bool):
             return False
             
-        # 8. requires_call_on_same_day 검증
-        requires_call_today = result.get("requires_call_on_same_day")
+        # 8. requires_contact_on_sameday 검증
+        requires_call_today = result.get("requires_contact_on_sameday")
         if requires_call_today is not None and not isinstance(requires_call_today, bool):
             return False
         
@@ -397,7 +397,7 @@ class RoomParserService:
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
             "price_config": price_config,
-            "requires_call_on_same_day": requires_call,
+            "requires_contact_on_sameday": requires_call,
             "can_reserve_one_hour": can_reserve_1h,
         }
 

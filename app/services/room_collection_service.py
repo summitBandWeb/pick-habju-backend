@@ -245,11 +245,8 @@ class RoomCollectionService:
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
             final_can_reserve = parsed_can_reserve if parsed_can_reserve is not None else existing_can_reserve
             
-            existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
-            # NOTE: 파서 프롬프트는 여전히 'requires_call_on_same_day' 키를 출력함.
-            #       파서 프롬프트와 DB/서비스 키가 다른 것은 이슈 1 당시 파서 프롬프트 수정이 누락된 기술부채임.
-            #       TODO: room_parser_service.py 프롬프트의 requires_call_on_same_day → requires_contact_on_sameday 변경
-            parsed_requires_call = parsed.get("requires_call_on_same_day")
+            existing_requires_call = existing.get("requires_contact_on_sameday", False) if existing else False
+            parsed_requires_call = parsed.get("requires_contact_on_sameday")
             final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
 
             # Room Data
@@ -273,8 +270,7 @@ class RoomCollectionService:
                 "base_capacity": final_base_cap,
                 "extra_charge": final_extra_charge,
                 # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
-                # TODO: DB 마이그레이션(requires_call_on_sameday → requires_contact_on_sameday) 완료 후 아래 키 변경
-                "requires_call_on_sameday": final_requires_call,
+                "requires_contact_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }

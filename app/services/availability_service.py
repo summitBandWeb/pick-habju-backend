@@ -25,7 +25,8 @@ import logging
 import re
 from app.models.dto import (
     AvailabilityRequest, AvailabilityResponse,
-    RoomAvailability, BranchStats, PolicyWarning
+    RoomAvailability, PolicyWarning,
+    BranchResponse, RoomResponse
 )
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
@@ -323,8 +324,7 @@ class AvailabilityService:
                 end_hour=request.end_hour,
                 hour_slots=hour_slots,
                 available_biz_item_ids=[],
-                results=[],
-                branch_summary={}
+                branches=[]
             )
 
         results_of_lists = await asyncio.gather(*tasks)
@@ -373,19 +373,14 @@ class AvailabilityService:
         merged_results = list(merged_dict.values())
         processed_results = self._apply_policies(merged_results, request, hour_slots)
         
-        available_results = []
-        branch_summary = {}
+        branch_dict: Dict[str, BranchResponse] = {}
+        available_ids: List[str] = []
 
         for res in processed_results:
-            # 룸 정보 추출
             room_detail = res.room_detail
 
-            # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
+            # 예약 가능한 룸만 결과에 포함
             if res.available is True or res.available == "unknown":
-                # [이슈 6] recommendCapacityRange가 DB에서 제공되면 그대로 사용.
-                # None인 경우는 파서/room_collection_service에서 보강 예정.
-                # (이전: recommendCapacity 단일값 기반 fallback 로직 존재, 제거함)
-
                 if isinstance(res.estimated_price, int) and res.estimated_price > 0:
                     total_price = res.estimated_price
                 else:
@@ -395,31 +390,55 @@ class AvailabilityService:
                         hour_slots=hour_slots,
                     )
 
-                available_results.append(res)
+                room_resp = RoomResponse(
+                    biz_item_id=room_detail.biz_item_id,
+                    name=room_detail.name,
+                    price_per_hour=room_detail.pricePerHour,
+                    available=res.available,
+                    available_slots=res.available_slots,
+                    estimated_price=total_price,
+                    image_urls=room_detail.imageUrls,
+                    max_capacity=room_detail.maxCapacity,
+                    # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)
+                    recommend_capacity=room_detail.recommendCapacityRange[1] if room_detail.recommendCapacityRange else 0, # TODO: 제거 예정 필드 (하위호환 유지용)
+                    recommend_capacity_range=room_detail.recommendCapacityRange,
+                    base_capacity=room_detail.baseCapacity,
+                    extra_charge=room_detail.extraCharge,
+                    min_capacity=room_detail.minCapacity,
+                    min_hours=room_detail.minHours,
+                    max_hours=room_detail.maxHours,
+                    policy_warnings=res.policy_warnings
+                )
 
-                # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
+                available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
-                if bid not in branch_summary:
-                    branch_summary[bid] = BranchStats(
+                
+                if bid not in branch_dict:
+                    branch_dict[bid] = BranchResponse(
+                        business_id=bid,
+                        branch=room_detail.branch,
+                        lat=room_detail.lat,
+                        lng=room_detail.lng,
                         min_price=total_price,
                         available_count=1,
-                        lat=room_detail.lat,
-                        lng=room_detail.lng
+                        phone_number=room_detail.phoneNumber,
+                        display_name=room_detail.displayName,
+                        rooms=[room_resp]
                     )
                 else:
-                    stats = branch_summary[bid]
-                    stats.available_count += 1
-                    if total_price < stats.min_price:
-                        stats.min_price = total_price
+                    branch_obj = branch_dict[bid]
+                    branch_obj.rooms.append(room_resp)
+                    branch_obj.available_count += 1
+                    if total_price < branch_obj.min_price:
+                        branch_obj.min_price = total_price
 
         return AvailabilityResponse(
             date=request.date,
             start_hour=request.start_hour,
             end_hour=request.end_hour,
             hour_slots=hour_slots,
-            available_biz_item_ids=[r.room_detail.biz_item_id for r in available_results],
-            results=available_results,
-            branch_summary=branch_summary
+            available_biz_item_ids=available_ids,
+            branches=list(branch_dict.values())
         )
 
 
@@ -495,8 +514,15 @@ class AvailabilityService:
             #            이런 방에 정책이 적용되면 프론트에 전달할 type이 없으므로 제외함.
             #            장기 과제: 크롤러 phoneNumber/displayName 수집 안정화.
             if needs_1h_contact and not room.phoneNumber and not room.displayName:
+                logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no contact info for 1h reservation")
                 continue
+            
+            # [Asymmetric Design Note]
+            # 1h 예약은 chat_required_1h(네이버 톡톡 등) 노출을 허용하지만,
+            # 당일 예약은 명세에 따라 "전화 문의"만 가능하도록 결정됨.
+            # 따라서 displayName이 있어도 phoneNumber가 없으면 당일 예약 필터링에서 배제함.
             if needs_today_contact and not room.phoneNumber:
+                logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no phone number for today reservation")
                 continue
 
             # 1시간 예약 불가 경고 생성

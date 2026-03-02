@@ -154,10 +154,9 @@ def test_get_availability_api():
         assert result.get("date") == target_date
         assert result.get("hour_slots") == ["18:00", "19:00", "20:00", "21:00"]
         assert "available_biz_item_ids" in result
-        # MockCrawler는 항상 True를 반환하므로 결과가 있어야 함
-        assert len(result["results"]) == 2
-        # branch_summary가 있어야 함 (지도 기능 확장)
-        assert "branch_summary" in result
+        # MockCrawler는 전체 룸을 하나의 Mock 결과로 반환, 각기 다른 branch_id를 가지므로 2개의 branch여야 함
+        assert len(result["branches"]) == 2
+        # branch_summary는 제거됨
 
 
 def test_get_availability_api_no_result_returns_empty_success():
@@ -178,9 +177,8 @@ def test_get_availability_api_no_result_returns_empty_success():
     assert body.get("isSuccess") is True
 
     result = body.get("result", {})
-    assert result.get("results") == []
+    assert result.get("branches") == []
     assert result.get("available_biz_item_ids") == []
-    assert result.get("branch_summary") == {}
 
 
 def test_preflight_request():
@@ -293,13 +291,13 @@ def test_get_availability_api_with_crawler_error():
         result = data.get("result")
 
         # Naver(Error) 결과는 제외되고, Dream(Normal) 결과만 있어야 함
-        # NormalCrawler가 반환한 결과 1개 (room 1개)
+        # NormalCrawler가 반환한 결과 1개 (지점 1개 생김)
 
-        assert len(result["results"]) == 1
-        assert (
-            result["results"][0]["room_detail"]["business_id"] == "dream_sadang"
-        )  # business_id field (actual DB column)
-        assert result["results"][0]["available"] is True
+        assert len(result["branches"]) == 1
+        branch = result["branches"][0]
+        assert branch["business_id"] == "dream_sadang"
+        assert len(branch["rooms"]) == 1
+        assert branch["rooms"][0]["available"] is True
 
     finally:
         # 복원
@@ -343,20 +341,20 @@ def test_get_availability_with_real_db():
 
         # 기본 응답 구조 확인
         assert result.get("date") == target_date
-        assert "results" in result
-        assert isinstance(result["results"], list)
+        assert "branches" in result
+        assert isinstance(result["branches"], list)
 
         # 실제 데이터가 조회되었는지 확인
-        if len(result["results"]) > 0:
-            first_room = result["results"][0]
-            assert "room_detail" in first_room
-            assert "available" in first_room
+        if len(result["branches"]) > 0:
+            first_branch = result["branches"][0]
+            assert "business_id" in first_branch
+            assert "rooms" in first_branch
+            if len(first_branch["rooms"]) > 0:
+                first_room = first_branch["rooms"][0]
+                assert "available" in first_room
+                assert "name" in first_room
 
-            # 필드 확인
-            assert "business_id" in first_room["room_detail"]
-            assert "name" in first_room["room_detail"]
-
-            print(f"✅ Real DB Test Success: Found {len(result['results'])} rooms")
+            print(f"✅ Real DB Test Success: Found {len(result['branches'])} branches")
         else:
             print("⚠️ Real DB Test Warning: No rooms found (check DB data)")
 
