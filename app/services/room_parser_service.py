@@ -79,6 +79,9 @@ Rules:
 - requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
 - can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
+Business Context (use this to infer missing room details like equipment, capacity):
+{business_context}
+
 Rooms:
 {rooms_text}
 
@@ -495,7 +498,15 @@ class RoomParserService:
                 f"ID: {item['id']}\nName: {item['name']}\nDesc: {item.get('desc') or ''}\n---"
             )
         
-        prompt = BATCH_PARSE_PROMPT.format(rooms_text="\n".join(rooms_text_parts))
+        # business_desc가 있으면 컨텍스트로 사용 (모든 아이템이 동일 가게 소속)
+        business_context = ""
+        if items and items[0].get("business_desc"):
+            business_context = self._clean_text_for_llm(items[0]["business_desc"])
+        
+        prompt = BATCH_PARSE_PROMPT.format(
+            business_context=business_context or "내용 없음",
+            rooms_text="\n".join(rooms_text_parts)
+        )
         
         # Ollama LLM 파싱 시도
         response = await self.ollama_client.generate(prompt, max_tokens=1024)

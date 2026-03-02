@@ -5,7 +5,7 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
@@ -30,7 +30,7 @@ class RoomCollectionService:
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
 
-    async def collect_by_query(self, query: str) -> Dict[str, int]:
+    async def collect_by_query(self, query: str) -> Dict[str, Any]:
         """
         Search and collect rooms by query keyword.
         
@@ -48,19 +48,33 @@ class RoomCollectionService:
         
         success_count = 0
         failed_count = 0
+        failures: List[Dict[str, str]] = []
 
         for item in search_results:
-            business_id = item["id"]
             try:
+                business_id = item.get("id")
+                if not business_id:
+                    raise ValueError("missing business id in search result")
                 await self.collect_by_id(business_id)
                 success_count += 1
             except Exception as e:
-                logger.error(f"Failed to collect {business_id}: {e}")
+                logger.error(f"Failed to collect item={item}: {e}")
                 failed_count += 1
+                failures.append({
+                    "business_id": item.get("id", ""),
+                    "business_name": item.get("name", ""),
+                    "reason": str(e),
+                })
                 
-        return {"success": success_count, "failed": failed_count}
+        return {
+            "query": query,
+            "total": len(search_results),
+            "success": success_count,
+            "failed": failed_count,
+            "failures": failures,
+        }
 
-    async def collect_all_regions(self) -> Dict[str, int]:
+    async def collect_all_regions(self) -> Dict[str, Any]:
         """
         Collect rooms from all major regions nationwide.
         """
@@ -74,20 +88,33 @@ class RoomCollectionService:
         
         success_count = 0
         failed_count = 0
+        failures: List[Dict[str, str]] = []
         
         # 2. Process each found business
         total_items = len(all_items)
         for idx, item in enumerate(all_items):
-            business_id = item["id"]
             try:
+                business_id = item.get("id")
+                if not business_id:
+                    raise ValueError("missing business id in crawl result")
                 logger.info(f"Processing {idx+1}/{total_items}: {item['name']} ({business_id})")
                 await self.collect_by_id(business_id)
                 success_count += 1
             except Exception as e:
-                logger.error(f"Failed to collect {business_id}: {e}")
+                logger.error(f"Failed to collect item={item}: {e}")
                 failed_count += 1
+                failures.append({
+                    "business_id": item.get("id", ""),
+                    "business_name": item.get("name", ""),
+                    "reason": str(e),
+                })
                 
-        return {"success": success_count, "failed": failed_count}
+        return {
+            "total": total_items,
+            "success": success_count,
+            "failed": failed_count,
+            "failures": failures,
+        }
 
     async def collect_by_id(self, business_id: str):
         """Collect and save room information for a specific Business ID."""
@@ -106,12 +133,16 @@ class RoomCollectionService:
             return
 
         # 2. LLM Parsing (Batch with Concurrency)
+        # Rationale: business.desc에 가게 전체 장비/규칙이 담겨 있으므로
+        #            개별 룸 파싱 시 컨텍스트로 함께 전달하여 정확도를 높임
+        business_desc = business.get("desc") or ""
         parse_items = []
         for room in rooms:
             parse_items.append({
                 "id": room["bizItemId"],
                 "name": room["name"],
-                "desc": room.get("desc")
+                "desc": room.get("desc"),
+                "business_desc": business_desc
             })
         
         # Chunk items for parallel processing
