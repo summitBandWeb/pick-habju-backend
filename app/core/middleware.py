@@ -187,7 +187,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     HTTP 요청의 상태 코드와 소요 시간을 실시간으로 수집하여 Prometheus 메트릭으로 기록합니다.
     """
     async def dispatch(self, request: Request, call_next) -> Response:
-        if not ENABLE_METRICS or request.url.path == "/metrics":
+        if not ENABLE_METRICS or request.url.path.startswith("/metrics"):
             return await call_next(request)
             
         start_time = time.perf_counter()
@@ -202,7 +202,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             process_time = time.perf_counter() - start_time
             # 라우팅 매개변수 처리를 위해 FastAPI 라우트 템플릿 기반 정규화 적용
             route = request.scope.get("route")
-            path = route.path if route else request.url.path
+            path = route.path if route else "unknown_route"
             
             http_requests_total.labels(
                 method=request.method,

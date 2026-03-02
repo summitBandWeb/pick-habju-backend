@@ -5,6 +5,14 @@ from app.core.config import DISCORD_WEBHOOK_URL, APP_ENV
 
 logger = logging.getLogger(__name__)
 
+async def _acquire_distributed_lock(lock_key: str, ttl_seconds: int = 60) -> bool:
+    """
+    다중 인스턴스 스케줄러 중복 실행 방지를 위한 분산 락 획득
+    (실제 프로덕션 환경에선 Redis SETNX 또는 DB Row Lock을 연동해야 합니다.)
+    """
+    # TODO: Redis / DB Lock 연동
+    return True
+
 async def send_discord_report():
     """
     Prometheus in-memory REGISTRY를 분석하여 지난 24시간(실질적으로 프로세스 기동 후 누적)
@@ -12,6 +20,11 @@ async def send_discord_report():
     """
     if not DISCORD_WEBHOOK_URL:
         logger.warning("Discord webhook URL is not set. Skipping daily report.")
+        return
+        
+    # 다중 인스턴스 중복 실행 방지 (분산 락 획득)
+    if not await _acquire_distributed_lock("daily_discord_report_lock"):
+        logger.info("Another instance is running the daily report. Skipping...")
         return
 
     # 1. 지표 초기화

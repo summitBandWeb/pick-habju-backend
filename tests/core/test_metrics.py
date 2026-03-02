@@ -2,8 +2,9 @@ import re
 import pytest
 from httpx import AsyncClient
 from app.main import app
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 from prometheus_client import generate_latest
+import httpx
 
 
 @pytest.mark.asyncio
@@ -22,12 +23,14 @@ async def test_metrics_collection_success(async_client: AsyncClient):
 async def test_metrics_collection_error(async_client: AsyncClient):
     """
     에러 발생 시 상태 코드가 메트릭에 500번대로 잘 기록되는지 확인
-    여기서는 존재하지 않는 라우트에 접근하여 404를 테스트하거나, 
-    모의 에러 엔드포인트를 통해 500을 테스트할 수 있습니다.
-    간단하게 /health 엔드포인트의 503 에러로 테스트 (Supabase Auth 키 없음 등으로 실패 유도).
+    모의 에러 엔드포인트를 통해 500/503을 테스트합니다.
     """
-    # 이 테스트 환경에서는 Supabase URL/KEY가 모킹되지 않았으므로 timeout 또는 503이 발생할 확률이 높음
-    response = await async_client.get("/health", follow_redirects=True)
+    with patch("app.main.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_client.get.side_effect = httpx.TimeoutException("timeout")
+        
+        response = await async_client.get("/health", follow_redirects=True)
             
     # 타임아웃 시 503이나 500 등이 반환됨
     assert response.status_code in (500, 503)
