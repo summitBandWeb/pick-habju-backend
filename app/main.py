@@ -33,13 +33,16 @@ from pydantic import ValidationError
 import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
+from app.core.scheduler import start_scheduler, shutdown_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 시작 시 클라이언트 설정
+    # 시작 시 클라이언트 및 스케줄러 설정
     await set_global_client()
+    start_scheduler()
     yield
-    # 종료 시 클라이언트 정리
+    # 종료 시 정리
+    shutdown_scheduler()
     await close_global_client()
 
 

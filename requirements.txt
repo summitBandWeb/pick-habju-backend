@@ -21,6 +21,7 @@ pytest-asyncio~=0.23
 
 # ==== 선택: 실제 코드에서 사용 중이면 주석 해제 ====
 prometheus-client~=0.20    # monitor/metrics 사용시
+apscheduler~=3.10          # 주기적 모니터링/디스코드 리포트 스케줄러
 # sentry-sdk~=2.0            # Sentry 연동시
 # redis~=5.0                 # redis 캐시/레이트리밋 사용시
 # fastapi-limiter~=0.1       # redis 기반 레이트리밋 사용시
