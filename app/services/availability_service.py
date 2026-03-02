@@ -414,13 +414,17 @@ class AvailabilityService:
                 available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
                 
+                min_price_available = total_price if res.available is True else None
+                min_price_partial = total_price if res.available == "unknown" else None
+
                 if bid not in branch_dict:
                     branch_dict[bid] = BranchResponse(
                         business_id=bid,
                         branch=room_detail.branch,
                         lat=room_detail.lat,
                         lng=room_detail.lng,
-                        min_price=total_price,
+                        min_price_available=min_price_available,
+                        min_price_partial=min_price_partial,
                         available_count=1,
                         phone_number=room_detail.phoneNumber,
                         display_name=room_detail.displayName,
@@ -430,8 +434,13 @@ class AvailabilityService:
                     branch_obj = branch_dict[bid]
                     branch_obj.rooms.append(room_resp)
                     branch_obj.available_count += 1
-                    if total_price < branch_obj.min_price:
-                        branch_obj.min_price = total_price
+                    
+                    if res.available is True:
+                        if branch_obj.min_price_available is None or total_price < branch_obj.min_price_available:
+                            branch_obj.min_price_available = total_price
+                    elif res.available == "unknown":
+                        if branch_obj.min_price_partial is None or total_price < branch_obj.min_price_partial:
+                            branch_obj.min_price_partial = total_price
                     if not branch_obj.phone_number and room_detail.phoneNumber:
                         branch_obj.phone_number = room_detail.phoneNumber
                     if not branch_obj.display_name and room_detail.displayName:

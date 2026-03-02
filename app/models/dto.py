@@ -316,7 +316,8 @@ class BranchResponse(BaseModel):
     branch: str
     lat: Optional[float] = None
     lng: Optional[float] = None
-    min_price: int
+    min_price_available: Optional[int] = None
+    min_price_partial: Optional[int] = None
     available_count: int
     phone_number: Optional[str] = None
     display_name: Optional[str] = None
