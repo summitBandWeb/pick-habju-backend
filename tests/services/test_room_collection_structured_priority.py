@@ -148,3 +148,131 @@ async def test_parser_extra_charge_has_priority_over_structured(service, mock_su
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["extra_charge"] == 5000
+
+
+@pytest.mark.asyncio
+async def test_text_capacity_signals_override_parser_capacity(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "블랙룸 (정원 20명, 최대 30명)",
+            "desc": "최소 2시간",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 2,
+            "extraFeeSettingJson": {},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": 6, "recommend_capacity": 4}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 30
+    assert room_data["recommend_capacity"] == 20
+
+
+@pytest.mark.asyncio
+async def test_text_recommend_range_used_for_capacity_range(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "화이트룸",
+            "desc": "권장 4~6명, 최대 8명",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": 7, "recommend_capacity": 5, "recommend_capacity_range": None}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 8
+    assert room_data["recommend_capacity"] == 5
+    assert room_data["recommend_capacity_range"] == [4, 6]
+
+
+@pytest.mark.asyncio
+async def test_structured_requires_call_overrides_parser(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Room A",
+            "desc": "",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+            "extraDescJson": {"requiresCallOnSameDay": True},
+        }
+    ]
+    parsed_results = {
+        "room1": {
+            "max_capacity": 6,
+            "recommend_capacity": 4,
+            "requires_call_on_same_day": False,
+        }
+    }
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["requires_call_on_sameday"] is True
+
+
+@pytest.mark.asyncio
+async def test_parser_requires_call_used_when_structured_missing(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Room A",
+            "desc": "",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "minBookingTime": 1,
+            "extraFeeSettingJson": {},
+        }
+    ]
+    parsed_results = {
+        "room1": {
+            "max_capacity": 6,
+            "recommend_capacity": 4,
+            "requires_call_on_same_day": True,
+        }
+    }
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["requires_call_on_sameday"] is True

@@ -6,7 +6,7 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
@@ -216,11 +216,19 @@ class RoomCollectionService:
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
             # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            new_max_cap = parsed.get("max_capacity")
+            # Priority for capacity:
+            #   1) High-confidence text patterns in room name/desc
+            #   2) Parser output (LLM/regex)
+            #   3) Manual review flag
+            text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
+
+            new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
             if new_max_cap is None:
                 new_max_cap = self.MANUAL_REVIEW_FLAG
                 
-            new_rec_cap = parsed.get("recommend_capacity")
+            new_rec_cap = text_rec_cap if text_rec_cap is not None else parsed.get("recommend_capacity")
+            if new_rec_cap is None and new_max_cap != self.MANUAL_REVIEW_FLAG:
+                new_rec_cap = new_max_cap // 2 if new_max_cap > 4 else new_max_cap
             if new_rec_cap is None:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
@@ -281,7 +289,13 @@ class RoomCollectionService:
             
             existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
             parsed_requires_call = parsed.get("requires_call_on_same_day")
-            final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
+            structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
+            if structured_requires_call is not None:
+                final_requires_call = structured_requires_call
+            elif parsed_requires_call is not None:
+                final_requires_call = parsed_requires_call
+            else:
+                final_requires_call = existing_requires_call
 
             # Room Data
             room_data = {
@@ -294,7 +308,7 @@ class RoomCollectionService:
                 "recommend_capacity": final_rec_cap,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
                 "recommend_capacity_range": self._calculate_capacity_range(
-                    parsed.get("recommend_capacity_range"),
+                    parsed.get("recommend_capacity_range") or text_rec_range,
                     final_rec_cap,
                     final_max_cap,
                     final_base_cap,
@@ -391,6 +405,134 @@ class RoomCollectionService:
                     return int(digits)
                 except ValueError:
                     return None
+        return None
+
+    @staticmethod
+    def _coerce_bool(value: Any) -> Optional[bool]:
+        """Best-effort conversion of bool-like values to bool."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            if value == 0:
+                return False
+            if value == 1:
+                return True
+            return None
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            true_tokens = {"true", "yes", "y", "1", "required", "need", "필수", "필요", "가능"}
+            false_tokens = {"false", "no", "n", "0", "optional", "불필요", "불가", "없음"}
+            if lowered in true_tokens:
+                return True
+            if lowered in false_tokens:
+                return False
+        return None
+
+    def _extract_capacity_text_signals(
+        self, room: Dict[str, Any]
+    ) -> Tuple[Optional[int], Optional[int], Optional[List[int]]]:
+        """Extract high-confidence capacity signals from room name/desc text.
+
+        Returns:
+            (max_capacity, recommend_capacity, recommend_capacity_range)
+        """
+        name = room.get("name") or ""
+        desc = room.get("desc") or ""
+        text = f"{name} {desc}"
+
+        # Strongest pattern: "정원 N명, 최대 M명"
+        pair_match = re.search(r"정원\s*(\d+)\s*명[^0-9]{0,20}최대\s*(\d+)\s*명", text)
+        if pair_match:
+            rec = int(pair_match.group(1))
+            max_cap = int(pair_match.group(2))
+            return max_cap, rec, [rec, rec]
+
+        rec_cap: Optional[int] = None
+        max_cap: Optional[int] = None
+        rec_range: Optional[List[int]] = None
+
+        # Recommended range: "4~6명", "4-6명", "권장 4~6명"
+        range_match = re.search(r"(\d+)\s*[~\-]\s*(\d+)\s*명", text)
+        if range_match:
+            min_r = int(range_match.group(1))
+            max_r = int(range_match.group(2))
+            if min_r <= max_r:
+                rec_range = [min_r, max_r]
+                rec_cap = (min_r + max_r) // 2
+
+        rec_match = re.search(r"정원\s*(\d+)\s*명", text)
+        if rec_match:
+            rec_cap = int(rec_match.group(1))
+            if rec_range is None:
+                rec_range = [rec_cap, rec_cap]
+
+        max_match = re.search(r"최대\s*(\d+)\s*명", text)
+        if max_match:
+            max_cap = int(max_match.group(1))
+
+        return max_cap, rec_cap, rec_range
+
+    def _extract_structured_requires_call_on_same_day(self, room: Dict[str, Any]) -> Optional[bool]:
+        """Extract requires-call-on-same-day from structured JSON-like fields."""
+        candidate_fields = [
+            room.get("extraDescJson"),
+            room.get("bookingCountSettingJson"),
+            room.get("extraFeeSettingJson"),
+            room.get("additionalPropertyJson"),
+        ]
+
+        parsed_candidates = []
+        for field in candidate_fields:
+            if isinstance(field, str):
+                try:
+                    parsed_candidates.append(json.loads(field))
+                except json.JSONDecodeError:
+                    continue
+            else:
+                parsed_candidates.append(field)
+
+        key_hints_strict = (
+            "requirescallonsameday",
+            "requirecallonsameday",
+            "sameDayCallRequired",
+            "phoneInquiryRequired",
+            "contactRequired",
+        )
+        key_hints_loose_a = ("same", "today", "day")
+        key_hints_loose_b = ("call", "phone", "contact", "inquiry", "consult", "confirm")
+
+        def walk(obj: Any) -> Optional[bool]:
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    key_str = str(key)
+                    key_lower = key_str.lower()
+
+                    if any(hint.lower() in key_lower for hint in key_hints_strict):
+                        coerced = self._coerce_bool(value)
+                        if coerced is not None:
+                            return coerced
+
+                    if any(token in key_lower for token in key_hints_loose_a) and any(
+                        token in key_lower for token in key_hints_loose_b
+                    ):
+                        coerced = self._coerce_bool(value)
+                        if coerced is not None:
+                            return coerced
+
+                    nested = walk(value)
+                    if nested is not None:
+                        return nested
+            elif isinstance(obj, list):
+                for item in obj:
+                    nested = walk(item)
+                    if nested is not None:
+                        return nested
+            return None
+
+        for candidate in parsed_candidates:
+            result = walk(candidate)
+            if result is not None:
+                return result
         return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:
