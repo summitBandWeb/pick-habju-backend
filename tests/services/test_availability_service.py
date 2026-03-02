@@ -278,7 +278,7 @@ class TestAvailabilityServiceFlow:
             room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}
         )
 
-        # 방 2: 부분 예약 가능 (available="unknown"), 예약가능한 1시간 기준 7500원 -> min_price_partial 후보
+        # 방 2: 부분 예약 가능 (available=False), 예약가능한 1시간 기준 7500원 -> min_price_partial 후보
         room2 = RoomDetail(
             name="Room2", branch="Branch", business_id=branch_id, biz_item_id="r2",
             pricePerHour=7500, max_capacity=10,
@@ -286,7 +286,7 @@ class TestAvailabilityServiceFlow:
             recommend_capacity_range=[4, 8], priceConfig={}
         )
         avail_2 = RoomAvailability(
-            room_detail=room2, available="unknown", available_slots={"14:00": True, "15:00": False},
+            room_detail=room2, available=False, available_slots={"14:00": True, "15:00": False},
             estimated_price=7500
         )
 
@@ -371,7 +371,7 @@ class TestAvailabilityServiceFlow:
             recommend_capacity_range=[4, 8], priceConfig={}
         )
         avail_1 = RoomAvailability(
-            room_detail=room1, available="unknown", available_slots={"14:00": True, "15:00": False}, estimated_price=10000
+            room_detail=room1, available=False, available_slots={"14:00": True, "15:00": False}, estimated_price=10000
         )
         
         mock_crawler.check_availability.return_value = [avail_1]

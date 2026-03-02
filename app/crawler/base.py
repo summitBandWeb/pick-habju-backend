@@ -57,7 +57,5 @@ class BaseCrawler(ABC):
         
         if all_true:
             return True
-        elif any_true:
-            return "unknown"
         else:
             return False

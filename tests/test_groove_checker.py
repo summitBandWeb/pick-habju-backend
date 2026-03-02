@@ -93,7 +93,7 @@ async def test_availability_within_84_days_boundary(sample_groove_rooms):
     # 검증
     # check_hour_slot은 '#reserve_time_..._21.reserve_time_off'를 찾지 못하므로 False를 반환함
     result = results[0]
-    assert result.available == "unknown"  # 한 슬롯이라도 불가능하면 전체는 "unknown"
+    assert result.available is False  # 한 슬롯이라도 불가하면 전체는 False
     assert result.available_slots["20:00"] is True
     assert result.available_slots["21:00"] is False
 

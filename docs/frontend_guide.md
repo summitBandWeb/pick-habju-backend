@@ -138,14 +138,14 @@ API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. �
 ### 4-1. `available` 필드 상태값 (Enum)
 *   `true` (Boolean): 예약 가능 (요청한 전체 시간에 대해 빈 방)
 *   `false` (Boolean): 예약 불가 (이미 예약됨)
-*   `"unknown"` (String): **부분 예약 가능** (요청한 시간 중 일부 시간만 비어있음)
+*   `"unknown"` (String): **오픈 대기** (요청한 날짜가 아직 예약 오픈 기간이 아니거나 대기 중임. 예약 불가)
 
 ### 4-2. `min_price_available` 및 `min_price_partial` 필드 정책
 두 필드의 키(key)는 결괏값에 **항상 포함**되며 조건부로 생략되지 않습니다.
 값이 `null`이 되는 경우는 다음과 같습니다.
 
 *   `min_price_available`: 결과 룸들 중 `available: true`인 방이 **하나도 없을 때** `null`이 됩니다. 예약 가능한 방이 하나라도 있으면 최소 가격(숫자)이 들어갑니다.
-*   `min_price_partial`: 결과 룸들 중 `available: "unknown"`인 방이 **하나도 없을 때** `null`이 됩니다. 부분 예약 가능한 방이 하나라도 있으면 가장 길게 연속된 예약가능 시간 기준의 최소 가격(숫자)이 들어갑니다.
+*   `min_price_partial`: 결과 룸들 중 `available: false` 이면서 슬롯 일부가 비어있는 방이 **하나도 없을 때** `null`이 됩니다. 부분 예약 가능한 방이 하나라도 있으면 가장 길게 연속된 예약가능 시간 기준의 최소 가격(숫자)이 들어갑니다. (오픈 대기인 `"unknown"` 방은 이 계산에서 제외됩니다.)
 
 **예시 JSON:**
 1) 부분 예약만 가능한 방만 있는 경우
