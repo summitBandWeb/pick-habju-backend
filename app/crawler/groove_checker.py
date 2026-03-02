@@ -83,7 +83,8 @@ class GrooveCrawler(BaseCrawler):
         rm_ix = room.biz_item_id
 
         slots = {hour_str: self._check_hour_slot(soup, rm_ix, hour_str) for hour_str in hour_slots}
-        overall = all(slots.values())
+        
+        overall = self.resolve_tri_state(slots)
 
         return RoomAvailability(
             room_detail=room,
