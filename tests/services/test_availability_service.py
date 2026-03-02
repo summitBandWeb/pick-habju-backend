@@ -36,8 +36,10 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, can_reserve_one_hour=False, requires_call_on_sameday=False,
-            max_capacity=10, recommend_capacity=5
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            # NOTE: 이슈 2-1 필터링 조건 통과를 위해 phoneNumber 필수
+            phoneNumber="010-1234-5678"
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
 
@@ -46,6 +48,44 @@ class TestApplyPolicies:
         assert len(results) == 1
         assert len(results[0].policy_warnings) == 1
         assert results[0].policy_warnings[0].type == "call_required_1h"
+
+    def test_1h_reservation_chat_required(self, service):
+        """1시간 예약 불가 방(전화번호 없음, displayName 있음) → 채팅 문의 경고 추가"""
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="15:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        slots = ["14:00", "15:00"]
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            phoneNumber=None, displayName="테스트 톡톡"
+        )
+        avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
+        results = service._apply_policies([avail], req, slots)
+
+        assert len(results) == 1
+        assert len(results[0].policy_warnings) == 1
+        assert results[0].policy_warnings[0].type == "chat_required_1h"
+
+    def test_1h_reservation_excluded_no_contact(self, service):
+        """1시간 예약 불가 방 + 연락수단 모두 없음 → 검색 대상에서 제외됨"""
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="15:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        slots = ["14:00", "15:00"]
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, can_reserve_one_hour=False, requiresContactOnSameDay=False,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            phoneNumber=None, displayName=None
+        )
+        avail = RoomAvailability(room_detail=room, available=True, available_slots={"14:00": True})
+        results = service._apply_policies([avail], req, slots)
+
+        assert len(results) == 0
 
     def test_sameday_reservation_warning(self, service):
         """당일 예약인데 requiresCallOnSameDay=True면 경고 발생"""
@@ -62,8 +102,10 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, can_reserve_one_hour=True, requires_call_on_sameday=True,
-            max_capacity=10, recommend_capacity=5
+            pricePerHour=10000, can_reserve_one_hour=True, requiresContactOnSameDay=True,
+            max_capacity=10, recommend_capacity_range=[3, 5],
+            # NOTE: 이슈 2-1 필터링 조건 통과를 위해 phoneNumber 필수
+            phoneNumber="010-1234-5678"
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -82,9 +124,9 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, recommend_capacity=5,
+            pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}], base_capacity=4, extra_charge=5000,
-            can_reserve_one_hour=True, requires_call_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -105,9 +147,9 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, recommend_capacity=5,
+            pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}],
-            can_reserve_one_hour=True, requires_call_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -127,9 +169,9 @@ class TestApplyPolicies:
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, recommend_capacity=5,
+            pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
             price_config=[{"price": 10000}],
-            can_reserve_one_hour=True, requires_call_on_sameday=False
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         avail = RoomAvailability(room_detail=room, available=True, available_slots={})
 
@@ -143,7 +185,7 @@ class TestApplyPolicies:
         assert results[0].estimated_price == 20000
 
 
-class TestCheckAvailabilityFlow:
+class TestAvailabilityServiceFlow:
     """check_availability 전체 흐름 테스트 (DB/Crawler Mocking)
 
     Rationale:
@@ -174,8 +216,8 @@ class TestCheckAvailabilityFlow:
 
         mock_room = RoomDetail(
             name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, recommend_capacity=5,
-            can_reserve_one_hour=True, requires_call_on_sameday=False,
+            pricePerHour=10000, max_capacity=10,
+            can_reserve_one_hour=True, requiresContactOnSameDay=False,
             recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
         )
 
@@ -198,11 +240,13 @@ class TestCheckAvailabilityFlow:
             response = await service.check_availability(req)
 
         # Then
-        assert len(response.results) == 1
-        res = response.results[0]
+        assert len(response.branches) == 1
+        branch = response.branches[0]
+        assert len(branch.rooms) == 1
+        res = branch.rooms[0]
 
         # 1. 크롤러 결과가 잘 들어왔는지
-        assert res.room_detail.name == "MockRoom"
+        assert res.name == "MockRoom"
         assert res.available is True
 
         # 2. PricingService가 연동되었는지 (Phase 3 검증)

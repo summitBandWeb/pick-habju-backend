@@ -33,10 +33,10 @@ def sample_dream_rooms():
             biz_item_id=str(i),
             imageUrls=[],
             maxCapacity=6,
-            recommendCapacity=4,
+            recommend_capacity_range=[2, 4],
             pricePerHour=15000,
             canReserveOneHour=True,
-            requiresCallOnSameDay=False
+            requiresContactOnSameDay=False
         ))
     return rooms
 

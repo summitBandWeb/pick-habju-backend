@@ -12,9 +12,12 @@
 1.  **인원 표기 (Capacity Range):**
     *   `recommend_capacity_range` 배열(`[min, max]`)이 존재하면 **"2~6명"** 형태로 우선 표기해 주세요.
     *   없으면 기존대로 `~4명` 또는 `최대 6명` 표기 (Legacy 호환).
-2.  **정책 경고 (Policy Warnings):**
-    *   `policy_warnings` 배열에 문자열이 있으면, 예약 시도 시 또는 룸 선택 시 **Toast/Tooltip**으로 사용자에게 반드시 안내해야 합니다.
-    *   *예: "당일 예약은 전화 문의가 필요합니다."*
+2.  **정책 경고 (Policy Warnings) 표시:**
+    *   `policy_warnings` 배열 내 객체의 `type`을 확인하여, 사용자가 예약을 클릭했을 때 또는 룸 리스트 렌더링 시 알맞은 가이드를 제공해야 합니다.
+    *   **type 목록:**
+        *   `call_required_1h` (1시간 예약 시 전화 문의 필요)
+        *   `chat_required_1h` (1시간 예약 시 채팅/톡톡 문의 필요)
+        *   `call_required_today` (당일 예약 시 전화 문의 필요)
 
 ### 1-2. 백엔드 추가 구현 배포 시 (v2.0.1-beta 예정)
 **백엔드에서 데이터 정제(Data Backfilling) 및 가격 정책(Price Config) 파싱 로직이 배포된 후 대응이 필요한 사항입니다.**
@@ -71,9 +74,9 @@ DTO(`RoomDetail`)에 다음 필드들이 추가되거나 의미가 확장되었�
 *   **1시간 예약 제한 (`canReserveOneHour=False`)**: 1시간만 선택 시 경고 메시지 반환.
 *   **당일 예약 제한 (`requiresCallOnSameDay=True`)**: 당일 예약 시도 시 "전화 문의 필요" 경고 반환.
 
-### Phase 4: API 응답 정규화 (Response Structure)
+### Phase 4: API 응답 정규화 (Response Structure, v2.0.0-beta)
 
-API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. 기존 필드를 유지하면서 `results` 내부의 `room_detail`이 v2 구조로 확장되고, 최상위에 `branch_summary`가 추가되었습니다.
+API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. 프론트엔드의 매핑 연산 비용 절감을 위해 **지점(Branch) 하위로 룸이 그룹핑된 계층형 구조**로 개편되었습니다. 기존의 플랫한 `results`와 독립적인 `branch_summary`는 폐기되었습니다.
 
 ```json
 {
@@ -88,44 +91,47 @@ API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. �
     "17:00",
     "18:00"
   ],
-  "results": [
+  "branches": [
     {
-      "room_detail": {
-        "name": "A룸",
-        "branch": "그라운드합주실 신촌1호점",
-        "business_id": "1182602",
-        "biz_item_id": "5979448",
-        "imageUrls": [
-          "https://example.com/image1.jpg"
-        ],
-        "maxCapacity": 6,
-        "recommendCapacity": 4,          // [Legacy] 하위 호환성 유지
-        "recommend_capacity_range": [2, 6], // [NEW] 권장 인원 범위
-        "base_capacity": 4,              // [NEW]
-        "extra_charge": 5000,            // [NEW]
-        "pricePerHour": 15000,           // 기준 가격
-        "canReserveOneHour": true,
-        "requiresCallOnSameDay": false,
-        "estimated_price": 45000,        // [NEW] 계산된 최종 예상 가격
-        "policy_warnings": [             // [NEW] 정책 위반 시 경고
-          "당일 예약은 전화 문의가 필요합니다."
-        ]
-      },
-      "available": "unknown",     // [UPDATE] true / false / "unknown" 가능
-      "available_slots": {
-        "17:00": true,
-        "18:00": false
-      }
-    }
-  ],
-  "branch_summary": {                    // [NEW] 지도 마커용 지점 요약
-    "그라운드합주실 신촌1호점": {
+      "business_id": "1182602",
+      "branch": "그라운드합주실 신촌1호점",
+      "lat": 37.556,
+      "lng": 126.937,
       "min_price": 12000,
       "available_count": 2,
-      "lat": 37.556,
-      "lng": 126.937
+      "rooms": [
+        {
+          "biz_item_id": "5979448",
+          "name": "A룸",
+          "available": "unknown",         // true / false / "unknown"
+          "available_slots": {
+            "17:00": true,
+            "18:00": false
+          },
+          "price_per_hour": 15000,
+          "estimated_price": 45000,       // [NEW] 계산된 최종 예상 금액 (시간/인동 동적 계산)
+          "image_urls": [
+            "https://example.com/image1.jpg"
+          ],
+          "max_capacity": 6,
+          "recommend_capacity": 4,        // [Legacy] 하위 호환성 유지 (추후 제거)
+          "recommend_capacity_range": [2, 6], // [NEW] 권장 인원 범위
+          "base_capacity": 4,             // [NEW]
+          "extra_charge": 5000,           // [NEW]
+          "min_capacity": 1,              // [NEW] 최소 예약 인원
+          "min_hours": 1,                 // [NEW] 최소 예약 시간
+          "max_hours": 5,                 // [NEW] 거시적 최대 예약 허용 시간
+          "standby_days": 1,              // [NEW] 오픈 예정 대기 일수 (1 = 내일 오픈 예약가능)
+          "policy_warnings": [            // [NEW] 예약 시 주의/안내 사항 배열
+            {
+              "type": "call_required_today",
+              "message": "당일 예약은 전화 문의가 필요합니다."
+            }
+          ]
+        }
+      ]
     }
-  }
+  ]
 }
 ```
 ### 4-1. `available` 필드 상태값 (Enum)

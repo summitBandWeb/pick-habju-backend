@@ -15,11 +15,13 @@ def mock_supabase():
     mock_branch_table.upsert.return_value.execute.return_value = MagicMock()
 
     def table_dispatcher(name):
-        if name == "room":
-            return mock_room_table
-        if name == "branch":
-            return mock_branch_table
-        return MagicMock()
+        tables = {
+            "room": mock_room_table,
+            "branch": mock_branch_table,
+        }
+        if name not in tables:
+            raise AssertionError(f"Unexpected table access in test: {name}")
+        return tables[name]
 
     mock.table.side_effect = table_dispatcher
     mock._room_table = mock_room_table
@@ -97,6 +99,33 @@ async def test_parsed_can_reserve_used_when_structured_missing(service, mock_sup
 
 
 @pytest.mark.asyncio
+async def test_structured_booking_count_json_string_overrides_parser(service, mock_supabase):
+    business = {
+        "businessId": "biz1",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Room A",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 10000},
+            "bookingTimeUnitCode": "RT01",
+            "bookingCountSettingJson": '{"minBookingTime": 2}',
+            "extraFeeSettingJson": {},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": 6, "recommend_capacity": 4, "can_reserve_one_hour": True}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["can_reserve_one_hour"] is False
+
+
+@pytest.mark.asyncio
 async def test_structured_extra_charge_used_when_parser_missing(service, mock_supabase):
     business = {
         "businessId": "biz1",
@@ -124,7 +153,7 @@ async def test_structured_extra_charge_used_when_parser_missing(service, mock_su
 
 
 @pytest.mark.asyncio
-async def test_parser_extra_charge_has_priority_over_structured(service, mock_supabase):
+async def test_structured_extra_charge_has_priority_over_parser(service, mock_supabase):
     business = {
         "businessId": "biz1",
         "businessDisplayName": "Test",
@@ -147,7 +176,7 @@ async def test_parser_extra_charge_has_priority_over_structured(service, mock_su
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["extra_charge"] == 5000
+    assert room_data["extra_charge"] == 3000
 
 
 @pytest.mark.asyncio
@@ -233,7 +262,7 @@ async def test_structured_requires_call_overrides_parser(service, mock_supabase)
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_call_on_same_day": False,
+            "requires_contact_on_sameday": False,
         }
     }
 
@@ -241,7 +270,7 @@ async def test_structured_requires_call_overrides_parser(service, mock_supabase)
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_call_on_sameday"] is True
+    assert room_data["requires_contact_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -267,7 +296,7 @@ async def test_parser_requires_call_used_when_structured_missing(service, mock_s
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_call_on_same_day": True,
+            "requires_contact_on_sameday": True,
         }
     }
 
@@ -275,7 +304,7 @@ async def test_parser_requires_call_used_when_structured_missing(service, mock_s
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_call_on_sameday"] is True
+    assert room_data["requires_contact_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -308,7 +337,7 @@ async def test_structured_text_requires_call_overrides_parser(service, mock_supa
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_call_on_same_day": False,
+            "requires_contact_on_sameday": False,
         }
     }
 
@@ -316,7 +345,7 @@ async def test_structured_text_requires_call_overrides_parser(service, mock_supa
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_call_on_sameday"] is True
+    assert room_data["requires_contact_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -349,7 +378,7 @@ async def test_structured_text_negative_requires_call_overrides_parser(service, 
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_call_on_same_day": True,
+            "requires_contact_on_sameday": True,
         }
     }
 
@@ -357,4 +386,4 @@ async def test_structured_text_negative_requires_call_overrides_parser(service, 
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_call_on_sameday"] is False
+    assert room_data["requires_contact_on_sameday"] is False

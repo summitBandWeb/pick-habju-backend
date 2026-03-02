@@ -37,25 +37,24 @@ ROOM_PARSE_PROMPT = """Extract room info as JSON.
 
 Example 1:
 Input: "[평일] 블랙룸", "최대 8명, 4~6인 권장"
-Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity": 5, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "블랙룸", "day_type": "weekday", "max_capacity": 8, "recommend_capacity_range": [4, 6], "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 2:
 Input: "화이트룸", "기본 4인, 인당 3000원 추가"
-Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_call_on_same_day": false, "can_reserve_one_hour": true}}
+Output: {{"clean_name": "화이트룸", "day_type": null, "max_capacity": null, "recommend_capacity_range": null, "base_capacity": 4, "extra_charge": 3000, "requires_contact_on_sameday": false, "can_reserve_one_hour": true}}
 
 Example 3:
 Input: "[주말] 스튜디오A", "당일 예약은 전화 문의, 최소 2시간부터 예약"
-Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_call_on_same_day": true, "can_reserve_one_hour": false}}
+Output: {{"clean_name": "스튜디오A", "day_type": "weekend", "max_capacity": null, "recommend_capacity_range": null, "base_capacity": null, "extra_charge": null, "requires_contact_on_sameday": true, "can_reserve_one_hour": false}}
 
 Rules:
 - clean_name: Remove tags like [평일], (주말) from name
 - day_type: "weekday" if 평일, "weekend" if 주말/공휴일, else null
 - max_capacity: Max people (number)
-- recommend_capacity: Recommended people. Use mid-value for ranges (4~6 -> 5)
 - recommend_capacity_range: [min, max] array from ranges like "4~6인 권장". null if no range found
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only, no currency)
-- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- requires_contact_on_sameday: true if "당일" and ("전화" or "문의") found
 - can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Now extract:
@@ -76,7 +75,7 @@ Rules:
 - recommend_capacity_range: [min, max] array from ranges like "4~6인". null if no range
 - base_capacity: Base people count for pricing
 - extra_charge: Extra charge per person (number only)
-- requires_call_on_same_day: true if "당일" and ("전화" or "문의") found
+- requires_contact_on_sameday: true if "당일" and ("전화" or "문의") found
 - can_reserve_one_hour: false if "최소 2시간", "1시간 예약 불가" found, otherwise true
 
 Business Context (use this to infer missing room details like equipment, capacity):
@@ -253,8 +252,8 @@ class RoomParserService:
         if can_reserve_1h is not None and not isinstance(can_reserve_1h, bool):
             return False
             
-        # 8. requires_call_on_same_day 검증
-        requires_call_today = result.get("requires_call_on_same_day")
+        # 8. requires_contact_on_sameday 검증
+        requires_call_today = result.get("requires_contact_on_sameday")
         if requires_call_today is not None and not isinstance(requires_call_today, bool):
             return False
         
@@ -400,7 +399,7 @@ class RoomParserService:
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
             "price_config": price_config,
-            "requires_call_on_same_day": requires_call,
+            "requires_contact_on_sameday": requires_call,
             "can_reserve_one_hour": can_reserve_1h,
         }
 
@@ -499,9 +498,13 @@ class RoomParserService:
             )
         
         # business_desc가 있으면 컨텍스트로 사용 (모든 아이템이 동일 가게 소속)
-        business_context = ""
-        if items and items[0].get("business_desc"):
-            business_context = self._clean_text_for_llm(items[0]["business_desc"])
+        raw_business_desc = next(
+            (item.get("business_desc") for item in items if item.get("business_desc")),
+            "",
+        )
+        business_context = (
+            self._clean_text_for_llm(raw_business_desc) if raw_business_desc else ""
+        )
         
         prompt = BATCH_PARSE_PROMPT.format(
             business_context=business_context or "내용 없음",

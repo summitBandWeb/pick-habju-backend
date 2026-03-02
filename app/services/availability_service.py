@@ -25,7 +25,8 @@ import logging
 import re
 from app.models.dto import (
     AvailabilityRequest, AvailabilityResponse,
-    RoomAvailability, BranchStats, PolicyWarning
+    RoomAvailability, PolicyWarning,
+    BranchResponse, RoomResponse
 )
 from app.utils.room_router import filter_rooms_by_type
 from app.crawler.base import BaseCrawler
@@ -323,8 +324,7 @@ class AvailabilityService:
                 end_hour=request.end_hour,
                 hour_slots=hour_slots,
                 available_biz_item_ids=[],
-                results=[],
-                branch_summary={}
+                branches=[]
             )
 
         results_of_lists = await asyncio.gather(*tasks)
@@ -373,41 +373,14 @@ class AvailabilityService:
         merged_results = list(merged_dict.values())
         processed_results = self._apply_policies(merged_results, request, hour_slots)
         
-        available_results = []
-        branch_summary = {}
+        branch_dict: Dict[str, BranchResponse] = {}
+        available_ids: List[str] = []
 
         for res in processed_results:
-            # 룸 정보 추출
             room_detail = res.room_detail
 
-            # 예약 가능한 룸만 결과 리스트에 포함 (unknown 포함)
+            # 예약 가능한 룸만 결과에 포함
             if res.available is True or res.available == "unknown":
-                # v2.0.0: 표시용 권장 인원 범위 계산 (비정적 max/base 조합 방어)
-                rec_min: Optional[int] = None
-                rec_max: Optional[int] = None
-
-                if room_detail.baseCapacity and room_detail.baseCapacity > 0:
-                    rec_min = room_detail.baseCapacity
-                    if room_detail.maxCapacity and room_detail.maxCapacity >= rec_min:
-                        rec_max = room_detail.maxCapacity
-                    else:
-                        fallback_max = room_detail.recommendCapacity or (rec_min + 2)
-                        rec_max = max(rec_min, fallback_max)
-                elif room_detail.recommendCapacityRange and len(room_detail.recommendCapacityRange) == 2:
-                    rec_min, rec_max = room_detail.recommendCapacityRange
-                elif room_detail.recommendCapacity and room_detail.recommendCapacity > 0:
-                    rec_min = room_detail.recommendCapacity
-                    rec_max = room_detail.recommendCapacity + 2
-
-                if (
-                    not room_detail.recommendCapacityRange
-                    and rec_min is not None
-                    and rec_max is not None
-                    and rec_min > 0
-                    and rec_max >= rec_min
-                ):
-                    room_detail.recommendCapacityRange = [rec_min, rec_max]
-
                 if isinstance(res.estimated_price, int) and res.estimated_price > 0:
                     total_price = res.estimated_price
                 else:
@@ -417,31 +390,60 @@ class AvailabilityService:
                         hour_slots=hour_slots,
                     )
 
-                available_results.append(res)
+                room_resp = RoomResponse(
+                    biz_item_id=room_detail.biz_item_id,
+                    name=room_detail.name,
+                    price_per_hour=room_detail.pricePerHour,
+                    available=res.available,
+                    available_slots=res.available_slots,
+                    estimated_price=total_price,
+                    image_urls=room_detail.imageUrls,
+                    max_capacity=room_detail.maxCapacity,
+                    # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)
+                    recommend_capacity=room_detail.recommendCapacityRange[0] if room_detail.recommendCapacityRange else None, # TODO: 제거 예정 필드 (하위호환 유지용)
+                    recommend_capacity_range=room_detail.recommendCapacityRange,
+                    base_capacity=room_detail.baseCapacity,
+                    extra_charge=room_detail.extraCharge,
+                    min_capacity=room_detail.minCapacity,
+                    min_hours=room_detail.minHours,
+                    max_hours=room_detail.maxHours,
+                    standby_days=room_detail.standbyDays,
+                    policy_warnings=res.policy_warnings
+                )
 
-                # 지점 요약 정보 업데이트 (branch_summary) - 지도 기능용
+                available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
-                if bid not in branch_summary:
-                    branch_summary[bid] = BranchStats(
+                
+                if bid not in branch_dict:
+                    branch_dict[bid] = BranchResponse(
+                        business_id=bid,
+                        branch=room_detail.branch,
+                        lat=room_detail.lat,
+                        lng=room_detail.lng,
                         min_price=total_price,
                         available_count=1,
-                        lat=room_detail.lat,
-                        lng=room_detail.lng
+                        phone_number=room_detail.phoneNumber,
+                        display_name=room_detail.displayName,
+                        rooms=[room_resp]
                     )
                 else:
-                    stats = branch_summary[bid]
-                    stats.available_count += 1
-                    if total_price < stats.min_price:
-                        stats.min_price = total_price
+                    branch_obj = branch_dict[bid]
+                    branch_obj.rooms.append(room_resp)
+                    branch_obj.available_count += 1
+                    if total_price < branch_obj.min_price:
+                        branch_obj.min_price = total_price
+                    if not branch_obj.phone_number and room_detail.phoneNumber:
+                        branch_obj.phone_number = room_detail.phoneNumber
+                    if not branch_obj.display_name and room_detail.displayName:
+                        branch_obj.display_name = room_detail.displayName
 
         return AvailabilityResponse(
             date=request.date,
             start_hour=request.start_hour,
             end_hour=request.end_hour,
             hour_slots=hour_slots,
-            available_biz_item_ids=[r.room_detail.biz_item_id for r in available_results],
-            results=available_results,
-            branch_summary=branch_summary
+            available_biz_item_ids=available_ids,
+            branches=list(branch_dict.values())
         )
 
 
@@ -505,22 +507,66 @@ class AvailabilityService:
             # 기존 크롤러 등에서 넘어온 경고가 있을 수 있으므로 보존하면서 추가
             policy_warnings: List[PolicyWarning] = list(res.policy_warnings) if hasattr(res, 'policy_warnings') and res.policy_warnings else []
 
+            # NOTE: hour_slots는 end-inclusive 슬롯 배열 (예: 14:00~16:00 → ["14:00","15:00","16:00"])
+            #       따라서 예약 시간 = len - 1 로 정확히 계산됨.
+            #       overnight 슬롯(예: ["23:00","00:00"]) 역시 len-1 = 1시간으로 정확히 계산됨.
             booking_duration_hours = len(hour_slots) - 1
-            if booking_duration_hours == 1 and not room.canReserveOneHour:
-                policy_warnings.append(
-                    PolicyWarning(
+            needs_1h_contact = (booking_duration_hours == 1 and not room.canReserveOneHour)
+            needs_today_contact = (request.date == today and room.requiresContactOnSameDay)
+
+            # 연락 수단 없는 방 사전 필터링
+            # Rationale: phoneNumber/displayName 모두 없는 경우는 크롤러 미수집 문제임.
+            #            이런 방에 정책이 적용되면 프론트에 전달할 type이 없으므로 제외함.
+            #            장기 과제: 크롤러 phoneNumber/displayName 수집 안정화.
+            if needs_1h_contact and not room.phoneNumber and not room.displayName:
+                logger.info(f"[metrics] policy_filter.excluded: reason=no_contact_for_1h biz_item_id={room.biz_item_id}")
+                logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no contact info for 1h reservation")
+                continue
+            
+            # [Asymmetric Design Note]
+            # 1h 예약은 chat_required_1h(네이버 톡톡 등) 노출을 허용하지만,
+            # 당일 예약은 명세에 따라 "전화 문의"만 가능하도록 결정됨.
+            # 따라서 displayName이 있어도 phoneNumber가 없으면 당일 예약 필터링에서 배제함.
+            if needs_today_contact and not room.phoneNumber:
+                logger.info(f"[metrics] policy_filter.excluded: reason=no_phone_for_today biz_item_id={room.biz_item_id}")
+                logger.warning(f"[policy_filter] biz_item_id={room.biz_item_id} excluded: no phone number for today reservation")
+                continue
+
+            # 당일 예약 연락 필요 경고 생성 (항상 1가지 type, 1시간 경고보다 우선)
+            if needs_today_contact:
+                # phoneNumber 있는 방만 여기 도달 (없으면 위 필터링에서 제외됨)
+                policy_warnings.append(PolicyWarning(
+                    type="call_required_today",
+                    message="당일 예약은 전화 문의가 필요합니다.",
+                ))
+            elif needs_1h_contact:
+                # 1시간 예약 불가 경고 생성 (당일 예약이 아닌 경우에만)
+                if room.phoneNumber:
+                    policy_warnings.append(PolicyWarning(
                         type="call_required_1h",
                         message="1시간 예약은 전화 문의가 필요합니다.",
-                    )
-                )
+                    ))
+                else:
+                    # displayName만 있는 경우
+                    policy_warnings.append(PolicyWarning(
+                        type="chat_required_1h",
+                        message="1시간 예약은 채팅 문의가 필요합니다.",
+                    ))
 
-            if request.date == today and room.requiresCallOnSameDay:
-                policy_warnings.append(
-                    PolicyWarning(
-                        type="call_required_today",
-                        message="당일 예약은 전화 문의가 필요합니다.",
-                    )
-                )
+            # 최소/최대 예약 시간 정책 검사
+            # Rationale: 합주실마다 최소(예: 2시간)/최대(예: 4시간) 예약 제한이 있음.
+            #            요청 시간이 범위를 벗어날 경우, 프론트엔드가 안내 모달을 띄울 수 있도록 경고 추가.
+            # NOTE: minHours/maxHours가 None이면 제한 없음으로 간주하여 검사 스킵.
+            if room.minHours is not None and booking_duration_hours < room.minHours:
+                policy_warnings.append(PolicyWarning(
+                    type="min_hours_violation",
+                    message=f"최소 {room.minHours}시간 이상 예약이 필요합니다.",
+                ))
+            if room.maxHours is not None and booking_duration_hours > room.maxHours:
+                policy_warnings.append(PolicyWarning(
+                    type="max_hours_violation",
+                    message=f"최대 {room.maxHours}시간까지만 예약할 수 있습니다.",
+                ))
 
             if res.available is True:
                 try:

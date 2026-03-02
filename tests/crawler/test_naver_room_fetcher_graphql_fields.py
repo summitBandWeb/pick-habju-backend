@@ -66,6 +66,7 @@ async def test_fetch_biz_items_query_contains_extended_fields():
         "stock",
         "minBookingCount",
         "maxBookingCount",
+        "bookingTimeUnitCode",
         "minBookingTime",
         "maxBookingTime",
         "isOnsitePayment",

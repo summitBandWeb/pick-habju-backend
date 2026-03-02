@@ -209,7 +209,7 @@ class TestDataPreservationLogic:
     async def test_preserve_boolean_fields(self, service, mock_supabase):
         """파서에서 추출하지 못한 불리언(None)은 대상 기존(DB)의 불리언 값 유지"""
         mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
-            data=[{"biz_item_id": "room1", "can_reserve_one_hour": False, "requires_call_on_sameday": True}]
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": False, "requires_contact_on_sameday": True}]
         )
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
@@ -220,7 +220,7 @@ class TestDataPreservationLogic:
                 "max_capacity": 5, 
                 "recommend_capacity": 4, 
                 "can_reserve_one_hour": None, 
-                "requires_call_on_same_day": None
+                "requires_contact_on_sameday": None
             }
         }
         
@@ -231,13 +231,13 @@ class TestDataPreservationLogic:
         
         # 기존 데이터를 유지해야 함
         assert upsert_data["can_reserve_one_hour"] is False
-        assert upsert_data["requires_call_on_sameday"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
 
     @pytest.mark.asyncio
     async def test_override_boolean_fields(self, service, mock_supabase):
         """파서에서 추출한 명시적 불리언(False/True)은 기존 DB를 덮어씀"""
         mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
-            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_call_on_sameday": False}]
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_contact_on_sameday": False}]
         )
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
@@ -248,7 +248,7 @@ class TestDataPreservationLogic:
                 "max_capacity": 5, 
                 "recommend_capacity": 4, 
                 "can_reserve_one_hour": False, # 새로 파싱됨
-                "requires_call_on_same_day": True # 새로 파싱됨
+                "requires_contact_on_sameday": True # 새로 파싱됨
             }
         }
         
@@ -259,7 +259,29 @@ class TestDataPreservationLogic:
         
         # 새로운 값으로 덮어써야 함
         assert upsert_data["can_reserve_one_hour"] is False
-        assert upsert_data["requires_call_on_sameday"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
+
+    @pytest.mark.asyncio
+    async def test_legacy_boolean_parsing(self, service, mock_supabase):
+        """Legacy contact flag로 파싱될 경우의 fallback 정상 작동 검증"""
+        mock_supabase._room_table.select.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"biz_item_id": "room1", "can_reserve_one_hour": True, "requires_contact_on_sameday": False}]
+        )
+        business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
+        rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {
+            "room1": {
+                "max_capacity": 5, 
+                "recommend_capacity": 4, 
+                "requires_same_day_contact": True
+            }
+        }
+        await service._save_to_db(business, rooms, parsed_results)
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        upsert_data = upsert_call[0][0]
+        assert upsert_data["can_reserve_one_hour"] is True
+        assert upsert_data["requires_contact_on_sameday"] is True
+        assert upsert_data["requires_contact_same_day"] is True
 
 
 class TestV2NewFields:
@@ -327,7 +349,7 @@ class TestV2NewFields:
                 "price_config": [],
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         
@@ -357,7 +379,7 @@ class TestV2NewFields:
                 "recommend_capacity_range": None,
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         
@@ -369,17 +391,17 @@ class TestV2NewFields:
         # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
         assert room_data["recommend_capacity_range"] == [4, 6]
     
-    # ============== TC: display_name 저장 ==============
+    # ============== TC: display_name 및 standby_days 저장 ==============
     @pytest.mark.asyncio
-    async def test_saves_display_name_to_branch(self, service, mock_supabase):
-        """Branch upsert 시 display_name이 포함되는지 검증"""
+    async def test_saves_display_name_and_standby_days_to_branch(self, service, mock_supabase):
+        """Branch upsert 시 display_name과 standby_days가 포함되는지 검증"""
         business = {
             "businessId": "biz1",
             "businessDisplayName": "테스트 합주실 1호점",
             "coordinates": {"latitude": 37.5, "longitude": 127.0}
         }
-        rooms = []
-        parsed_results = {}
+        rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"standby_days": 3}}
         
         await service._save_to_db(business, rooms, parsed_results)
         
@@ -390,6 +412,7 @@ class TestV2NewFields:
         assert branch_data["display_name"] == "테스트 합주실 1호점"
         assert branch_data["lat"] == 37.5
         assert branch_data["lng"] == 127.0
+        assert branch_data["standby_days"] == 3
     
     # ============== TC: price_config 저장 ==============
     @pytest.mark.asyncio
@@ -409,7 +432,7 @@ class TestV2NewFields:
                 "price_config": price_cfg,
                 "base_capacity": None,
                 "extra_charge": None,
-                "requires_call_on_same_day": False
+                "requires_contact_on_sameday": False
             }
         }
         

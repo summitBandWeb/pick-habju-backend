@@ -71,24 +71,22 @@ async def test_map_search_coordinate_range_error(async_client: AsyncClient, futu
 async def test_map_search_success(
     async_client: AsyncClient,
     mock_availability_response_factory, 
-    mock_room_info_factory,
-    mock_branch_stats_factory,
+    mock_room_response_factory,
+    mock_branch_response_factory,
     future_date
 ):
     """
     [통합 시나리오 테스트]
     정상적인 좌표 범위 요청 시, 서비스 레이어의 결과가 API 응답 스펙에 맞게 반환되어야 한다.
-    기존 구조(room_detail 중첩) + branch_summary 포함.
+    새로운 구조(branches 중첩) 포함.
     """
     # given
-    # 기존 RoomAvailability 구조에 맞게 Mock 생성
-    room_avail = mock_room_info_factory(name="Refactored Room", price=20000)
-    branch_stats = mock_branch_stats_factory(min_price=20000)
+    room_resp = mock_room_response_factory(name="Refactored Room", price=20000)
+    branch_resp = mock_branch_response_factory(min_price=20000, rooms=[room_resp])
     
     # Mock 응답 생성
     mock_response = mock_availability_response_factory(
-        results=[room_avail],
-        summary={"12345": branch_stats}
+        branches=[branch_resp]
     )
 
     with patch("app.services.availability_service.AvailabilityService.check_availability", new_callable=AsyncMock) as mock_method:
@@ -112,10 +110,26 @@ async def test_map_search_success(
         assert response.status_code == 200
         data = response.json()["result"]
         
-        # 기존 구조 검증 (room_detail 중첩)
-        assert "branch_summary" in data
+        # 새로운 구조 검증 (branches 중첩)
+        assert "branches" in data
         assert "hour_slots" in data
-        assert data["results"][0]["room_detail"]["name"] == "Refactored Room"
+        # MockCrawler는 전체 룸을 하나의 Mock 결과로 반환, 각기 다른 branch_id를 가지므로 2개의 branch여야 함
+        # However, mock_availability_response_factory in this test creates a single branch.
+        assert len(data["branches"]) == 1 # Adjusted based on mock_response setup
+        for branch in data["branches"]:
+            assert "rooms" in branch
+            assert isinstance(branch["rooms"], list)
+            assert len(branch["rooms"]) > 0
+            assert "min_price" in branch
+            assert isinstance(branch["min_price"], int)
+            assert "available_count" in branch
+            assert isinstance(branch["available_count"], int)
+        # branch_summary는 제거됨
+        assert "results" not in data
+        assert "branch_summary" not in data
+        assert "results" not in data["branches"][0]
+        assert "branch_summary" not in data["branches"][0]
+        assert data["branches"][0]["rooms"][0]["name"] == "Refactored Room"
         
         # Mock 호출 파라미터 검증
         called_arg = mock_method.call_args[1]['request']

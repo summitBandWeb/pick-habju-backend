@@ -186,12 +186,23 @@ class RoomCollectionService:
         
         # 1. Save Branch
         coords = business.get("coordinates")
+        # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
+        # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
+        branch_standby_days = None
+        for room in rooms:
+            rid = room.get("bizItemId")
+            parsed = parsed_results.get(rid)
+            if parsed and parsed.get("standby_days") is not None:
+                branch_standby_days = parsed.get("standby_days")
+                break
+
         branch_data = {
             "business_id": business["businessId"],
             "name": business["businessDisplayName"],
-            "display_name": business.get("businessDisplayName"),  # v2.0.0: 노출용 이름
+            "display_name": business.get("businessDisplayName"), 
             "lat": coords.get("latitude") if coords else None,
             "lng": coords.get("longitude") if coords else None,
+            "standby_days": branch_standby_days, 
         }
         
         # Upsert Branch
@@ -226,6 +237,9 @@ class RoomCollectionService:
             if new_max_cap is None:
                 new_max_cap = self.MANUAL_REVIEW_FLAG
                 
+            # HACK: [이슈 6 기술부채] recommend_capacity(단일값) 레거시.
+            # DTO에서는 제거됐으나 DB 컬럼과 _calculate_capacity_range 의존성 때문에 upsert 유지.
+            # 향후 recommend_capacity_range로 완전히 대체 시 이 컬럼 제거 예정.
             new_rec_cap = text_rec_cap if text_rec_cap is not None else parsed.get("recommend_capacity")
             if new_rec_cap is None and new_max_cap != self.MANUAL_REVIEW_FLAG:
                 new_rec_cap = new_max_cap // 2 if new_max_cap > 4 else new_max_cap
@@ -269,10 +283,10 @@ class RoomCollectionService:
             if not final_price_config and existing_price_config:
                 final_price_config = existing_price_config
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
-            if "extra_charge" in parsed:
-                final_extra_charge = parsed["extra_charge"]
-            elif structured_extra_charge is not None:
+            if structured_extra_charge is not None:
                 final_extra_charge = structured_extra_charge
+            elif parsed.get("extra_charge") is not None:
+                final_extra_charge = parsed["extra_charge"]
             else:
                 final_extra_charge = existing_extra_charge
 
@@ -287,8 +301,22 @@ class RoomCollectionService:
             else:
                 final_can_reserve = existing_can_reserve
             
-            existing_requires_call = existing.get("requires_call_on_sameday", False) if existing else False
-            parsed_requires_call = parsed.get("requires_call_on_same_day")
+            existing_requires_call = False
+            if existing:
+                existing_requires_call = existing.get("requires_contact_on_sameday")
+                if existing_requires_call is None:
+                    existing_requires_call = existing.get("requires_contact_same_day")
+                if existing_requires_call is None:
+                    existing_requires_call = existing.get("requires_call_on_sameday", False)
+
+            parsed_requires_call = parsed.get("requires_contact_on_sameday")
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_same_day_contact")
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_contact_same_day")
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_call_on_same_day")
+
             structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
             if structured_requires_call is not None:
                 final_requires_call = structured_requires_call
@@ -317,7 +345,9 @@ class RoomCollectionService:
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap,
                 "extra_charge": final_extra_charge,
-                "requires_call_on_sameday": final_requires_call,
+                # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
+                "requires_contact_on_sameday": final_requires_call,
+                "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }
@@ -336,6 +366,12 @@ class RoomCollectionService:
             return min_booking_time <= 1
 
         booking_count_setting = room.get("bookingCountSettingJson")
+        if isinstance(booking_count_setting, str):
+            try:
+                booking_count_setting = json.loads(booking_count_setting)
+            except json.JSONDecodeError:
+                booking_count_setting = None
+
         if isinstance(booking_count_setting, dict):
             for key in ("minBookingTime", "minimumBookingTime", "minTime", "minimumTime"):
                 value = booking_count_setting.get(key)
