@@ -137,3 +137,69 @@ async def test_map_search_success(
         called_arg = mock_method.call_args[1]['request']
         assert isinstance(called_arg, AvailabilityRequest)
         assert called_arg.neLat == 37.6
+
+@pytest.mark.asyncio
+async def test_map_search_success_partial(
+    async_client: AsyncClient,
+    mock_availability_response_factory, 
+    mock_room_response_factory,
+    mock_branch_response_factory,
+    future_date
+):
+    """
+    [통합 시나리오 테스트]
+    방이 'unknown' (예약 일부 가능) 상태일 때 min_price_partial 에 가격이 들어가고,
+    min_price_available 은 None 이어야 한다.
+    """
+    room_resp = mock_room_response_factory(name="Partial Room", price=30000, available="unknown")
+    branch_resp = mock_branch_response_factory(min_price_available=None, min_price_partial=30000, rooms=[room_resp])
+    
+    mock_response = mock_availability_response_factory(branches=[branch_resp])
+
+    with patch("app.services.availability_service.AvailabilityService.check_availability", new_callable=AsyncMock) as mock_method:
+        mock_method.return_value = mock_response
+
+        params = {
+            "date": future_date, "capacity": 5, "start_hour": "12:00", "end_hour": "14:00",
+            "swLat": 37.4, "neLat": 37.6, "swLng": 126.9, "neLng": 127.1
+        }
+        response = await async_client.get("/api/rooms/availability", params=params)
+
+        assert response.status_code == 200
+        data = response.json()["result"]
+        branch = data["branches"][0]
+        assert branch["min_price_available"] is None
+        assert branch["min_price_partial"] == 30000
+
+@pytest.mark.asyncio
+async def test_map_search_success_mixed(
+    async_client: AsyncClient,
+    mock_availability_response_factory, 
+    mock_room_response_factory,
+    mock_branch_response_factory,
+    future_date
+):
+    """
+    [통합 시나리오 테스트]
+    하나의 지점에 예약 가능 방과 일부 가능 방이 혼재해 있을 때, 두 가지 최저가 모두 올바르게 계산되어야 한다.
+    """
+    room_resp1 = mock_room_response_factory(name="Available Room", price=25000, available=True)
+    room_resp2 = mock_room_response_factory(name="Partial Room", price=15000, available="unknown")
+    branch_resp = mock_branch_response_factory(min_price_available=25000, min_price_partial=15000, rooms=[room_resp1, room_resp2])
+    
+    mock_response = mock_availability_response_factory(branches=[branch_resp])
+
+    with patch("app.services.availability_service.AvailabilityService.check_availability", new_callable=AsyncMock) as mock_method:
+        mock_method.return_value = mock_response
+
+        params = {
+            "date": future_date, "capacity": 5, "start_hour": "12:00", "end_hour": "14:00",
+            "swLat": 37.4, "neLat": 37.6, "swLng": 126.9, "neLng": 127.1
+        }
+        response = await async_client.get("/api/rooms/availability", params=params)
+
+        assert response.status_code == 200
+        data = response.json()["result"]
+        branch = data["branches"][0]
+        assert branch["min_price_available"] == 25000
+        assert branch["min_price_partial"] == 15000
