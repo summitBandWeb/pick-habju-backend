@@ -97,7 +97,8 @@ API 응답(`AvailabilityResponse`)의 전체 구조는 다음과 같습니다. �
       "branch": "그라운드합주실 신촌1호점",
       "lat": 37.556,
       "lng": 126.937,
-      "min_price": 12000,
+      "min_price_available": 12000,
+      "min_price_partial": null,
       "available_count": 2,
       "rooms": [
         {
