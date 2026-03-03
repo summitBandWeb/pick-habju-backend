@@ -119,4 +119,4 @@ async def test_dream_beyond_date_limit(sample_dream_rooms):
     room_result = result[0]
     assert room_result.available == "unknown"
     assert room_result.available_slots["13:00"] is False
-    assert "14:00" not in room_result.available_slots
+    assert room_result.available_slots["14:00"] is False
