@@ -30,7 +30,11 @@ def test_search_sync_integration():
             mock_context.new_page.return_value = mock_page
             
             # 3. Setup Extract Apollo State Mock
-            with patch.object(crawler, '_extract_apollo_state_sync', return_value=[{"id": "123", "name": "Test Room"}]) as mock_extract:
+            with patch.object(
+                crawler,
+                '_extract_apollo_state_sync',
+                return_value=[{"id": "123", "bookingBusinessId": "123", "name": "Test Room"}],
+            ) as mock_extract:
                 
                 results = crawler._search_sync("test_query")
                 
