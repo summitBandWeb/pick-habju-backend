@@ -9,66 +9,78 @@ from app.core.config import DISCORD_WEBHOOK_URL, APP_ENV
 
 logger = logging.getLogger(__name__)
 
-SNAPSHOT_FILE = os.path.join(tempfile.gettempdir(), "daily_discord_report_snapshot.json")
+class SnapshotStore:
+    async def acquire_lock(self, lock_key: str, ttl_seconds: int = 60) -> bool:
+        raise NotImplementedError
+    def release_lock(self, lock_key: str):
+        raise NotImplementedError
+    def load_snapshot(self) -> dict:
+        raise NotImplementedError
+    def save_snapshot(self, data: dict):
+        raise NotImplementedError
 
-async def _acquire_distributed_lock(lock_key: str, ttl_seconds: int = 60) -> bool:
+class LocalSnapshotStore(SnapshotStore):
     """
-    다중 인스턴스 스케줄러 중복 실행 방지를 위한 분산 락 획득 (File-based fallback)
-    (실제 프로덕션 환경에선 Redis SETNX 또는 DB Row Lock을 연동해야 합니다.)
+    WARNING: Local file-based locking/snapshotting is not suitable for multi-server (e.g. AWS ECS across multiple nodes)
+    or serverless environments without a shared EFS. This works fine for single-node deployments.
     """
-    lock_file = os.path.join(tempfile.gettempdir(), f"{lock_key}.lock")
-    now = time.time()
-    
-    # Stale 락 클린업 시도
-    try:
-        if os.path.exists(lock_file):
-            with open(lock_file, 'r') as f:
-                data = json.load(f)
-            if now > data.get('expires_at', 0):
-                os.remove(lock_file)
-    except Exception:
-        pass
+    def __init__(self):
+        self.snapshot_file = os.path.join(tempfile.gettempdir(), "daily_discord_report_snapshot.json")
 
-    try:
-        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-        with os.fdopen(fd, 'w') as f:
-            json.dump({'expires_at': now + ttl_seconds, 'pid': os.getpid()}, f)
-        return True
-    except FileExistsError:
-        return False
-    except Exception as e:
-        logger.error(f"Lock acquisition error: {e}")
-        return False
+    async def acquire_lock(self, lock_key: str, ttl_seconds: int = 60) -> bool:
+        lock_file = os.path.join(tempfile.gettempdir(), f"{lock_key}.lock")
+        now = time.time()
+        
+        try:
+            if os.path.exists(lock_file):
+                with open(lock_file, 'r') as f:
+                    data = json.load(f)
+                if now > data.get('expires_at', 0):
+                    os.remove(lock_file)
+        except Exception as e:
+            logger.warning(f"Failed to clean stale lock {lock_file}: {e}", exc_info=True)
 
-def _release_distributed_lock(lock_key: str):
-    """
-    락 소유권자(PID)가 일치하는 경우에만 락 해제
-    """
-    lock_file = os.path.join(tempfile.gettempdir(), f"{lock_key}.lock")
-    try:
-        if os.path.exists(lock_file):
-            with open(lock_file, 'r') as f:
-                data = json.load(f)
-            if data.get('pid') == os.getpid():
-                os.remove(lock_file)
-    except Exception:
-        pass
+        try:
+            fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            with os.fdopen(fd, 'w') as f:
+                json.dump({'expires_at': now + ttl_seconds, 'pid': os.getpid()}, f)
+            return True
+        except FileExistsError:
+            return False
+        except Exception as e:
+            logger.warning(f"Lock acquisition error: {e}", exc_info=True)
+            return False
 
-def _load_snapshot() -> dict:
-    try:
-        if os.path.exists(SNAPSHOT_FILE):
-            with open(SNAPSHOT_FILE, 'r') as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {"total_requests": 0, "total_errors": 0, "total_duration": 0.0}
+    def release_lock(self, lock_key: str):
+        lock_file = os.path.join(tempfile.gettempdir(), f"{lock_key}.lock")
+        try:
+            if os.path.exists(lock_file):
+                with open(lock_file, 'r') as f:
+                    data = json.load(f)
+                if data.get('pid') == os.getpid():
+                    os.remove(lock_file)
+        except Exception as e:
+            logger.warning(f"Failed to release lock {lock_file}: {e}", exc_info=True)
 
-def _save_snapshot(data: dict):
-    try:
-        with open(SNAPSHOT_FILE, 'w') as f:
-            json.dump(data, f)
-    except Exception as e:
-        logger.error(f"Failed to save metrics snapshot: {e}")
+    def load_snapshot(self) -> dict:
+        try:
+            if os.path.exists(self.snapshot_file):
+                with open(self.snapshot_file, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load snapshot {self.snapshot_file}: {e}", exc_info=True)
+        return {"total_requests": 0, "total_errors": 0, "total_duration": 0.0}
+
+    def save_snapshot(self, data: dict):
+        try:
+            with open(self.snapshot_file, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Failed to save metrics snapshot: {e}", exc_info=True)
+
+# TODO: Replace with remote store (e.g. RedisSnapshotStore) when multi-node scaling is configured
+snapshot_store: SnapshotStore = LocalSnapshotStore()
+
 
 async def send_discord_report():
     """
@@ -81,7 +93,7 @@ async def send_discord_report():
         
     lock_key = "daily_discord_report_lock"
     # 다중 인스턴스 중복 실행 방지 (분산 락 획득)
-    if not await _acquire_distributed_lock(lock_key):
+    if not await snapshot_store.acquire_lock(lock_key):
         logger.info("Another instance is running the daily report. Skipping...")
         return
 
@@ -107,14 +119,19 @@ async def send_discord_report():
                     # Histogram의 sum을 통해 총 지연 시간 획득
                     current_duration += sample.value
                     
-        # 3. 누적 누수 방지를 위한 Delta 계산 (이전 스냅샷과의 차이)
-        snapshot = _load_snapshot()
-        total_requests = max(0, current_requests - snapshot.get("total_requests", 0))
-        total_errors = max(0, current_errors - snapshot.get("total_errors", 0))
-        total_duration = max(0.0, current_duration - snapshot.get("total_duration", 0.0))
+        # 3. 누적 누수 방지를 위한 Delta 계산 및 카운터 재시작 대처
+        snapshot = snapshot_store.load_snapshot()
+        snap_reqs = snapshot.get("total_requests", 0)
+        snap_errs = snapshot.get("total_errors", 0)
+        snap_dur = snapshot.get("total_duration", 0.0)
+        
+        # 만약 current가 snapshot보다 작다면 Prometheus 프로세스가 재시작되어 카운터가 리셋된 것
+        total_requests = current_requests if current_requests < snap_reqs else current_requests - snap_reqs
+        total_errors = current_errors if current_errors < snap_errs else current_errors - snap_errs
+        total_duration = current_duration if current_duration < snap_dur else current_duration - snap_dur
         
         # 새로운 스냅샷 반영
-        _save_snapshot({
+        snapshot_store.save_snapshot({
             "total_requests": current_requests,
             "total_errors": current_errors,
             "total_duration": current_duration
@@ -171,4 +188,4 @@ async def send_discord_report():
     except Exception as e:
         logger.error(f"Failed to generate or send daily report: {e}", exc_info=True)
     finally:
-        _release_distributed_lock(lock_key)
+        snapshot_store.release_lock(lock_key)

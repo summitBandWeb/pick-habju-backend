@@ -112,8 +112,22 @@ class RealIPMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
         except Exception as e:
-            # 예상치 못한 에러 발생 시 로깅을 위해 캐치 (글로벌 핸들러에서 다시 처리됨)
-            logger.exception("Unhandled exception in RealIPMiddleware")
+            process_time = time.perf_counter() - start_time
+            extra_data = {
+                "real_ip": real_ip,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 500,
+                "latency_sec": round(process_time, 4),
+                "user_agent": request.headers.get("User-Agent", ""),
+                "referer": request.headers.get("Referer", ""),
+                "request_id": request.headers.get("X-Request-ID", ""),
+            }
+            if request.url.path in ("/ping", "/health"):
+                extra_data["trace_id"] = getattr(request.state, "trace_id", "unknown")
+                extra_data["health_check_failed"] = True
+            
+            logger.exception("Unhandled exception in RealIPMiddleware", extra=extra_data)
             raise
 
         process_time = time.perf_counter() - start_time
