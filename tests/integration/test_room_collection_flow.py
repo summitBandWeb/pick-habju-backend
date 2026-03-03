@@ -172,7 +172,7 @@ class TestCollectByIdFlow:
 
 
 class TestCollectByQueryFlow:
-    """collect_by_query 통합 테스트"""
+    """collect_by_query 통합 테스트 (전역 priority-area 정책)"""
     
     @pytest.fixture
     def mock_crawler(self):
@@ -201,13 +201,13 @@ class TestCollectByQueryFlow:
     # ============== IT05: Query 검색 후 각 ID 수집 ==============
     @pytest.mark.asyncio
     async def test_collect_by_query_calls_collect_by_id(self, service, mock_crawler):
-        """검색 결과 각 ID에 대해 collect_by_id 호출"""
+        """고정 6개 지역 검색 결과의 unique ID에 대해 collect_by_id 호출"""
         result = await service.collect_by_query("홍대 합주실")
         
-        # Crawler가 검색 호출됨
-        mock_crawler.search_rehearsal_rooms.assert_called_once_with("홍대 합주실")
+        # 전역 정책으로 6개 우선 지역 검색이 실행됨
+        assert mock_crawler.search_rehearsal_rooms.call_count == 6
         
-        # 각 결과에 대해 collect_by_id 호출됨
+        # 중복 제거된 unique 결과 2건만 collect_by_id 호출
         assert service.collect_by_id.call_count == 2
         service.collect_by_id.assert_any_call("biz1")
         service.collect_by_id.assert_any_call("biz2")
@@ -215,6 +215,8 @@ class TestCollectByQueryFlow:
         # 성공 카운트 확인
         assert result["success"] == 2
         assert result["failed"] == 0
+        assert result["mode"] == "priority_areas"
+        assert result["requested_query"] == "홍대 합주실"
     
     # ============== IT06: 일부 실패 시 카운트 ==============
     @pytest.mark.asyncio

@@ -2,13 +2,16 @@
 import asyncio
 import json
 import os
+import re
+import random
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
+from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -17,22 +20,137 @@ class RoomCollectionService:
     """Service for collecting and parsing rehearsal room data."""
     
     # Tunable parameters for concurrency
-    BATCH_SIZE = 5           # Number of rooms per LLM batch call
-    MAX_CONCURRENT_BATCHES = 3  # Number of parallel LLM calls
+    BATCH_SIZE = 5
+    MAX_CONCURRENT_BATCHES = 3
+    DEFAULT_PRIORITY_AREA_QUERIES = list(PRIORITY_AREA_QUERIES)
     
-    # Capacity value indicating LLM parsing failure - flags for manual review
+    # Capacity value indicating parsing failure - flags for manual review
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
+    PRICE_MATCH_TOLERANCE = 1000
+    PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
+        # Groove sadang (manual baseline)
+        "sadang": [
+            {"price": 8000, "max_capacity": 4, "recommend_capacity": 2, "recommend_range": [1, 2]},
+            {"price": 10000, "max_capacity": 6, "recommend_capacity": 3, "recommend_range": [1, 3]},
+        ],
+        # Biju rehearsal rooms (manual baseline)
+        "522011": [
+            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [4, 6]},
+        ],
+        "706924": [
+            {"price": 12000, "max_capacity": 8, "recommend_capacity": 4, "recommend_range": [3, 5]},
+        ],
+        "917236": [
+            {"price": 20000, "max_capacity": 12, "recommend_capacity": 6, "recommend_range": [4, 6]},
+        ],
+        # Junsound sadang (manual baseline)
+        "1384809": [
+            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [3, 5]},
+        ],
+    }
 
     def __init__(self):
         self.map_crawler = NaverMapCrawler()
         self.room_fetcher = NaverRoomFetcher()
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
+        self._unsupported_room_columns: set[str] = set()
+
+    @classmethod
+    def _resolve_priority_area_queries(cls, area_queries: Optional[List[str]]) -> List[str]:
+        if area_queries:
+            return [q.strip() for q in area_queries if isinstance(q, str) and q.strip()]
+
+        env_raw = os.getenv("PRIORITY_AREA_QUERIES")
+        if env_raw:
+            return [q.strip() for q in env_raw.split(",") if q.strip()]
+
+        return list(cls.DEFAULT_PRIORITY_AREA_QUERIES)
+
+    async def collect_priority_areas(
+        self,
+        area_queries: Optional[List[str]] = None,
+        max_targets: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Collect room data only from configured priority station areas."""
+        queries = self._resolve_priority_area_queries(area_queries)
+        if not queries:
+            raise ValueError("No priority area queries configured")
+
+        logger.info("Starting priority-area collection for %s queries", len(queries))
+        query_reports: List[Dict[str, Any]] = []
+        dedup_items: Dict[str, Dict[str, Any]] = {}
+        business_query_map: Dict[str, set[str]] = {}
+
+        for idx, query in enumerate(queries):
+            logger.info("[priority %s/%s] searching: %s", idx + 1, len(queries), query)
+            try:
+                results = await self.map_crawler.search_rehearsal_rooms(query)
+                discovered_business_ids: List[str] = []
+                missing_id_count = 0
+
+                for item in results:
+                    business_id = item.get("id")
+                    if not business_id:
+                        missing_id_count += 1
+                        continue
+                    business_id = str(business_id)
+                    discovered_business_ids.append(business_id)
+                    business_query_map.setdefault(business_id, set()).add(query)
+                    dedup_items.setdefault(business_id, item)
+
+                query_reports.append(
+                    {
+                        "query": query,
+                        "discovered": len(results),
+                        "discovered_with_id": len(discovered_business_ids),
+                        "missing_id": missing_id_count,
+                        "unique_businesses_in_query": len(set(discovered_business_ids)),
+                    }
+                )
+                # Short randomized delay between station queries to reduce burst calls.
+                await asyncio.sleep(0.8 + random.uniform(0, 0.8))
+            except Exception as e:
+                logger.error("Priority query failed (%s): %s", query, e)
+                query_reports.append(
+                    {
+                        "query": query,
+                        "discovered": 0,
+                        "discovered_with_id": 0,
+                        "missing_id": 0,
+                        "unique_businesses_in_query": 0,
+                        "query_error": str(e),
+                    }
+                )
+
+        target_items: List[Dict[str, Any]] = []
+        for business_id, item in dedup_items.items():
+            enriched = dict(item)
+            enriched["source_queries"] = sorted(list(business_query_map.get(business_id, set())))
+            target_items.append(enriched)
+
+        total_unique_before_limit = len(target_items)
+        if isinstance(max_targets, int) and max_targets > 0:
+            target_items = target_items[:max_targets]
+
+        success_count, failed_count, failures = await self._collect_items(target_items)
+
+        return {
+            "mode": "priority_areas",
+            "queries": queries,
+            "query_reports": query_reports,
+            "total_unique_before_limit": total_unique_before_limit,
+            "total_unique": len(target_items),
+            "success": success_count,
+            "failed": failed_count,
+            "failures": failures,
+        }
 
     async def collect_by_query(self, query: str) -> Dict[str, Any]:
         """
-        Search and collect rooms by query keyword.
+        Search and collect rooms.
+        Global policy: always constrained to configured priority areas.
         
         Args:
             query: Search keyword (e.g., "Hongdae practice room")
@@ -40,84 +158,54 @@ class RoomCollectionService:
         Returns:
             Dict containing counts of successful and failed collections.
         """
-        logger.info(f"Starting collection for query: {query}")
-        
-        # 1. 지도 검색으로 ID 확보
-        search_results = await self.map_crawler.search_rehearsal_rooms(query)
-        logger.info(f"Found {len(search_results)} businesses for {query}")
-        
+        logger.info(
+            "Ignoring direct query '%s' due to global priority-area policy. "
+            "Collecting from fixed priority areas instead.",
+            query,
+        )
+        result = await self.collect_priority_areas()
+        result["requested_query"] = query
+        return result
+
+    async def collect_all_regions(self) -> Dict[str, Any]:
+        """
+        Collect rooms from globally configured priority areas.
+        """
+        logger.info("Starting global-priority collection (fixed 6 areas)...")
+        return await self.collect_priority_areas()
+
+    async def _collect_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int, List[Dict[str, Any]]]:
+        """Collect by business id for each item and aggregate success/failure stats."""
         success_count = 0
         failed_count = 0
-        failures: List[Dict[str, str]] = []
+        failures: List[Dict[str, Any]] = []
+        total_items = len(items)
 
-        for item in search_results:
+        for idx, item in enumerate(items):
             try:
                 business_id = item.get("id")
                 if not business_id:
                     raise ValueError("missing business id in search result")
-                await self.collect_by_id(business_id)
-                success_count += 1
-            except Exception as e:
-                logger.error(f"Failed to collect item={item}: {e}")
-                failed_count += 1
-                failures.append({
-                    "business_id": item.get("id", ""),
-                    "business_name": item.get("name", ""),
-                    "reason": str(e),
-                })
-                
-        return {
-            "query": query,
-            "total": len(search_results),
-            "success": success_count,
-            "failed": failed_count,
-            "failures": failures,
-        }
-
-    async def collect_all_regions(self) -> Dict[str, Any]:
-        """
-        Collect rooms from all major regions nationwide.
-        """
-        logger.info("Starting nationwide collection...")
-        
-        # 1. Crawl all regions
-        # Note: crawl_all_regions returns list of Item dicts, but search_rehearsal_rooms returns same structure.
-        # We assume crawl_all_regions returns a list of items similar to search results.
-        all_items = await self.map_crawler.crawl_all_regions()
-        logger.info(f"Total unique businesses found nationwide: {len(all_items)}")
-        
-        success_count = 0
-        failed_count = 0
-        failures: List[Dict[str, str]] = []
-        
-        # 2. Process each found business
-        total_items = len(all_items)
-        for idx, item in enumerate(all_items):
-            try:
-                business_id = item.get("id")
-                if not business_id:
-                    raise ValueError("missing business id in crawl result")
-                business_name = item.get("name", "<unknown>")
                 logger.info(
-                    f"Processing {idx+1}/{total_items}: {business_name} ({business_id})"
+                    "Collecting item %s/%s: %s (%s)",
+                    idx + 1,
+                    total_items,
+                    item.get("name", ""),
+                    business_id,
                 )
-                await self.collect_by_id(business_id)
+                await self.collect_by_id(str(business_id))
                 success_count += 1
             except Exception as e:
-                logger.error(f"Failed to collect item={item}: {e}")
+                logger.error("Failed to collect item=%s: %s", item, e)
                 failed_count += 1
                 failures.append({
                     "business_id": item.get("id", ""),
                     "business_name": item.get("name", ""),
+                    "source_queries": item.get("source_queries", []),
                     "reason": str(e),
                 })
-                
-        return {
-            "total": total_items,
-            "success": success_count,
-            "failed": failed_count,
-            "failures": failures,
-        }
+
+        return success_count, failed_count, failures
 
     async def collect_by_id(self, business_id: str):
         """Collect and save room information for a specific Business ID."""
@@ -135,7 +223,7 @@ class RoomCollectionService:
             logger.warning(f"No rooms found for business {business_id}")
             return
 
-        # 2. LLM Parsing (Batch with Concurrency)
+        # 2. Rule-based parsing (Batch with Concurrency)
         # Rationale: business.desc에 가게 전체 장비/규칙이 담겨 있으므로
         #            개별 룸 파싱 시 컨텍스트로 함께 전달하여 정확도를 높임
         business_desc = business.get("desc") or ""
@@ -229,18 +317,31 @@ class RoomCollectionService:
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
             # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            new_max_cap = parsed.get("max_capacity")
+            # Priority for capacity:
+            #   1) High-confidence text patterns in room name/desc
+            #   2) Parser output
+            #   3) Manual review flag
+            text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
+
+            new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
             if new_max_cap is None:
                 new_max_cap = self.MANUAL_REVIEW_FLAG
                 
             # HACK: [이슈 6 기술부채] recommend_capacity(단일값) 레거시.
             # DTO에서는 제거됐으나 DB 컬럼과 _calculate_capacity_range 의존성 때문에 upsert 유지.
             # 향후 recommend_capacity_range로 완전히 대체 시 이 컬럼 제거 예정.
-            new_rec_cap = parsed.get("recommend_capacity")
+            new_rec_cap = text_rec_cap if text_rec_cap is not None else parsed.get("recommend_capacity")
+            if new_rec_cap is None and new_max_cap != self.MANUAL_REVIEW_FLAG:
+                new_rec_cap = new_max_cap // 2 if new_max_cap > 4 else new_max_cap
             if new_rec_cap is None:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
+            price_inferred = self._infer_capacity_from_price(
+                business_id=business.get("businessId"),
+                room_name=room.get("name"),
+                price_per_hour=new_price,
+            )
             new_price_config = parsed.get("price_config")
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
@@ -267,50 +368,105 @@ class RoomCollectionService:
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
 
+            price_inferred_applied = False
+            if final_max_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
+                final_max_cap = price_inferred["max_capacity"]
+                price_inferred_applied = True
+            if final_rec_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
+                final_rec_cap = price_inferred["recommend_capacity"]
+                price_inferred_applied = True
+
             # Preserve existing JSON values unless parser explicitly provides replacements.
             existing_price_config = existing.get("price_config", []) if existing else []
             existing_base_cap = existing.get("base_capacity") if existing else None
             existing_extra_charge = existing.get("extra_charge") if existing else None
+            structured_extra_charge = self._extract_structured_extra_charge(room)
 
             final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
             if not final_price_config and existing_price_config:
                 final_price_config = existing_price_config
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
-            final_extra_charge = parsed["extra_charge"] if "extra_charge" in parsed else existing_extra_charge
+            if structured_extra_charge is not None:
+                final_extra_charge = structured_extra_charge
+            elif parsed.get("extra_charge") is not None:
+                final_extra_charge = parsed["extra_charge"]
+            else:
+                final_extra_charge = existing_extra_charge
 
             # Boolean fields fallback
             existing_can_reserve = existing.get("can_reserve_one_hour", True) if existing else True
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
-            final_can_reserve = parsed_can_reserve if parsed_can_reserve is not None else existing_can_reserve
+            structured_can_reserve = self._extract_structured_can_reserve_one_hour(room)
+            if structured_can_reserve is not None:
+                final_can_reserve = structured_can_reserve
+            elif parsed_can_reserve is not None:
+                final_can_reserve = parsed_can_reserve
+            else:
+                final_can_reserve = existing_can_reserve
             
-            existing_requires_call = existing.get("requires_contact_on_sameday", False) if existing else False
+            existing_requires_call = False
+            if existing:
+                existing_requires_call = existing.get("requires_contact_on_sameday")
+                if existing_requires_call is None:
+                    existing_requires_call = existing.get("requires_contact_same_day")
+                if existing_requires_call is None:
+                    existing_requires_call = existing.get("requires_call_on_sameday", False)
+
             parsed_requires_call = parsed.get("requires_contact_on_sameday")
             if parsed_requires_call is None:
                 parsed_requires_call = parsed.get("requires_same_day_contact")
             if parsed_requires_call is None:
                 parsed_requires_call = parsed.get("requires_contact_same_day")
-            final_requires_call = parsed_requires_call if parsed_requires_call is not None else existing_requires_call
+            if parsed_requires_call is None:
+                parsed_requires_call = parsed.get("requires_call_on_same_day")
+
+            structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
+            if structured_requires_call is not None:
+                final_requires_call = structured_requires_call
+            elif parsed_requires_call is not None:
+                final_requires_call = parsed_requires_call
+            else:
+                final_requires_call = existing_requires_call
 
             # Room Data
+            final_max_cap_int = self._coerce_int(final_max_cap)
+            if final_max_cap_int is None:
+                final_max_cap_int = self.MANUAL_REVIEW_FLAG
+
+            final_rec_cap_int = self._coerce_int(final_rec_cap)
+            if final_rec_cap_int is None:
+                final_rec_cap_int = (
+                    final_max_cap_int // 2 if final_max_cap_int != self.MANUAL_REVIEW_FLAG else self.MANUAL_REVIEW_FLAG
+                )
+
+            final_base_cap_int = self._coerce_int(final_base_cap)
+            final_extra_charge_int = self._coerce_int(final_extra_charge)
+
             room_data = {
                 "business_id": business["businessId"],
                 "biz_item_id": rid,
                 "name": room["name"],
                 "price_per_hour": final_price,
                 # Schema constraint: Default to 1 if null
-                "max_capacity": final_max_cap,
-                "recommend_capacity": final_rec_cap,
+                "max_capacity": final_max_cap_int,
+                "recommend_capacity": final_rec_cap_int,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
                 "recommend_capacity_range": self._calculate_capacity_range(
-                    parsed.get("recommend_capacity_range"),
-                    final_rec_cap,
-                    final_max_cap,
-                    final_base_cap,
-                    final_extra_charge
+                    text_rec_range
+                    or parsed.get("recommend_capacity_range")
+                    or (
+                        price_inferred.get("recommend_range")
+                        if price_inferred and price_inferred_applied
+                        else None
+                    ),
+                    final_rec_cap_int,
+                    final_max_cap_int,
+                    final_base_cap_int,
+                    final_extra_charge_int
                 ),
                 "price_config": final_price_config,
-                "base_capacity": final_base_cap,
-                "extra_charge": final_extra_charge,
+                "base_capacity": final_base_cap_int,
+                "extra_charge": final_extra_charge_int,
                 # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
                 "requires_contact_on_sameday": final_requires_call,
                 "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
@@ -318,8 +474,347 @@ class RoomCollectionService:
                 "image_urls": image_urls  # Save to JSONB column
             }
             
-            # Upsert Room
-            self.supabase.table("room").upsert(room_data).execute()
+            # Upsert Room (with schema-compat fallback for rolling migrations)
+            self._upsert_room_with_schema_fallback(room_data)
+
+    def _infer_capacity_from_price(
+        self,
+        business_id: Optional[str],
+        room_name: Optional[str],
+        price_per_hour: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        """Infer capacity using curated per-business price rules."""
+        if not business_id or not isinstance(price_per_hour, int) or price_per_hour <= 0:
+            return None
+
+        rules = self.PRICE_CAPACITY_RULES.get(str(business_id))
+        if not rules:
+            return None
+
+        best_rule: Optional[Dict[str, Any]] = None
+        best_gap: Optional[int] = None
+
+        for rule in rules:
+            rule_price = rule.get("price")
+            if not isinstance(rule_price, int):
+                continue
+            gap = abs(rule_price - price_per_hour)
+            if gap > self.PRICE_MATCH_TOLERANCE:
+                continue
+            if best_gap is None or gap < best_gap:
+                best_gap = gap
+                best_rule = rule
+
+        if not best_rule:
+            return None
+
+        logger.info(
+            "Price-based capacity inference applied: business_id=%s room=%s price=%s rule_price=%s max=%s",
+            business_id,
+            room_name or "",
+            price_per_hour,
+            best_rule.get("price"),
+            best_rule.get("max_capacity"),
+        )
+        return {
+            "max_capacity": best_rule.get("max_capacity"),
+            "recommend_capacity": best_rule.get("recommend_capacity"),
+            "recommend_range": best_rule.get("recommend_range"),
+        }
+
+    def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
+        """Upsert room row and retry if payload contains unknown columns.
+
+        During rolling migrations, some environments may still miss one of the
+        alias columns (e.g., requires_contact_on_sameday vs requires_contact_same_day).
+        """
+        payload = dict(room_data)
+        for col in list(self._unsupported_room_columns):
+            payload.pop(col, None)
+
+        for _ in range(6):
+            try:
+                self.supabase.table("room").upsert(payload).execute()
+                return
+            except Exception as exc:
+                missing_col = self._extract_missing_column_from_error(exc)
+                if not missing_col or missing_col not in payload:
+                    raise
+                logger.warning(
+                    "Room upsert fallback: removing missing column '%s' and retrying",
+                    missing_col,
+                )
+                self._unsupported_room_columns.add(missing_col)
+                payload.pop(missing_col, None)
+
+        # Defensive fallback (should not be reached under normal circumstances)
+        self.supabase.table("room").upsert(payload).execute()
+
+    @staticmethod
+    def _extract_missing_column_from_error(exc: Exception) -> Optional[str]:
+        """Extract missing-column name from PostgREST/Supabase error text."""
+        text = str(exc)
+
+        patterns = [
+            r"Could not find the '([^']+)' column",
+            r'column "([^"]+)" does not exist',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+        return None
+
+    def _extract_structured_can_reserve_one_hour(self, room: Dict) -> Optional[bool]:
+        """Infer one-hour reservation availability from structured booking policy fields."""
+        unit_code = (room.get("bookingTimeUnitCode") or "").upper()
+        min_booking_time = room.get("minBookingTime")
+
+        if isinstance(min_booking_time, (int, float)):
+            if "MIN" in unit_code:
+                return min_booking_time <= 60
+            return min_booking_time <= 1
+
+        booking_count_setting = room.get("bookingCountSettingJson")
+        if isinstance(booking_count_setting, str):
+            try:
+                booking_count_setting = json.loads(booking_count_setting)
+            except json.JSONDecodeError:
+                booking_count_setting = None
+
+        if isinstance(booking_count_setting, dict):
+            for key in ("minBookingTime", "minimumBookingTime", "minTime", "minimumTime"):
+                value = booking_count_setting.get(key)
+                coerced_value = self._coerce_int(value)
+                if coerced_value is not None:
+                    if "MIN" in unit_code:
+                        return coerced_value <= 60
+                    return coerced_value <= 1
+
+        return None
+
+    def _extract_structured_extra_charge(self, room: Dict) -> Optional[int]:
+        """Extract extra charge from structured JSON fields before text fallback."""
+        extra_fee_setting = room.get("extraFeeSettingJson")
+        if isinstance(extra_fee_setting, str):
+            try:
+                extra_fee_setting = json.loads(extra_fee_setting)
+            except json.JSONDecodeError:
+                extra_fee_setting = None
+
+        if not isinstance(extra_fee_setting, dict):
+            return None
+
+        key_hints = (
+            "extrafee",
+            "extra_fee",
+            "extracharge",
+            "extra_charge",
+            "additionalfee",
+            "additional_fee",
+            "surcharge",
+            "amount",
+        )
+
+        def walk(obj: Any) -> Optional[int]:
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    lowered = str(key).lower()
+                    if any(hint in lowered for hint in key_hints):
+                        parsed = self._coerce_int(value)
+                        if parsed is not None:
+                            return parsed
+                    nested = walk(value)
+                    if nested is not None:
+                        return nested
+            elif isinstance(obj, list):
+                for item in obj:
+                    nested = walk(item)
+                    if nested is not None:
+                        return nested
+            return None
+
+        return walk(extra_fee_setting)
+
+    @staticmethod
+    def _coerce_int(value: Any) -> Optional[int]:
+        """Best-effort conversion of number-like values to int."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            digits = re.sub(r"[^\d]", "", value)
+            if digits:
+                try:
+                    return int(digits)
+                except ValueError:
+                    return None
+        return None
+
+    @staticmethod
+    def _coerce_bool(value: Any) -> Optional[bool]:
+        """Best-effort conversion of bool-like values to bool."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            if value == 0:
+                return False
+            if value == 1:
+                return True
+            return None
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            true_tokens = {"true", "yes", "y", "1", "required", "need", "필수", "필요", "가능"}
+            false_tokens = {"false", "no", "n", "0", "optional", "불필요", "불가", "없음"}
+            if lowered in true_tokens:
+                return True
+            if lowered in false_tokens:
+                return False
+        return None
+
+    def _extract_capacity_text_signals(
+        self, room: Dict[str, Any]
+    ) -> Tuple[Optional[int], Optional[int], Optional[List[int]]]:
+        """Extract high-confidence capacity signals from room name/desc text.
+
+        Returns:
+            (max_capacity, recommend_capacity, recommend_capacity_range)
+        """
+        name = room.get("name") or ""
+        desc = room.get("desc") or ""
+        text = f"{name} {desc}"
+
+        # Strongest pattern: "정원 N명, 최대 M명"
+        pair_match = re.search(r"정원\s*(\d+)\s*명[^0-9]{0,20}최대\s*(\d+)\s*명", text)
+        if pair_match:
+            rec = int(pair_match.group(1))
+            max_cap = int(pair_match.group(2))
+            return max_cap, rec, [rec, rec]
+
+        rec_cap: Optional[int] = None
+        max_cap: Optional[int] = None
+        rec_range: Optional[List[int]] = None
+
+        # Recommended range: "4~6명", "4-6명", "권장 4~6명"
+        range_match = re.search(r"(\d+)\s*[~\-]\s*(\d+)\s*명", text)
+        if range_match:
+            min_r = int(range_match.group(1))
+            max_r = int(range_match.group(2))
+            if min_r <= max_r:
+                rec_range = [min_r, max_r]
+                rec_cap = (min_r + max_r) // 2
+
+        rec_match = re.search(r"정원\s*(\d+)\s*명", text)
+        if rec_match:
+            rec_cap = int(rec_match.group(1))
+            if rec_range is None:
+                rec_range = [rec_cap, rec_cap]
+
+        max_match = re.search(r"최대\s*(\d+)\s*명", text)
+        if max_match:
+            max_cap = int(max_match.group(1))
+
+        return max_cap, rec_cap, rec_range
+
+    def _extract_structured_requires_call_on_same_day(self, room: Dict[str, Any]) -> Optional[bool]:
+        """Extract requires-call-on-same-day from structured JSON-like fields."""
+        candidate_fields = [
+            room.get("extraDescJson"),
+            room.get("bookingCountSettingJson"),
+            room.get("extraFeeSettingJson"),
+            room.get("additionalPropertyJson"),
+        ]
+
+        parsed_candidates = []
+        for field in candidate_fields:
+            if isinstance(field, str):
+                try:
+                    parsed_candidates.append(json.loads(field))
+                except json.JSONDecodeError:
+                    continue
+            else:
+                parsed_candidates.append(field)
+
+        key_hints_strict = (
+            "requirescallonsameday",
+            "requirecallonsameday",
+            "sameDayCallRequired",
+            "phoneInquiryRequired",
+            "contactRequired",
+        )
+        key_hints_loose_a = ("same", "today", "day")
+        key_hints_loose_b = ("call", "phone", "contact", "inquiry", "consult", "confirm")
+
+        def walk(obj: Any) -> Optional[bool]:
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    key_str = str(key)
+                    key_lower = key_str.lower()
+
+                    if any(hint.lower() in key_lower for hint in key_hints_strict):
+                        coerced = self._coerce_bool(value)
+                        if coerced is not None:
+                            return coerced
+
+                    if any(token in key_lower for token in key_hints_loose_a) and any(
+                        token in key_lower for token in key_hints_loose_b
+                    ):
+                        coerced = self._coerce_bool(value)
+                        if coerced is not None:
+                            return coerced
+
+                    nested = walk(value)
+                    if nested is not None:
+                        return nested
+            elif isinstance(obj, list):
+                for item in obj:
+                    nested = walk(item)
+                    if nested is not None:
+                        return nested
+            return None
+
+        def collect_texts(obj: Any, out: List[str]):
+            if isinstance(obj, dict):
+                for value in obj.values():
+                    collect_texts(value, out)
+            elif isinstance(obj, list):
+                for item in obj:
+                    collect_texts(item, out)
+            elif isinstance(obj, str):
+                out.append(obj)
+
+        for candidate in parsed_candidates:
+            result = walk(candidate)
+            if result is not None:
+                return result
+
+            # Fallback on structured text blocks (e.g., extraDescJson[].title/context)
+            texts: List[str] = []
+            collect_texts(candidate, texts)
+            if texts:
+                joined = " ".join(texts).lower()
+
+                has_same_day = any(token in joined for token in ["당일", "same day", "same-day", "today", "오늘"])
+                has_call = any(
+                    token in joined
+                    for token in ["전화", "문의", "call", "phone", "contact", "inquiry", "consult", "confirm"]
+                )
+                has_negative = any(
+                    token in joined
+                    for token in ["없이", "불필요", "필요없", "not required", "no need", "without"]
+                )
+
+                # Strong positive: same-day + call/contact signals
+                if has_same_day and has_call and not has_negative:
+                    return True
+
+                # Explicit negative phrase in structured text
+                if has_same_day and has_call and has_negative:
+                    return False
+        return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:
         """Extract pricing information."""
@@ -340,7 +835,7 @@ class RoomCollectionService:
         """추가 요금 유무에 따라 권장 인원 범위 계산
 
         Args:
-            parsed_range: LLM/정규식이 파싱한 범위 ([min, max] 형태)
+            parsed_range: 파서가 파싱한 범위 ([min, max] 형태)
             rec_cap: 권장 인원 수
             max_cap: 최대 인원 수
             base_cap: 기준 인원 수 (추가 요금 계산 기준)
@@ -356,7 +851,7 @@ class RoomCollectionService:
         """
         # 1. 파싱된 범위 검증 후 우선 사용
         # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
-        # NOTE: LLM 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
+        # NOTE: 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
@@ -403,7 +898,7 @@ class RoomCollectionService:
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """
-        Export unresolved parsing results to JSON file for manual LLM verification.
+        Export unresolved parsing results to JSON file for manual verification.
 
         Phase 6: When parsing is incomplete (especially when no capacity info is found),
         export the original crawled text to a JSON file for later manual verification.
@@ -483,5 +978,6 @@ class RoomCollectionService:
                 logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
             else:
                 logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
+
 
 

@@ -1,24 +1,22 @@
 import os
 import asyncio
 import logging
+import random
+import time
 from typing import List, Dict, Optional
 from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
-from app.core.constants import SEOUL_DISTRICTS, MAJOR_CITIES
+from app.core.constants import PRIORITY_AREA_QUERIES
 from fake_useragent import UserAgent
 
 logger = logging.getLogger(__name__)
 
 class NaverMapCrawler:
-    """네이버 지도에서 합주실을 검색하고 Business ID를 수집합니다.
-    
-    주요 기능:
-    - Sync Playwright 브라우저를 백그라운드 스레드에서 생성하여 합주실 검색
-    - window.__APOLLO_STATE__ 전역 변수를 파싱하여 방/지점 객체 목록 확보
-    
-    Rationale (의도):
-        - 네이버 지도는 SPA(단일 페이지 앱) 형태이므로 HTML Parsing이 불가하여 Headless 브라우저 기반 동적 렌더링을 씀.
-        - Async Playwright가 Windows 환경에서 불안정할 수 있어 ThreadPoolExecutor와 sync_playwright 패턴으로 우회 처리.
+    """Search Naver Map for rehearsal rooms and collect business IDs.
+
+    Main behavior:
+    - Launch sync Playwright in a background thread for stable Windows runtime.
+    - Parse window.__APOLLO_STATE__ to extract place/business objects.
     """
     
     BASE_URL = "https://pcmap.place.naver.com/place/list"
@@ -27,23 +25,24 @@ class NaverMapCrawler:
     PAGE_WAIT_MS = int(os.getenv("CRAWLER_PAGE_WAIT_MS", "3000"))
     SCROLL_WAIT_MS = int(os.getenv("CRAWLER_SCROLL_WAIT_MS", "1500"))
     MAX_PAGES = int(os.getenv("CRAWLER_MAX_PAGES", "5"))
+    RATE_LIMIT_RETRIES = int(os.getenv("CRAWLER_RATE_LIMIT_RETRIES", "3"))
+    RATE_LIMIT_BACKOFF_SEC = float(os.getenv("CRAWLER_RATE_LIMIT_BACKOFF_SEC", "2.0"))
+    PAGE_WAIT_JITTER_MS = int(os.getenv("CRAWLER_PAGE_WAIT_JITTER_MS", "800"))
+    STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
     
     def __init__(self, headless: bool = True):
         self.headless = headless
+        self.storage_state_path = os.getenv(self.STORAGE_STATE_PATH_ENV)
         self._executor = ThreadPoolExecutor(max_workers=1)
 
     async def search_rehearsal_rooms(self, query: str = "합주실") -> List[Dict[str, str]]:
-        """특정 키워드로 합주실을 검색하고 결과 목록을 반환합니다.
-        
+        """Search rehearsal rooms by keyword and return parsed item summaries.
+
         Args:
-            query (str): 네이버 지도에 검색할 지역명 + 합주실 키워드 (예: '사당 합주실')
-            
+            query: Search phrase for Naver Map (for example, "sadang rehearsal room").
+
         Returns:
-            List[Dict[str, str]]: 파싱된 방 정보 딕셔너리 리스트 (id, name, address 등)
-            
-        Rationale (의도):
-            - Windows asyncio 이벤트 루프와 Playwright 내부 루프 충돌을 방지하기 위해
-              run_in_executor를 통해 별도의 스레드 풀에서 동기적으로 브라우저를 띄움.
+            List of dictionaries containing id, name, and address fields.
         """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._search_sync, query)
@@ -90,13 +89,27 @@ class NaverMapCrawler:
                     logger.error(f"Failed to launch bundled Chromium: {e2}")
                     return []
 
-            context = browser.new_context(
-                user_agent=user_agent_str,
-                extra_http_headers={"Referer": "https://map.naver.com/"},
-                viewport={"width": 1920, "height": 1080},
-                locale="ko-KR",
-                timezone_id="Asia/Seoul"
-            )
+            context_kwargs = {
+                "user_agent": user_agent_str,
+                "extra_http_headers": {"Referer": "https://map.naver.com/"},
+                "viewport": {"width": 1920, "height": 1080},
+                "locale": "ko-KR",
+                "timezone_id": "Asia/Seoul",
+            }
+            if self.storage_state_path:
+                if os.path.exists(self.storage_state_path):
+                    context_kwargs["storage_state"] = self.storage_state_path
+                    logger.info(
+                        "Using NAVER_STORAGE_STATE_PATH for map crawl context: %s",
+                        self.storage_state_path,
+                    )
+                else:
+                    logger.warning(
+                        "NAVER_STORAGE_STATE_PATH is set but file not found: %s",
+                        self.storage_state_path,
+                    )
+
+            context = browser.new_context(**context_kwargs)
             
             # Apply stealth if available
             try:
@@ -112,25 +125,25 @@ class NaverMapCrawler:
             page = context.new_page()
             
             try:
-                # 1. 첫 페이지 이동
+                # 1) Navigate to the first result page
                 url = f"{self.BASE_URL}?query={query}&display=70"
                 logger.info(f"Searching: {query} -> {url}")
-                page.goto(url)
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(self.PAGE_WAIT_MS)  # Wait for JS initialization
+                if not self._goto_search_page_with_retry(page, url):
+                    logger.warning(f"Failed to load search page after retries: {query}")
+                    return []
                 
-                # 2. 첫 페이지 데이터 추출
+                # 2) Extract first-page data
                 initial_data = self._extract_apollo_state_sync(page)
                 self._merge_results(results, initial_data)
                 
-                # 3. 페이지네이션 처리 (최대 MAX_PAGES 페이지)
+                # 3) Handle pagination (up to MAX_PAGES)
                 for i in range(2, self.MAX_PAGES + 1):
                     next_btn = page.get_by_role("link", name=str(i), exact=True)
                     
                     if next_btn.is_visible():
                         logger.info(f"Navigating to page {i}")
                         next_btn.click()
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(self._wait_with_jitter(1000))
                         page.wait_for_load_state("networkidle")
                         
                         page_data = self._extract_apollo_state_sync(page)
@@ -147,14 +160,42 @@ class NaverMapCrawler:
                 
         return list(results.values())
 
+    def _wait_with_jitter(self, base_ms: int) -> int:
+        return max(0, int(base_ms + random.randint(0, self.PAGE_WAIT_JITTER_MS)))
+
+    def _goto_search_page_with_retry(self, page, url: str) -> bool:
+        max_attempts = self.RATE_LIMIT_RETRIES + 1
+
+        for attempt in range(max_attempts):
+            response = page.goto(url)
+            status = getattr(response, "status", None)
+
+            if status == 429:
+                backoff = self.RATE_LIMIT_BACKOFF_SEC * (2**attempt)
+                jitter = random.uniform(0, max(self.RATE_LIMIT_BACKOFF_SEC, 0.0))
+                delay = backoff + jitter
+                logger.warning(
+                    "Naver map rate limit (429): attempt %s/%s, sleeping %.2fs",
+                    attempt + 1,
+                    max_attempts,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(self._wait_with_jitter(self.PAGE_WAIT_MS))
+            return True
+
+        return False
+
     def _extract_apollo_state_sync(self, page) -> List[Dict]:
-        """window.__APOLLO_STATE__ 변수에서 PlaceSummary + 추가 데이터 추출 (Sync version)
+        """Extract PlaceSummary and enrichment fields from window.__APOLLO_STATE__ (sync).
 
         Rationale:
-            PlaceSummary 외에 PlaceDetail(상세설명, 영업시간)과
-            BookingBusiness(예약 메타데이터) 접두사도 수집하여
-            GraphQL 호출 전에 확보 가능한 데이터를 최대화합니다.
-            추가 데이터가 없어도 기존 동작에는 영향 없습니다.
+            Collect PlaceDetail (description/hours) and BookingBusiness metadata
+            in the same page pass to maximize usable context without extra requests.
+            Missing enrichment data does not break baseline behavior.
         """
         return page.evaluate("""
             () => {
@@ -164,8 +205,8 @@ class NaverMapCrawler:
                 }
                 
                 const places = [];
-                const details = {};    // placeId -> PlaceDetail 필드
-                const bookings = {};   // placeId -> BookingBusiness 필드
+                const details = {};    // placeId -> PlaceDetail fields
+                const bookings = {};   // placeId -> BookingBusiness fields
                 const keys = Object.keys(state);
                 
                 for (const key of keys) {
@@ -201,13 +242,13 @@ class NaverMapCrawler:
                     }
                 }
                 
-                // PlaceDetail/BookingBusiness 데이터를 PlaceSummary에 병합 (enrich)
+                // Merge PlaceDetail/BookingBusiness into PlaceSummary (enrichment)
                 for (const place of places) {
                     const pid = place.placeId;
                     if (pid && details[pid]) {
                         Object.assign(place, details[pid]);
                     }
-                    // bookingBusinessId가 있으면 BookingBusiness 데이터 병합
+                    // If bookingBusinessId exists, merge BookingBusiness data
                     if (place.id && bookings[place.id]) {
                         Object.assign(place, bookings[place.id]);
                     }
@@ -222,7 +263,7 @@ class NaverMapCrawler:
         """)
 
     def _merge_results(self, target: Dict, source: List[Dict]):
-        """중복 제거하며 결과 병합"""
+        """Merge results while deduplicating by business id."""
         for item in source:
             if not isinstance(item, dict):
                 logger.warning(f"Skipping non-dict item: {item}")
@@ -236,12 +277,12 @@ class NaverMapCrawler:
 
     async def crawl_all_regions(self) -> List[Dict]:
         """
-        Crawl nationwide regions (Seoul 25 districts + Major Metropolitan Cities).
+        Crawl only globally configured priority station areas.
         Sequential execution for stability on Windows.
         Returns list of collected business Item dicts (deduplicated).
         """
-        all_queries = SEOUL_DISTRICTS + MAJOR_CITIES
-        logger.info(f"Starting sequential crawl for {len(all_queries)} regions...")
+        all_queries = list(PRIORITY_AREA_QUERIES)
+        logger.info(f"Starting sequential crawl for {len(all_queries)} priority areas...")
         
         all_results = {}
 
@@ -255,16 +296,16 @@ class NaverMapCrawler:
                     if item["id"] not in all_results:
                         all_results[item["id"]] = item
                         
-                # Small delay between regions
-                await asyncio.sleep(2)
+                # Small randomized delay between regions to reduce burst patterns
+                await asyncio.sleep(2 + random.uniform(0, 1.5))
                 
             except Exception as e:
                 logger.error(f"❌ Failed to crawl {query}: {e}")
             
-        logger.info(f"Total unique businesses found nationwide: {len(all_results)}")
+        logger.info(f"Total unique businesses found in priority areas: {len(all_results)}")
         return list(all_results.values())
 
-# 수동 실행용
+# Manual run helper
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     crawler = NaverMapCrawler(headless=False)

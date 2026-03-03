@@ -34,7 +34,7 @@
 | **Framework** | FastAPI | 고성능 비동기 웹 프레임워크 |
 | **Database** | Supabase (PostgreSQL) | 합주실 메타 데이터 및 즐겨찾기 관리 |
 | **Crawling** | Playwright / GraphQL / HTTPX | 네이버 지도/예약 크롤링 & 고성능 HTTP 클라이언트 |
-| **AI / LLM** | Google Gemini / Ollama | (선택) 데이터 분석 및 로컬/클라우드 LLM 활용 |
+| **Parser** | Rule-based Regex Parser | 합주실 룸 설명 구조화 파싱 |
 | **Security** | SlowAPI | API Rate Limiting (요청 제한) |
 | **Testing** | Pytest | 단위 테스트 및 통합 테스트 프레임워크 |
 | **VCS** | Git / GitHub | 버전 관리 및 협업 |
