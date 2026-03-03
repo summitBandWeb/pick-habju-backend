@@ -40,10 +40,12 @@ async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 및 스케줄러 설정
     await set_global_client()
     start_scheduler()
-    yield
-    # 종료 시 정리
-    shutdown_scheduler()
-    await close_global_client()
+    try:
+        yield
+    finally:
+        # 종료 시 정리
+        shutdown_scheduler()
+        await close_global_client()
 
 
 app = FastAPI(
