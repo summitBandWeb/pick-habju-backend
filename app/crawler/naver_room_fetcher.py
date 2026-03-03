@@ -68,8 +68,15 @@ class NaverRoomFetcher:
                 businessId
                 name
                 businessDisplayName
+                desc
                 coordinates
                 placeId
+                addressJson
+                phoneInformationJson
+                placeScheduleJson
+                extraDescJson
+                additionalPropertyJson
+                eventDescJson
             }
         }
         """
@@ -109,6 +116,17 @@ class NaverRoomFetcher:
             bizItemId
             name
             desc
+            stock
+            price
+            minBookingCount
+            maxBookingCount
+            bookingTimeUnitCode
+            minBookingTime
+            maxBookingTime
+            isOnsitePayment
+            bookingCountSettingJson
+            extraFeeSettingJson
+            extraDescJson
             minMaxPrice {
               minPrice
               maxNormalPrice
@@ -116,8 +134,6 @@ class NaverRoomFetcher:
             bizItemResources {
               resourceUrl
             }
-            bookingTimeUnitCode
-            minBookingTime
           }
         }
         """
