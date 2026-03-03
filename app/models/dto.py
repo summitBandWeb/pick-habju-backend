@@ -286,8 +286,8 @@ class RoomInfo(BaseModel):
 class RoomAvailability(BaseModel):
     """Availability information for a single room (Internal Use)"""
     room_detail: RoomDetail = Field(..., description="Room detail information")
-    available: Union[bool, str] = Field(..., description="Availability status (true/false/unknown)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
+    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot (false for standby)")
     
     # [v2.0.0] 추가 정보
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
@@ -299,8 +299,8 @@ class RoomResponse(BaseModel):
     biz_item_id: str
     name: str
     price_per_hour: int
-    available: Union[bool, str]
-    available_slots: Dict[str, Union[bool, str]]
+    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
+    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
     estimated_price: Optional[int] = None
     image_urls: List[str]
     max_capacity: int

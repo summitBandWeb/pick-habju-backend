@@ -41,6 +41,14 @@ from app.validate.room_detail_validator import validate_room_detail_list
 
 logger = logging.getLogger("app")
 
+def is_partial_available(res: RoomAvailability) -> bool:
+    """방이 부분적으로 예약 가능한지 (available은 False이지만 내부에 빈 슬롯이 있는지) 확인합니다."""
+    return (
+        res.available is False 
+        and isinstance(res.available_slots, dict) 
+        and any(v is True for v in res.available_slots.values())
+    )
+
 class AvailabilityService:
     """합주실 예약 가능 여부 조회 서비스
     
@@ -294,6 +302,25 @@ class AvailabilityService:
         
         validate_availability_request(request.date, hour_slots, target_rooms)
 
+        # 2.5. 오픈 대기 상태 검증 (standby_days 기준 예약 불가능한 방 미리 걸러내기)
+        today = datetime.now().date()
+        target_date_obj = datetime.strptime(request.date, "%Y-%m-%d").date()
+        days_diff = (target_date_obj - today).days
+
+        standby_results = []
+        crawling_rooms = []
+        
+        for room in target_rooms:
+            if room.standbyDays is not None and days_diff < room.standbyDays:
+                logger.info(f"[standby_filter] biz_item_id={room.biz_item_id} excluded: standby_days={room.standbyDays} > days_diff={days_diff}")
+                standby_results.append(RoomAvailability(
+                    room_detail=room,
+                    available="unknown",
+                    available_slots={hour_str: False for hour_str in hour_slots[:-1]}
+                ))
+            else:
+                crawling_rooms.append(room)
+
         # 3. 크롤러 비동기 작업 준비 및 실행
         tasks = []
         task_dates = []
@@ -302,12 +329,8 @@ class AvailabilityService:
         end_min = self._slot_to_minutes(request.end_hour)
         is_overnight = (start_mins > end_min)
         
-        # [중요] 사용자가 요청한 시간 범위를 조회하기 위한 시작 슬롯들만 추출 (마지막 경계 슬롯 제외)
-        # 예: 23:00 ~ 01:00 요청 시 hour_slots는 ["23:00", "00:00", "01:00"] 이며,
-        # 체크해야 할 시작 타임은 ["23:00", "00:00"] 입니다.
         slots_to_check = hour_slots[:-1]
 
-        # [최적화] 루프 내부 반복 연산을 줄이기 위해 크롤러 루프 외부에서 1회만 계산
         if is_overnight:
             day1_slots = [slot for slot in slots_to_check if self._slot_to_minutes(slot) >= start_mins]
             day2_slots = [slot for slot in slots_to_check if slot not in day1_slots]
@@ -317,7 +340,7 @@ class AvailabilityService:
             day2_slots = []
 
         for crawler_type, crawler in self.crawlers_map.items():
-            filtered_rooms = filter_rooms_by_type(target_rooms, crawler_type)
+            filtered_rooms = filter_rooms_by_type(crawling_rooms, crawler_type)
             if filtered_rooms:
                 if is_overnight:
                     if day1_slots:
@@ -330,7 +353,7 @@ class AvailabilityService:
                     tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     task_dates.append(request.date)
 
-        if not tasks:
+        if not tasks and not standby_results:
             return AvailabilityResponse(
                 date=request.date,
                 start_hour=request.start_hour,
@@ -340,9 +363,9 @@ class AvailabilityService:
                 branches=[]
             )
 
-        results_of_lists = await asyncio.gather(*tasks)
+        results_of_lists = await asyncio.gather(*tasks) if tasks else []
         
-        all_results = []
+        all_results = list(standby_results)
         for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
             for item in res_list:
                 if isinstance(item, Exception):
@@ -364,7 +387,10 @@ class AvailabilityService:
                 if existing.available == r.available:
                     pass # 동일 상태면 유지
                 else:
-                    existing.available = "unknown" # 상태가 엇갈리거나 이미 unknown이면 그대로 unknown
+                    if existing.available == "unknown" or r.available == "unknown":
+                        existing.available = "unknown" # 상태가 엇갈리거나 이미 unknown이면 그대로 unknown
+                    else:
+                        existing.available = False # True 와 False 엇갈림 -> False
                     
                 # 2. 각 시간대별 슬롯 가능 여부 딕셔너리 병합
                 existing.available_slots.update(r.available_slots)
@@ -393,8 +419,12 @@ class AvailabilityService:
             if res.available not in (True, False, "unknown"):
                 logger.warning(f"Unexpected available value: {res.available!r} for biz_item_id={room_detail.biz_item_id}")
 
-            # 예약 가능한 룸만 결과에 포함
-            if res.available is True or res.available == "unknown":
+            is_partial = is_partial_available(res)
+            if is_partial:
+                logger.info(f"[partial_availability] biz_item_id={room_detail.biz_item_id} marked as partial (available=False but has true slots)")
+
+            # 예약 가능한 룸, 부분 예약 룸, 결제 불가능한 오픈대기 룸만 포함
+            if res.available is True or res.available == "unknown" or is_partial:
                 if isinstance(res.estimated_price, int) and res.estimated_price > 0:
                     total_price = res.estimated_price
                 else:
@@ -402,7 +432,7 @@ class AvailabilityService:
                         room_detail=room_detail,
                         date_str=request.date,
                         hour_slots=hour_slots,
-                        available_slots=res.available_slots if res.available == "unknown" else None,
+                        available_slots=res.available_slots if is_partial else None,
                     )
 
                 room_resp = RoomResponse(
@@ -411,7 +441,7 @@ class AvailabilityService:
                     price_per_hour=room_detail.pricePerHour,
                     available=res.available,
                     available_slots=res.available_slots,
-                    estimated_price=total_price,
+                    estimated_price=total_price if res.available is not False else None,
                     image_urls=room_detail.imageUrls,
                     max_capacity=room_detail.maxCapacity,
                     # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)
@@ -422,11 +452,12 @@ class AvailabilityService:
                     min_capacity=room_detail.minCapacity,
                     min_hours=room_detail.minHours,
                     max_hours=room_detail.maxHours,
-                    standby_days=room_detail.standbyDays,
+                    standby_days=room_detail.standbyDays if res.available == "unknown" else None,
                     policy_warnings=res.policy_warnings
                 )
 
-                available_ids.append(room_detail.biz_item_id)
+                if res.available != "unknown":
+                    available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
                 
                 if bid not in branch_dict:
@@ -437,18 +468,19 @@ class AvailabilityService:
                         lng=room_detail.lng,
                         min_price_available=None,
                         min_price_partial=None,
-                        available_count=1,
+                        available_count=1 if res.available != "unknown" else 0,
                         phone_number=room_detail.phoneNumber,
                         display_name=room_detail.displayName,
                         rooms=[room_resp]
                     )
-                    AvailabilityService._update_min_prices(branch_dict[bid], res.available, total_price)
+                    AvailabilityService._update_min_prices(branch_dict[bid], res.available, total_price, is_partial)
                 else:
                     branch_obj = branch_dict[bid]
                     branch_obj.rooms.append(room_resp)
-                    branch_obj.available_count += 1
+                    if res.available != "unknown":
+                        branch_obj.available_count += 1
                     
-                    AvailabilityService._update_min_prices(branch_obj, res.available, total_price)
+                    AvailabilityService._update_min_prices(branch_obj, res.available, total_price, is_partial)
                     
                     if not branch_obj.phone_number and room_detail.phoneNumber:
                         branch_obj.phone_number = room_detail.phoneNumber
@@ -465,11 +497,20 @@ class AvailabilityService:
         )
 
     @staticmethod
-    def _update_min_prices(branch_obj: BranchResponse, available: bool | str, total_price: int) -> None:
+    def _update_min_prices(branch_obj: BranchResponse, available: bool | str, total_price: int, is_partial: bool = False) -> None:
+        """
+        지점(Branch) 단위의 최소 예약 가능 가격을 갱신합니다.
+        
+        Args:
+            branch_obj: 대상 지점 응답 모델
+            available: 방의 현재 예약 상태 (True, False, "unknown")
+            total_price: 계산된 총 가격
+            is_partial: 해당 방이 예약 상태는 False지만 부분적으로 이용 가능한 슬롯이 있는지 여부
+        """
         if available is True:
             if branch_obj.min_price_available is None or total_price < branch_obj.min_price_available:
                 branch_obj.min_price_available = total_price
-        elif available == "unknown":
+        elif is_partial:
             if branch_obj.min_price_partial is None or total_price < branch_obj.min_price_partial:
                 branch_obj.min_price_partial = total_price
 
@@ -594,12 +635,14 @@ class AvailabilityService:
                     message=f"최대 {room.maxHours}시간까지만 예약할 수 있습니다.",
                 ))
 
-            if res.available is True or res.available == "unknown":
+            is_partial = is_partial_available(res)
+            
+            if res.available is True or is_partial:
                 try:
                     if isinstance(room.priceConfig, dict):
                         price = self.calculate_total_price(
                             room, request.date, hour_slots,
-                            available_slots=res.available_slots if res.available == "unknown" else None,
+                            available_slots=res.available_slots if is_partial else None,
                         )
                     else:
                         normalized_rules = (
@@ -620,8 +663,8 @@ class AvailabilityService:
                         if end_dt <= start_dt:
                             end_dt += timedelta(days=1)
 
-                        # 부분 예약 가능(unknown)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
-                        if res.available == "unknown":
+                        # 부분 예약 가능(partial)인 경우, 가장 길게 연속으로 예약 가능한 덩어리(블록) 하나만 합산
+                        if is_partial:
                             longest_block = []
                             current_block = []
                             

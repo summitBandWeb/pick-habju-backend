@@ -184,6 +184,43 @@ class TestApplyPolicies:
         assert kwargs["end_dt"] == datetime(2099, 1, 2, 0, 0)
         assert results[0].estimated_price == 20000
 
+    def test_calculate_total_price_partial_longest_block(self, service):
+        """가장 긴 연속된 빈 슬롯 블록을 찾아 요금을 계산하는 로직 검증 (min_price_partial)"""
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, 
+            priceConfig={"default": 10000},
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
+        )
+        
+        # hour_slots: 14:00 ~ 18:00 (총 4슬롯 크기, billable_slots = ["14:00", "15:00", "16:00", "17:00"])
+        hour_slots = ["14:00", "15:00", "16:00", "17:00", "18:00"]
+        
+        # available 상태: 14, 15 가능 / 16 불가 / 17 가능
+        # 따라서 가장 긴 블록은 ["14:00", "15:00"] (2시간)
+        available_slots = {"14:00": True, "15:00": True, "16:00": False, "17:00": True}
+        
+        # 10000 * 2시간 = 20000원이 연산되어야 함
+        total_price = service.calculate_total_price(room, "2026-03-10", hour_slots, available_slots)
+        assert total_price == 20000
+
+    def test_calculate_total_price_overnight(self, service):
+        """심야 예약 시 자정을 넘기는 슬롯의 익일 날짜 반영 로직 검증"""
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, 
+            priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
+        )
+        # 평일 목요일 시나리오 ("2026-03-05" is Thursday)
+        # hour_slots: 23:00 ~ 02:00 (총 3슬롯)
+        hour_slots = ["23:00", "00:00", "01:00", "02:00"]
+        
+        # 23:00 슬롯은 10000, 00:00과 01:00 슬롯은 overrides에 의해 15000이 적용되어야 함. 익일이지만 평일이라 똑같이 weekday 규칙 탑승
+        # 10000 + 15000 + 15000 = 40000원
+        total_price = service.calculate_total_price(room, "2026-03-05", hour_slots, available_slots=None)
+        assert total_price == 40000
+
 
 class TestAvailabilityServiceFlow:
     """check_availability 전체 흐름 테스트 (DB/Crawler Mocking)
@@ -278,7 +315,7 @@ class TestAvailabilityServiceFlow:
             room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}
         )
 
-        # 방 2: 부분 예약 가능 (available="unknown"), 예약가능한 1시간 기준 7500원 -> min_price_partial 후보
+        # 방 2: 부분 예약 가능 (available=False), 예약가능한 1시간 기준 7500원 -> min_price_partial 후보
         room2 = RoomDetail(
             name="Room2", branch="Branch", business_id=branch_id, biz_item_id="r2",
             pricePerHour=7500, max_capacity=10,
@@ -286,7 +323,7 @@ class TestAvailabilityServiceFlow:
             recommend_capacity_range=[4, 8], priceConfig={}
         )
         avail_2 = RoomAvailability(
-            room_detail=room2, available="unknown", available_slots={"14:00": True, "15:00": False},
+            room_detail=room2, available=False, available_slots={"14:00": True, "15:00": False},
             estimated_price=7500
         )
 
@@ -371,7 +408,7 @@ class TestAvailabilityServiceFlow:
             recommend_capacity_range=[4, 8], priceConfig={}
         )
         avail_1 = RoomAvailability(
-            room_detail=room1, available="unknown", available_slots={"14:00": True, "15:00": False}, estimated_price=10000
+            room_detail=room1, available=False, available_slots={"14:00": True, "15:00": False}, estimated_price=10000
         )
         
         mock_crawler.check_availability.return_value = [avail_1]
@@ -408,5 +445,73 @@ class TestAvailabilityServiceFlow:
              patch("app.services.availability_service.validate_availability_request"):
             mock_db.return_value = [room1]
             response = await service.check_availability(req)
-
         assert len(response.branches) == 0
+
+    @pytest.mark.asyncio
+    @patch("app.services.availability_service.datetime")
+    async def test_standby_days_filter(self, mock_datetime, service, mock_crawler):
+        """standby_days 기준 예약 불가능한 방 사전 필터링 검증"""
+        from datetime import datetime, date, timedelta
+        
+        # mock datetime to today
+        today_date = date.today()
+        class MockDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.combine(today_date, datetime.min.time())
+
+        mock_datetime.now = MockDatetime.now
+        mock_datetime.strptime.side_effect = datetime.strptime
+
+        # target_date is today + 7 days
+        target_date_str = (today_date + timedelta(days=7)).strftime("%Y-%m-%d")
+
+        req = AvailabilityRequest(
+            date=target_date_str, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        
+        # 1. standbyDays = None 인 방 -> 크롤링 대상 포함
+        room1 = RoomDetail(
+            name="Room1", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=None
+        )
+        avail_1 = RoomAvailability(room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000)
+
+        # 2. days_diff(7) >= standbyDays(5) 인 방 -> 크롤링 대상 포함
+        room2 = RoomDetail(
+            name="Room2", branch="Branch", business_id="b1", biz_item_id="r2",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=5
+        )
+        avail_2 = RoomAvailability(room_detail=room2, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000)
+
+        # 3. days_diff(7) < standbyDays(10) 인 방 -> 크롤링 대상 제외, available="unknown"
+        room3 = RoomDetail(
+            name="Room3", branch="Branch", business_id="b1", biz_item_id="r3",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=10
+        )
+
+        mock_crawler.check_availability.return_value = [avail_1, avail_2]
+
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room1, room2]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room1, room2, room3]
+            response = await service.check_availability(req)
+
+        assert len(response.branches) == 1
+        branch = response.branches[0]
+        assert len(branch.rooms) == 3
+
+        r1 = next(r for r in branch.rooms if r.biz_item_id == "r1")
+        assert r1.available is True
+        
+        r2 = next(r for r in branch.rooms if r.biz_item_id == "r2")
+        assert r2.available is True
+
+        r3 = next(r for r in branch.rooms if r.biz_item_id == "r3")
+        assert r3.available == "unknown"
+        assert r3.standby_days == 10

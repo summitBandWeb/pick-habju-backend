@@ -25,7 +25,7 @@ class GrooveCrawler(BaseCrawler):
             # 즉시 'unknown' 결과를 반환
             unknown_results = []
             for room in target_rooms:
-                slots = {hour_str: "unknown" for hour_str in hour_slots}
+                slots = {hour_str: False for hour_str in hour_slots}
                 result = RoomAvailability(
                     room_detail=room,
                     available="unknown",
