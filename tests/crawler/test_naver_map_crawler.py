@@ -196,6 +196,20 @@ class TestRepresentativeKeywordHelpers:
         text = "소개\n합주 가능\n문의 010-0000-0000"
         assert crawler._extract_representative_keywords_from_text(text) == []
 
+    def test_extract_representative_keywords_from_text_keeps_parsing_after_blank_line(self, crawler):
+        text = """
+        대표 키워드
+        합주실   음악연습실
+
+        악기연습실   밴드합주실
+        """
+        assert crawler._extract_representative_keywords_from_text(text) == [
+            "합주실",
+            "음악연습실",
+            "악기연습실",
+            "밴드합주실",
+        ]
+
     def test_normalize_representative_keywords_deduplicates(self, crawler):
         assert crawler._normalize_representative_keywords(
             [" 합주실 ", "음악연습실", "합주실", "음악연습실", "  "]

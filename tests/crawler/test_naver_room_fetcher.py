@@ -214,3 +214,21 @@ def test_fetcher_prefers_cookie_header_env_over_storage_state(tmp_path: Path):
         fetcher = NaverRoomFetcher()
 
     assert fetcher.headers.get("Cookie") == "NID_SES=manual"
+
+
+def test_fetcher_storage_state_rejects_lookalike_domain(tmp_path: Path):
+    state = {
+        "cookies": [
+            {"name": "NID_SES", "value": "good", "domain": ".naver.com"},
+            {"name": "NID_FAKE", "value": "bad", "domain": "attackernaver.com"},
+        ]
+    }
+    state_path = tmp_path / "state.json"
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    with patch.dict("os.environ", {"NAVER_STORAGE_STATE_PATH": str(state_path)}, clear=False):
+        fetcher = NaverRoomFetcher()
+
+    assert "Cookie" in fetcher.headers
+    assert "NID_SES=good" in fetcher.headers["Cookie"]
+    assert "NID_FAKE=bad" not in fetcher.headers["Cookie"]

@@ -356,7 +356,6 @@ class NaverRoomFetcher:
         if not isinstance(cookies, list):
             return None
 
-        allowed_domains = ("naver.com", ".naver.com", "booking.naver.com", "place.naver.com")
         pairs: List[str] = []
         for cookie in cookies:
             domain = str(cookie.get("domain", ""))
@@ -364,12 +363,17 @@ class NaverRoomFetcher:
             value = cookie.get("value")
             if not name or value is None:
                 continue
-            if any(domain.endswith(d) for d in allowed_domains):
+            if self._is_allowed_naver_cookie_domain(domain):
                 pairs.append(f"{name}={value}")
 
         if not pairs:
             return None
         return "; ".join(pairs)
+
+    @staticmethod
+    def _is_allowed_naver_cookie_domain(domain: str) -> bool:
+        normalized = str(domain or "").strip().lstrip(".").lower()
+        return normalized == "naver.com" or normalized.endswith(".naver.com")
 
 # Manual smoke test
 if __name__ == "__main__":

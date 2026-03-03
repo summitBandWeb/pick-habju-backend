@@ -30,10 +30,11 @@ class NaverMapCrawler:
     RATE_LIMIT_RETRIES = int(os.getenv("CRAWLER_RATE_LIMIT_RETRIES", "3"))
     RATE_LIMIT_BACKOFF_SEC = float(os.getenv("CRAWLER_RATE_LIMIT_BACKOFF_SEC", "2.0"))
     PAGE_WAIT_JITTER_MS = int(os.getenv("CRAWLER_PAGE_WAIT_JITTER_MS", "800"))
+    PHONE_REVEAL_TIMEOUT_SEC = float(os.getenv("CRAWLER_PHONE_REVEAL_TIMEOUT_SEC", "30"))
     STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
     INFO_TAB_LABEL = "정보"
     REPRESENTATIVE_KEYWORDS_LABEL = "대표 키워드"
-    PHONE_VIEW_LABEL = "?꾪솕踰덊샇 蹂닿린"
+    PHONE_VIEW_LABEL = "전화번호 보기"
     PHONE_PATTERN = re.compile(
         r"(?<!\d)(?:0507[\s\-]?\d{3,4}[\s\-]?\d{4}|(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}|(?:1544|1566|1577|1588|1599|1600|1644|1661|1670|1688)[\s\-]?\d{4})(?!\d)"
     )
@@ -182,6 +183,7 @@ class NaverMapCrawler:
         user_agent_str = self._resolve_user_agent()
         entry_url = f"https://map.naver.com/p/entry/place/{place_id}"
         revealed_from_api: Optional[str] = None
+        deadline = time.monotonic() + max(self.PHONE_REVEAL_TIMEOUT_SEC, 5.0)
 
         with sync_playwright() as p:
             browser = None
@@ -245,9 +247,16 @@ class NaverMapCrawler:
             page.on("response", _on_response)
 
             try:
+                if time.monotonic() >= deadline:
+                    return revealed_from_api
                 page.goto(entry_url)
                 page.wait_for_load_state("domcontentloaded")
-                page.wait_for_timeout(self._wait_with_jitter(self.PAGE_WAIT_MS))
+                initial_wait_ms = min(
+                    self._wait_with_jitter(self.PAGE_WAIT_MS),
+                    max(0, int((deadline - time.monotonic()) * 1000)),
+                )
+                if initial_wait_ms > 0:
+                    page.wait_for_timeout(initial_wait_ms)
 
                 target_frame = None
                 for frame in page.frames:
@@ -257,7 +266,8 @@ class NaverMapCrawler:
                 if not target_frame:
                     return revealed_from_api
 
-                body_text = target_frame.locator("body").inner_text(timeout=5000)
+                body_timeout_ms = min(5000, max(800, int((deadline - time.monotonic()) * 1000)))
+                body_text = target_frame.locator("body").inner_text(timeout=body_timeout_ms)
                 immediate_phone = self._extract_phone_candidate(body_text)
                 if immediate_phone:
                     return immediate_phone
@@ -267,7 +277,11 @@ class NaverMapCrawler:
 
                 clicked = False
                 try:
-                    target_frame.get_by_text(self.PHONE_VIEW_LABEL, exact=False).first.click(timeout=3000, force=True)
+                    click_timeout_ms = min(3000, max(800, int((deadline - time.monotonic()) * 1000)))
+                    target_frame.get_by_text(self.PHONE_VIEW_LABEL, exact=False).first.click(
+                        timeout=click_timeout_ms,
+                        force=True,
+                    )
                     clicked = True
                 except Exception:
                     try:
@@ -276,12 +290,12 @@ class NaverMapCrawler:
                                 const nodes = [...document.querySelectorAll('*')];
                                 const el = nodes.find((n) => n.textContent && n.textContent.includes(needle));
                                 if (!el) return 'not-found';
-                                let cur = el;
-                                for (let i = 0; i < 8 && cur; i++) {
-                                    try { cur.click(); } catch (e) {}
-                                    cur = cur.parentElement;
+                                const clickable = el.closest('button, [role="button"], a, [onclick]');
+                                if (clickable) {
+                                    try { clickable.click(); return 'clicked-via-js'; } catch (e) {}
                                 }
-                                return 'clicked-via-js';
+                                try { el.click(); return 'clicked-via-js'; } catch (e) {}
+                                return 'not-clicked';
                             }""",
                             self.PHONE_VIEW_LABEL,
                         )
@@ -290,10 +304,16 @@ class NaverMapCrawler:
                         clicked = False
 
                 if clicked:
-                    page.wait_for_timeout(self._wait_with_jitter(3000))
+                    post_click_wait_ms = min(
+                        self._wait_with_jitter(3000),
+                        max(0, int((deadline - time.monotonic()) * 1000)),
+                    )
+                    if post_click_wait_ms > 0:
+                        page.wait_for_timeout(post_click_wait_ms)
                     if revealed_from_api:
                         return revealed_from_api
-                    after_text = target_frame.locator("body").inner_text(timeout=5000)
+                    after_timeout_ms = min(5000, max(800, int((deadline - time.monotonic()) * 1000)))
+                    after_text = target_frame.locator("body").inner_text(timeout=after_timeout_ms)
                     revealed_phone = self._extract_phone_candidate(after_text)
                     if revealed_phone:
                         return revealed_phone
@@ -380,7 +400,7 @@ class NaverMapCrawler:
                             if (!state || typeof state !== 'object') return [];
                             const out = [];
                             const seen = new Set();
-                            const keyMatched = (k) => /keyword|hashtag|tag/i.test(String(k || ""));
+                            const keyMatched = (k) => /keyword|hashtag|tag|키워드|해시태그|태그/i.test(String(k || ""));
                             const push = (v) => {
                                 if (typeof v !== 'string') return;
                                 const t = v.trim();
@@ -460,12 +480,22 @@ class NaverMapCrawler:
         tail = text[marker_idx + len(cls.REPRESENTATIVE_KEYWORDS_LABEL):]
         lines = [ln.strip() for ln in tail.splitlines()]
         candidates: List[str] = []
+        section_break_markers = {
+            "이용안내",
+            "안내",
+            "소개",
+            "메뉴",
+            "가격",
+            "찾아오시는 길",
+            "편의",
+        }
 
         for line in lines:
             if not line:
-                if candidates:
-                    break
                 continue
+
+            if line in section_break_markers and candidates:
+                break
 
             if line in {"홈", "소식", "예약", "리뷰", "사진", "정보", "문의", cls.REPRESENTATIVE_KEYWORDS_LABEL}:
                 continue
@@ -605,6 +635,14 @@ class NaverMapCrawler:
                 const places = [];
                 const details = {};    // placeId -> PlaceDetail fields
                 const bookings = {};   // placeId -> BookingBusiness fields
+                const mergeNonNull = (target, source) => {
+                    if (!source) return;
+                    for (const [k, v] of Object.entries(source)) {
+                        if (v !== null && v !== undefined) {
+                            target[k] = v;
+                        }
+                    }
+                };
                 const keys = Object.keys(state);
                 
                 for (const key of keys) {
@@ -647,11 +685,11 @@ class NaverMapCrawler:
                 for (const place of places) {
                     const pid = place.placeId;
                     if (pid && details[pid]) {
-                        Object.assign(place, details[pid]);
+                        mergeNonNull(place, details[pid]);
                     }
                     // If bookingBusinessId exists, merge BookingBusiness data
                     if (place.id && bookings[place.id]) {
-                        Object.assign(place, bookings[place.id]);
+                        mergeNonNull(place, bookings[place.id]);
                     }
                 }
                 
