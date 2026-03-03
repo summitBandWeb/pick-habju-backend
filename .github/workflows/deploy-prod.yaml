@@ -238,6 +238,8 @@ jobs:
             SUPABASE_KEY=${{ secrets.PROD_SUPABASE_KEY }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             RATE_LIMIT_PER_MINUTE=${{ secrets.RATE_LIMIT_PER_MINUTE }}
+            APP_ENV=production
+            DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }}
 
       # -----------------------------------------------------------------------
       # Discord 알림
