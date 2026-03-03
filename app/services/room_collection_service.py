@@ -82,22 +82,6 @@ class RoomCollectionService:
             {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [3, 5]},
         ],
     }
-    REHEARSAL_KEYWORDS: Tuple[str, ...] = (
-        "합주실",
-        "합주",
-        "밴드합주",
-        "음악연습실",
-        "악기연습실",
-        "드럼연습실",
-    )
-    REPRESENTATIVE_KEYWORD_FIELDS: Tuple[str, ...] = (
-        "representativeKeyword",
-        "representativeKeywords",
-        "keywords",
-        "tags",
-        "hashtagList",
-        "hashtag",
-    )
 
     def __init__(self):
         self.map_crawler = NaverMapCrawler()
@@ -191,10 +175,7 @@ class RoomCollectionService:
         if isinstance(max_targets, int) and max_targets > 0:
             target_items = target_items[:max_targets]
 
-        success_count, failed_count, failures, skipped = await self._collect_items(target_items)
-        skipped_no_rooms = [row for row in skipped if row.get("status") == "skipped_no_rooms"]
-        skipped_non_rehearsal = [row for row in skipped if row.get("status") == "skipped_non_rehearsal"]
-        skipped_filtered_rooms = [row for row in skipped if row.get("status") == "skipped_all_rooms_filtered"]
+        success_count, failed_count, failures = await self._collect_items(target_items)
 
         return {
             "mode": "priority_areas",
@@ -205,11 +186,6 @@ class RoomCollectionService:
             "success": success_count,
             "failed": failed_count,
             "failures": failures,
-            "skipped": len(skipped),
-            "skipped_no_rooms": len(skipped_no_rooms),
-            "skipped_non_rehearsal": len(skipped_non_rehearsal),
-            "skipped_all_rooms_filtered": len(skipped_filtered_rooms),
-            "skipped_details": skipped,
         }
 
     async def collect_by_query(self, query: str) -> Dict[str, Any]:
@@ -249,15 +225,11 @@ class RoomCollectionService:
         logger.info("Starting global-priority collection (fixed 6 areas)...")
         return await self.collect_priority_areas()
 
-    async def _collect_items(
-        self,
-        items: List[Dict[str, Any]],
-    ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]]]:
+    async def _collect_items(self, items: List[Dict[str, Any]]) -> Tuple[int, int, List[Dict[str, Any]]]:
         """Collect by business id for each item and aggregate success/failure stats."""
         success_count = 0
         failed_count = 0
         failures: List[Dict[str, Any]] = []
-        skipped: List[Dict[str, Any]] = []
         total_items = len(items)
 
         for idx, item in enumerate(items):
@@ -273,19 +245,7 @@ class RoomCollectionService:
                     business_id,
                 )
                 self._source_item_hints[str(business_id)] = item
-                result = await self.collect_by_id(str(business_id))
-                if isinstance(result, dict):
-                    status = str(result.get("status") or "")
-                    if status.startswith("skipped_"):
-                        skipped.append(
-                            {
-                                "business_id": item.get("id", ""),
-                                "business_name": item.get("name", ""),
-                                "source_queries": item.get("source_queries", []),
-                                **result,
-                            }
-                        )
-                        continue
+                await self.collect_by_id(str(business_id))
                 success_count += 1
             except Exception as e:
                 logger.exception("Failed to collect item=%s", item)
@@ -297,14 +257,14 @@ class RoomCollectionService:
                     "reason": str(e),
                 })
 
-        return success_count, failed_count, failures, skipped
+        return success_count, failed_count, failures
 
-    async def collect_by_id(self, business_id: str) -> Dict[str, Any]:
-        """특정 Business ID의 룸 정보를 수집하고 저장한다."""
+    async def collect_by_id(self, business_id: str):
+        """Collect and save room information for a specific Business ID."""
         logger.info(f"Collecting business_id: {business_id}")
         source_hint = self._source_item_hints.get(str(business_id))
 
-        # 1. 상세 정보 조회
+        # 1. Fetch Full Info
         data = await self.room_fetcher.fetch_full_info(
             business_id,
             source_hint=source_hint,
@@ -314,74 +274,13 @@ class RoomCollectionService:
 
         business = data["business"]
         rooms = data["rooms"]
-
-        if source_hint:
-            has_representative_keywords = any(source_hint.get(field) for field in self.REPRESENTATIVE_KEYWORD_FIELDS)
-            place_id = source_hint.get("placeId") or business.get("placeId")
-            if not has_representative_keywords and place_id:
-                reveal_keywords = getattr(self.map_crawler, "reveal_representative_keywords", None)
-                if callable(reveal_keywords):
-                    try:
-                        revealed = reveal_keywords(str(place_id))
-                        if inspect.isawaitable(revealed):
-                            revealed = await revealed
-                        if isinstance(revealed, list):
-                            normalized = [str(v).strip() for v in revealed if isinstance(v, str) and str(v).strip()]
-                        else:
-                            normalized = []
-                        if normalized:
-                            source_hint = dict(source_hint)
-                            source_hint["representativeKeywords"] = normalized
-                            self._source_item_hints[str(business_id)] = source_hint
-                            logger.info(
-                                "Recovered representative keywords via place page: business_id=%s place_id=%s",
-                                business_id,
-                                place_id,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            "Representative keyword reveal failed: business_id=%s place_id=%s err=%s",
-                            business_id,
-                            place_id,
-                            e,
-                        )
-
-        domain_decision = self._evaluate_rehearsal_domain(
-            source_hint=source_hint,
-            business=business,
-            rooms=rooms,
-        )
-
-        # 도메인 필터는 지도 검색으로 유입된 항목(source_hint 존재)에만 강제 적용한다.
-        # 수동 점검 목적의 direct collect_by_id 호출은 최대한 허용적으로 유지한다.
-        if source_hint and not domain_decision["is_candidate"]:
-            logger.warning(
-                "Skipping non-rehearsal business %s (pos=%s, neg=%s)",
-                business_id,
-                domain_decision["positive_hits"],
-                domain_decision["negative_hits"],
-            )
-            return {
-                "status": "skipped_non_rehearsal",
-                "reason": domain_decision["reason"],
-                "positive_hits": domain_decision["positive_hits"],
-                "negative_hits": domain_decision["negative_hits"],
-                "representative_keywords": domain_decision["representative_keywords"],
-            }
-
+        
         if not rooms:
             logger.warning(
                 "No room inventory for business %s. Skipping collection (contact-required candidate).",
                 business_id,
             )
-            return {
-                "status": "skipped_no_rooms",
-                "reason": "biz_items_empty",
-                "is_rehearsal_candidate": domain_decision["is_candidate"],
-                "positive_hits": domain_decision["positive_hits"],
-                "negative_hits": domain_decision["negative_hits"],
-                "representative_keywords": domain_decision["representative_keywords"],
-            }
+            return
 
         target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(rooms)
         if not target_rooms:
@@ -391,16 +290,7 @@ class RoomCollectionService:
                 filtered_stats["inquiry_required"],
                 filtered_stats["missing_reservation"],
             )
-            return {
-                "status": "skipped_all_rooms_filtered",
-                "reason": "rooms_missing_reservation_metadata",
-                "inquiry_required": filtered_stats["inquiry_required"],
-                "missing_reservation": filtered_stats["missing_reservation"],
-                "is_rehearsal_candidate": domain_decision["is_candidate"],
-                "positive_hits": domain_decision["positive_hits"],
-                "negative_hits": domain_decision["negative_hits"],
-                "representative_keywords": domain_decision["representative_keywords"],
-            }
+            return
 
         if filtered_stats["inquiry_required"] or filtered_stats["missing_reservation"]:
             logger.info(
@@ -424,137 +314,40 @@ class RoomCollectionService:
                 "business_desc": business_desc
             })
         
-        # 병렬 처리를 위한 청크 분할
+        # Chunk items for parallel processing
         parsed_results = await self._parse_with_concurrency(parse_items)
 
-        # 3. DB 저장 (Branch -> Room(이미지 포함))
+        # 3. Save to DB (Branch -> Room(with images))
         await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
         logger.info(f"Successfully saved business {business_id} with {len(target_rooms)} rooms")
 
-        # 4. 미해결 항목 내보내기 (수동 검증 큐)
+        # 4. Export unresolved items (Phase 6: Manual verification queue)
         await self._export_unresolved(business, target_rooms, parsed_results)
-        return {
-            "status": "collected",
-            "rooms_collected": len(target_rooms),
-            "is_rehearsal_candidate": domain_decision["is_candidate"],
-            "representative_keywords": domain_decision["representative_keywords"],
-        }
 
     async def _parse_with_concurrency(self, items: List[Dict]) -> Dict[str, Dict]:
-        """아이템을 동시성 배치로 파싱한다."""
+        """Parse items in concurrent batches."""
         if not items:
             return {}
             
-        # 아이템 청크 분할
+        # Chunk items
         chunks = [items[i:i + self.BATCH_SIZE] for i in range(0, len(items), self.BATCH_SIZE)]
         logger.info(f"Splitting {len(items)} items into {len(chunks)} chunks (batch size: {self.BATCH_SIZE})")
         
-        # 동시 실행 제한 세마포어
+        # Semaphore for concurrency limit
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_BATCHES)
         
         async def parse_chunk(chunk: List[Dict]) -> Dict[str, Dict]:
             async with semaphore:
                 return await self.parser_service.parse_room_desc_batch(chunk)
         
-        # 모든 청크를 동시 실행(세마포어로 제한)
+        # Run all chunks concurrently (limited by semaphore)
         results = await asyncio.gather(*[parse_chunk(c) for c in chunks])
         
-        # 결과 병합
+        # Merge results
         merged = {}
         for r in results:
             merged.update(r)
         return merged
-
-    @classmethod
-    def _iter_text_values(cls, payload: Any, depth: int = 0, max_depth: int = 3) -> List[str]:
-        """키워드 판별을 위해 중첩 payload에서 텍스트 값을 추출한다."""
-        if payload is None or depth > max_depth:
-            return []
-        if isinstance(payload, str):
-            stripped = payload.strip()
-            return [stripped] if stripped else []
-        if isinstance(payload, (int, float, bool)):
-            return [str(payload)]
-        if isinstance(payload, list):
-            values: List[str] = []
-            for item in payload:
-                values.extend(cls._iter_text_values(item, depth + 1, max_depth))
-            return values
-        if isinstance(payload, dict):
-            values = []
-            for key, value in payload.items():
-                key_text = str(key).strip()
-                if key_text:
-                    values.append(key_text)
-                values.extend(cls._iter_text_values(value, depth + 1, max_depth))
-            return values
-        return []
-
-    @classmethod
-    def _collect_representative_keywords(
-        cls,
-        source_hint: Optional[Dict[str, Any]],
-        business: Dict[str, Any],
-    ) -> List[str]:
-        """대표 키워드 계열 필드에서 텍스트 후보를 수집한다."""
-        texts: List[str] = []
-
-        for payload in (source_hint, business):
-            if not isinstance(payload, dict):
-                continue
-            for field in cls.REPRESENTATIVE_KEYWORD_FIELDS:
-                if field in payload:
-                    texts.extend(cls._iter_text_values(payload.get(field)))
-
-        normalized = [t.lower() for t in texts if isinstance(t, str) and t.strip()]
-        return sorted(set(normalized))
-
-    @classmethod
-    def _extract_representative_keywords(cls, keywords: List[str]) -> List[str]:
-        """대표 키워드 텍스트 중 합주실 판별 키워드를 추출한다."""
-        if not keywords:
-            return []
-
-        hits: set[str] = set()
-        for keyword in keywords:
-            for rule in cls.REHEARSAL_KEYWORDS:
-                if rule in keyword:
-                    hits.add(rule)
-        return sorted(hits)
-
-    @classmethod
-    def _evaluate_rehearsal_domain(
-        cls,
-        source_hint: Optional[Dict[str, Any]],
-        business: Dict[str, Any],
-        rooms: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        representative_candidates = cls._collect_representative_keywords(
-            source_hint=source_hint,
-            business=business,
-        )
-        representative_hits = cls._extract_representative_keywords(representative_candidates)
-
-        raw_name = (
-            (source_hint or {}).get("name")
-            or business.get("businessDisplayName")
-            or business.get("name")
-            or ""
-        )
-        name_text = str(raw_name).lower()
-        name_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in name_text})
-
-        positive_hits = sorted(set(representative_hits + name_hits))
-        is_candidate = bool(positive_hits)
-        reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
-
-        return {
-            "is_candidate": is_candidate,
-            "reason": reason,
-            "positive_hits": positive_hits,
-            "negative_hits": [],
-            "representative_keywords": representative_candidates,
-        }
 
     async def _save_to_db(
         self,
@@ -568,7 +361,34 @@ class RoomCollectionService:
         # 1. Save Branch
         coords = business.get("coordinates")
         display_name = business.get("businessDisplayName") or business.get("name") or business.get("businessId")
-
+        branch_phone_number = self._extract_business_phone_number(
+            business,
+            rooms,
+            source_hint=source_hint,
+        )
+        place_id = (source_hint or {}).get("placeId")
+        if not branch_phone_number and place_id:
+            reveal_phone = getattr(self.map_crawler, "reveal_phone_number", None)
+            if callable(reveal_phone):
+                try:
+                    if inspect.iscoroutinefunction(reveal_phone):
+                        revealed = await reveal_phone(str(place_id))
+                    else:
+                        revealed = reveal_phone(str(place_id))
+                    if isinstance(revealed, str) and revealed.strip():
+                        branch_phone_number = revealed.strip()
+                        logger.info(
+                            "Recovered phone via place click fallback: business_id=%s place_id=%s",
+                            business.get("businessId"),
+                            place_id,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Phone reveal fallback failed: business_id=%s place_id=%s err=%s",
+                        business.get("businessId"),
+                        place_id,
+                        e,
+                    )
         # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
         # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
         branch_standby_days = None
@@ -586,8 +406,14 @@ class RoomCollectionService:
         }
 
         # Do not overwrite existing coordinates with null when business payload is missing.
-        # Some upstream payloads occasionally swap latitude/longitude, so normalize first.
-        lat_val, lng_val = self._normalize_coordinates(coords)
+        lat_val: Optional[float] = None
+        lng_val: Optional[float] = None
+        if isinstance(coords, dict):
+            lat_val = self._coerce_float(coords.get("latitude"))
+            lng_val = self._coerce_float(coords.get("longitude"))
+        elif isinstance(coords, list) and len(coords) >= 2:
+            lng_val = self._coerce_float(coords[0])
+            lat_val = self._coerce_float(coords[1])
 
         if lat_val is not None:
             branch_data["lat"] = lat_val
@@ -595,6 +421,8 @@ class RoomCollectionService:
             branch_data["lng"] = lng_val
         if branch_standby_days is not None:
             branch_data["standby_days"] = branch_standby_days
+        if branch_phone_number:
+            branch_data["phone_number"] = branch_phone_number
         
         # Upsert Branch
         self.supabase.table("branch").upsert(branch_data).execute()
@@ -612,12 +440,6 @@ class RoomCollectionService:
             rid = room["bizItemId"]
             parsed = parsed_results.get(rid, {})
             existing = existing_map.get(rid)
-            parsed_clean_name = parsed.get("clean_name")
-            final_room_name = room["name"]
-            if isinstance(parsed_clean_name, str):
-                candidate = parsed_clean_name.strip()
-                if candidate:
-                    final_room_name = candidate
 
             # Extract image URLs
             images = room.get("bizItemResources", [])
@@ -752,7 +574,7 @@ class RoomCollectionService:
             room_data = {
                 "business_id": business["businessId"],
                 "biz_item_id": rid,
-                "name": final_room_name,
+                "name": room["name"],
                 "price_per_hour": final_price,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
@@ -1042,37 +864,155 @@ class RoomCollectionService:
         return None
 
     @classmethod
-    def _normalize_coordinates(cls, coords: Any) -> Tuple[Optional[float], Optional[float]]:
-        """Parse and normalize coordinates to (lat, lng)."""
-        lat_val: Optional[float] = None
-        lng_val: Optional[float] = None
+    def _extract_phone_number_from_payload(cls, payload: Any) -> Optional[str]:
+        """Recursively extract a plausible phone number from JSON-like payloads."""
+        if payload is None:
+            return None
 
-        if isinstance(coords, dict):
-            lat_val = cls._coerce_float(coords.get("latitude"))
-            if lat_val is None:
-                lat_val = cls._coerce_float(coords.get("lat"))
-            lng_val = cls._coerce_float(coords.get("longitude"))
-            if lng_val is None:
-                lng_val = cls._coerce_float(coords.get("lng"))
-        elif isinstance(coords, list) and len(coords) >= 2:
-            # Naver default list order: [lng, lat]
-            lng_val = cls._coerce_float(coords[0])
-            lat_val = cls._coerce_float(coords[1])
+        if isinstance(payload, str):
+            stripped = payload.strip()
+            if not stripped:
+                return None
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                # Ignore URL noise when parsing free-form text payloads.
+                cleaned = re.sub(r"https?://\S+", " ", stripped)
+                return cls._extract_phone_number_from_text(cleaned)
+            return cls._extract_phone_number_from_payload(parsed)
 
-        # Heuristic: if lat is impossible but lng looks like latitude, swap.
-        if lat_val is not None and lng_val is not None:
-            if abs(lat_val) > 90 and abs(lng_val) <= 90:
-                lat_val, lng_val = lng_val, lat_val
+        if isinstance(payload, list):
+            for item in payload:
+                found = cls._extract_phone_number_from_payload(item)
+                if found:
+                    return found
+            return None
 
-        # Final sanity guard.
-        if lat_val is not None and abs(lat_val) > 90:
-            lat_val = None
-        if lng_val is not None and abs(lng_val) > 180:
-            lng_val = None
+        if isinstance(payload, dict):
+            preferred_keys = (
+                "phone",
+                "phoneNumber",
+                "representativePhoneNumber",
+                "tel",
+                "telephone",
+                "mobile",
+                "number",
+            )
+            for key in preferred_keys:
+                if key in payload:
+                    found = cls._extract_phone_number_from_payload(payload.get(key))
+                    if found:
+                        return found
 
-        return lat_val, lng_val
+            ignored_key_tokens = (
+                "url",
+                "image",
+                "img",
+                "photo",
+                "thumbnail",
+                "resource",
+                "icon",
+                "logo",
+            )
+            for key, value in payload.items():
+                key_lower = str(key).lower()
+                if any(token in key_lower for token in ignored_key_tokens):
+                    continue
+                found = cls._extract_phone_number_from_payload(value)
+                if found:
+                    return found
 
+        return None
 
+    @staticmethod
+    def _extract_phone_number_from_text(text: str) -> Optional[str]:
+        """Extract a Korean business phone-like token from plain text."""
+        if not text:
+            return None
+
+        # Keep this allow-list tight to avoid false positives from timestamps/URLs.
+        pattern = (
+            r"(?<!\d)0507[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
+            r"|(?<!\d)(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
+            r"|(?<!\d)(?:1544|1566|1577|1588|1599|1600|1644|1661|1670|1688)[\s\-]?\d{4}(?!\d)"
+        )
+        best: Optional[Tuple[int, str]] = None
+
+        for match in re.finditer(pattern, text):
+            candidate = match.group(0)
+            digits = re.sub(r"\D", "", candidate)
+            if digits.startswith("82") and len(digits) >= 10:
+                digits = "0" + digits[2:]
+            if len(digits) < 8 or len(digits) > 12:
+                continue
+
+            # Prefer tokens near contact keywords to avoid non-phone numeric noise.
+            left = max(0, match.start() - 24)
+            right = min(len(text), match.end() + 24)
+            window = text[left:right].lower()
+            score = 1
+            if re.search(r"(전화|문의|연락|콜|tel|phone|contact|call)", window):
+                score += 10
+            if digits.startswith(("010", "011", "016", "017", "018", "019", "02", "0507")):
+                score += 5
+            elif digits.startswith(("031", "032", "033", "041", "042", "043", "044", "051", "052", "053", "054", "055", "061", "062", "063", "064", "070")):
+                score += 4
+            elif digits.startswith(("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")):
+                score += 3
+
+            normalized = re.sub(r"[.\s]+", "-", candidate).strip("-")
+            if "-" not in normalized and len(digits) == 8 and digits.startswith(
+                ("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")
+            ):
+                normalized = f"{digits[:4]}-{digits[4:]}"
+            if best is None or score > best[0]:
+                best = (score, normalized)
+
+        if best:
+            return best[1]
+        return None
+
+    @classmethod
+    def _extract_business_phone_number(
+        cls,
+        business: Dict[str, Any],
+        rooms: List[Dict[str, Any]],
+        source_hint: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Extract branch phone number from business payload, map hint, and room payloads."""
+        business_candidates = [
+            business.get("phoneInformationJson"),
+            business.get("phone"),
+            business.get("phoneNumber"),
+            business.get("telephone"),
+            business.get("tel"),
+            business,
+        ]
+        for candidate in business_candidates:
+            found = cls._extract_phone_number_from_payload(candidate)
+            if found:
+                return found
+
+        if source_hint:
+            found = cls._extract_phone_number_from_payload(source_hint)
+            if found:
+                return found
+
+        for room in rooms:
+            room_candidates = [
+                room.get("phone"),
+                room.get("phoneNumber"),
+                room.get("telephone"),
+                room.get("tel"),
+                room.get("bookingPrecautionJson"),
+                room.get("extraDescJson"),
+                room.get("desc"),
+            ]
+            for candidate in room_candidates:
+                found = cls._extract_phone_number_from_payload(candidate)
+                if found:
+                    return found
+        return None
 
     def _extract_capacity_text_signals(
         self, room: Dict[str, Any]

@@ -39,6 +39,13 @@ async def test_fetch_business_query_contains_extended_fields():
     query = payload["query"]
 
     required_fields = [
+        "businessCategory",
+        "bookingUrl",
+        "bookingGuideJson",
+        "businessResources",
+        "resourceTypeCode",
+        "resourceUrl",
+        "order",
         "desc",
         "addressJson",
         "phoneInformationJson",
@@ -71,6 +78,7 @@ async def test_fetch_biz_items_query_contains_extended_fields():
         "maxBookingTime",
         "isOnsitePayment",
         "bookingCountSettingJson",
+        "bookingPrecautionJson",
         "extraFeeSettingJson",
         "extraDescJson",
     ]
