@@ -64,6 +64,7 @@ async def test_fetch_biz_items_query_contains_extended_fields():
 
     required_fields = [
         "stock",
+        "price",
         "minBookingCount",
         "maxBookingCount",
         "minBookingTime",

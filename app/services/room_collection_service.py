@@ -97,7 +97,10 @@ class RoomCollectionService:
                 business_id = item.get("id")
                 if not business_id:
                     raise ValueError("missing business id in crawl result")
-                logger.info(f"Processing {idx+1}/{total_items}: {item['name']} ({business_id})")
+                business_name = item.get("name", "<unknown>")
+                logger.info(
+                    f"Processing {idx+1}/{total_items}: {business_name} ({business_id})"
+                )
                 await self.collect_by_id(business_id)
                 success_count += 1
             except Exception as e:
