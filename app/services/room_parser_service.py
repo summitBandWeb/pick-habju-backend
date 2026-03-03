@@ -284,8 +284,6 @@ class RoomParserService:
         clean_name = re.sub(r'\s*\(?\s*최대\s*\d+\s*(?:인|명)\s*\)?', '', clean_name).strip()
         clean_name = re.sub(r'\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)', '', clean_name).strip()
 
-        clean_name = self._clean_room_name(clean_name)
-
         # 2. Capacity extraction - prioritize desc, fallback to name
         max_cap = None
         rec_cap = None
@@ -402,84 +400,6 @@ class RoomParserService:
             "can_reserve_one_hour": can_reserve_1h,
         }
 
-    @staticmethod
-    def _clean_room_name(name: str) -> str:
-        """Normalize room display name by stripping promo/policy noise."""
-        clean = re.sub(r"\s+", " ", (name or "")).strip()
-        if not clean:
-            return clean
-
-        # Common prefix noise: EVENT))1번방 -> 1번방
-        clean = re.sub(r"^\s*(?:event|이벤트)\s*[)\]-]*\s*", "", clean, flags=re.IGNORECASE)
-
-        # Remove day-type tags and capacity tags anywhere in name.
-        clean = re.sub(r"\[평일\]|\(평일\)", " ", clean)
-        clean = re.sub(r"\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]", " ", clean)
-        clean = re.sub(
-            r"\([^)]*(?:정원|최대\s*인원|최대인원|최대)\s*\d+\s*(?:인|명)[^)]*\)",
-            " ",
-            clean,
-        )
-        clean = re.sub(
-            r"\s*\(?\s*(?:정원\s*\d+\s*(?:인|명)\s*,?\s*)?(?:최대\s*\d+\s*(?:인|명))\s*\)?",
-            " ",
-            clean,
-        )
-        clean = re.sub(r"\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)", " ", clean)
-
-        # Remove leading bracket labels when they look like promo/operation notes.
-        promo_markers = (
-            "특가",
-            "할인",
-            "이벤트",
-            "event",
-            "평일",
-            "주말",
-            "공휴일",
-            "심야",
-            "야간",
-            "주간",
-            "요금",
-            "운영",
-            "한정",
-            "예약",
-            "문의",
-            "전화",
-        )
-        while True:
-            match = re.match(r"^\s*\[([^\]]{1,60})\]\s*", clean)
-            if not match:
-                break
-            tag = match.group(1).strip().lower()
-            if any(marker in tag for marker in promo_markers):
-                clean = clean[match.end():].strip()
-                continue
-            break
-
-        # Remove trailing notes related to reservation/promo/time.
-        note_pattern = re.compile(
-            r"(예약|입금|문의|전화|필수|요망|확인|할인|특가|평일|주말|공휴일|심야|야간|주간|요금|당일|event|이벤트|정원|최대|\d+\s*%|\d{1,2}\s*시|~|원)",
-            re.IGNORECASE,
-        )
-        while True:
-            match = re.search(r"\s*\(([^)]{1,80})\)\s*$", clean)
-            if not match:
-                break
-            note = match.group(1).strip()
-            if note_pattern.search(note):
-                clean = clean[:match.start()].strip()
-                continue
-            break
-
-        # Guard against dangling parenthesis after partial stripping.
-        if clean.count("(") > clean.count(")"):
-            clean = re.sub(r"\([^)]*$", "", clean).strip()
-        elif clean.count(")") > clean.count("("):
-            clean = clean.replace(")", " ")
-
-        clean = re.sub(r"\s+", " ", clean).strip(" -_/")
-        return clean or (name or "").strip()
-
     def _extract_capacity_from_text(self, text: str) -> tuple[Optional[int], Optional[int], Optional[list]]:
         """텍스트에서 max_capacity와 recommend_capacity, 범위를 추출합니다.
 
@@ -507,7 +427,7 @@ class RoomParserService:
             rec_cap = int(recommend_match.group(1))
 
         # Pattern 3: "최대 N인/명" or "Max N명"
-        max_match = re.search(r'(?:(?:최대\s*인원|최대인원|최대|max|MAX)\s*(\d+))', text, re.IGNORECASE)
+        max_match = re.search(r'(?:최대|max|MAX)\s*(\d+)', text, re.IGNORECASE)
         if max_match:
             max_cap = int(max_match.group(1))
 

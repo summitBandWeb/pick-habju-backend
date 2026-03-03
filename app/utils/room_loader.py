@@ -1,25 +1,11 @@
-import os
 from typing import List, Optional
 
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
-from app.core.constants import PRIORITY_AREA_BUSINESS_IDS
 from app.core.supabase_client import supabase
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
 from app.models.dto import RoomDetail
-
-
-def _is_priority_area_filter_enabled() -> bool:
-    raw = (os.getenv("PRIORITY_AREA_ONLY_FILTER", "true") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
-
-
-def _resolve_priority_area_business_ids() -> List[str]:
-    env_raw = (os.getenv("PRIORITY_AREA_BUSINESS_IDS") or "").strip()
-    if env_raw:
-        return [v.strip() for v in env_raw.split(",") if v and v.strip()]
-    return list(PRIORITY_AREA_BUSINESS_IDS)
 
 
 def get_rooms_by_criteria(
@@ -44,14 +30,14 @@ def get_rooms_by_criteria(
 
         response = None
         last_error: Optional[Exception] = None
-        allowed_business_ids = _resolve_priority_area_business_ids()
-        use_priority_filter = _is_priority_area_filter_enabled() and bool(allowed_business_ids)
         for select_expr in select_candidates:
             try:
-                query = supabase.table("room").select(select_expr).gte("max_capacity", capacity)
-                if use_priority_filter:
-                    query = query.in_("business_id", allowed_business_ids)
-                response = query.execute()
+                response = (
+                    supabase.table("room")
+                    .select(select_expr)
+                    .gte("max_capacity", capacity)
+                    .execute()
+                )
                 break
             except APIError as e:
                 last_error = e

@@ -1,13 +1,11 @@
-import logging
+﻿import logging
 import asyncio
 import json
 import os
-import re
-import inspect
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional
 from app.crawler.naver_map_crawler import NaverMapCrawler
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
@@ -54,7 +52,7 @@ class RoomCollectionService:
         for item in search_results:
             business_id = item["id"]
             try:
-                await self.collect_by_id(business_id, source_hint=item)
+                await self.collect_by_id(business_id)
                 success_count += 1
             except Exception as e:
                 logger.error(f"Failed to collect {business_id}: {e}")
@@ -83,7 +81,7 @@ class RoomCollectionService:
             business_id = item["id"]
             try:
                 logger.info(f"Processing {idx+1}/{total_items}: {item['name']} ({business_id})")
-                await self.collect_by_id(business_id, source_hint=item)
+                await self.collect_by_id(business_id)
                 success_count += 1
             except Exception as e:
                 logger.error(f"Failed to collect {business_id}: {e}")
@@ -91,7 +89,7 @@ class RoomCollectionService:
                 
         return {"success": success_count, "failed": failed_count}
 
-    async def collect_by_id(self, business_id: str, source_hint: Optional[Dict[str, Any]] = None):
+    async def collect_by_id(self, business_id: str):
         """Collect and save room information for a specific Business ID."""
         logger.info(f"Collecting business_id: {business_id}")
 
@@ -120,7 +118,7 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 3. Save to DB (Branch -> Room(with images))
-        await self._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+        await self._save_to_db(business, rooms, parsed_results)
         logger.info(f"Successfully saved business {business_id} with {len(rooms)} rooms")
 
         # 4. Export unresolved items (Phase 6: Manual verification queue)
@@ -151,40 +149,11 @@ class RoomCollectionService:
             merged.update(r)
         return merged
 
-    async def _save_to_db(
-        self,
-        business: Dict,
-        rooms: List[Dict],
-        parsed_results: Dict,
-        source_hint: Optional[Dict[str, Any]] = None,
-    ):
+    async def _save_to_db(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
         coords = business.get("coordinates")
-        display_name = business.get("businessDisplayName") or business.get("name") or business.get("businessId")
-        branch_phone_number = self._extract_business_phone_number(
-            business,
-            rooms,
-            source_hint=source_hint,
-        )
-        place_id = (source_hint or {}).get("placeId")
-        if not branch_phone_number and place_id:
-            reveal_phone = getattr(self.map_crawler, "reveal_phone_number", None)
-            if callable(reveal_phone):
-                try:
-                    revealed = reveal_phone(str(place_id))
-                    if inspect.isawaitable(revealed):
-                        revealed = await revealed
-                    if isinstance(revealed, str) and revealed.strip():
-                        branch_phone_number = revealed.strip()
-                except Exception as e:
-                    logger.warning(
-                        "Phone reveal fallback failed: business_id=%s place_id=%s err=%s",
-                        business.get("businessId"),
-                        place_id,
-                        e,
-                    )
         # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
         # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
         branch_standby_days = None
@@ -197,19 +166,12 @@ class RoomCollectionService:
 
         branch_data = {
             "business_id": business["businessId"],
-            "name": display_name,
-            "display_name": display_name,
+            "name": business["businessDisplayName"],
+            "display_name": business.get("businessDisplayName"), 
+            "lat": coords.get("latitude") if coords else None,
+            "lng": coords.get("longitude") if coords else None,
+            "standby_days": branch_standby_days, 
         }
-
-        lat_val, lng_val = self._normalize_coordinates(coords)
-        if lat_val is not None:
-            branch_data["lat"] = lat_val
-        if lng_val is not None:
-            branch_data["lng"] = lng_val
-        if branch_standby_days is not None:
-            branch_data["standby_days"] = branch_standby_days
-        if branch_phone_number:
-            branch_data["phone_number"] = branch_phone_number
         
         # Upsert Branch
         self.supabase.table("branch").upsert(branch_data).execute()
@@ -227,12 +189,6 @@ class RoomCollectionService:
             rid = room["bizItemId"]
             parsed = parsed_results.get(rid, {})
             existing = existing_map.get(rid)
-            parsed_clean_name = parsed.get("clean_name")
-            final_room_name = room["name"]
-            if isinstance(parsed_clean_name, str):
-                candidate = parsed_clean_name.strip()
-                if candidate:
-                    final_room_name = candidate
 
             # Extract image URLs
             images = room.get("bizItemResources", [])
@@ -305,7 +261,7 @@ class RoomCollectionService:
             room_data = {
                 "business_id": business["businessId"],
                 "biz_item_id": rid,
-                "name": final_room_name,
+                "name": room["name"],
                 "price_per_hour": final_price,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap,
@@ -493,184 +449,5 @@ class RoomCollectionService:
                 logger.info(f"Exported {len(new_items)} new unresolved items to {export_file} (skipped {len(unresolved_items) - len(new_items)} duplicates)")
             else:
                 logger.debug(f"All {len(unresolved_items)} items were already in unresolved list. Skipping export.")
-
-    @staticmethod
-    def _coerce_float(value: Any) -> Optional[float]:
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            stripped = value.strip()
-            if not stripped:
-                return None
-            try:
-                return float(stripped)
-            except ValueError:
-                return None
-        return None
-
-    @classmethod
-    def _normalize_coordinates(cls, coords: Any) -> Tuple[Optional[float], Optional[float]]:
-        lat_val: Optional[float] = None
-        lng_val: Optional[float] = None
-
-        if isinstance(coords, dict):
-            lat_val = cls._coerce_float(coords.get("latitude"))
-            if lat_val is None:
-                lat_val = cls._coerce_float(coords.get("lat"))
-            lng_val = cls._coerce_float(coords.get("longitude"))
-            if lng_val is None:
-                lng_val = cls._coerce_float(coords.get("lng"))
-        elif isinstance(coords, list) and len(coords) >= 2:
-            # Naver default list order: [lng, lat]
-            lng_val = cls._coerce_float(coords[0])
-            lat_val = cls._coerce_float(coords[1])
-
-        if lat_val is not None and lng_val is not None and abs(lat_val) > 90 and abs(lng_val) <= 90:
-            lat_val, lng_val = lng_val, lat_val
-
-        if lat_val is not None and abs(lat_val) > 90:
-            lat_val = None
-        if lng_val is not None and abs(lng_val) > 180:
-            lng_val = None
-
-        return lat_val, lng_val
-
-    @classmethod
-    def _extract_phone_number_from_payload(cls, payload: Any) -> Optional[str]:
-        if payload is None:
-            return None
-
-        if isinstance(payload, str):
-            stripped = payload.strip()
-            if not stripped:
-                return None
-            try:
-                parsed = json.loads(stripped)
-            except json.JSONDecodeError:
-                cleaned = re.sub(r"https?://\S+", " ", stripped)
-                return cls._extract_phone_number_from_text(cleaned)
-            return cls._extract_phone_number_from_payload(parsed)
-
-        if isinstance(payload, list):
-            for item in payload:
-                found = cls._extract_phone_number_from_payload(item)
-                if found:
-                    return found
-            return None
-
-        if isinstance(payload, dict):
-            preferred_keys = (
-                "phone",
-                "phoneNumber",
-                "representativePhoneNumber",
-                "tel",
-                "telephone",
-                "mobile",
-                "number",
-            )
-            for key in preferred_keys:
-                if key in payload:
-                    found = cls._extract_phone_number_from_payload(payload.get(key))
-                    if found:
-                        return found
-
-            ignored_key_tokens = ("url", "image", "img", "photo", "thumbnail", "resource", "icon", "logo")
-            for key, value in payload.items():
-                key_lower = str(key).lower()
-                if any(token in key_lower for token in ignored_key_tokens):
-                    continue
-                found = cls._extract_phone_number_from_payload(value)
-                if found:
-                    return found
-
-        return None
-
-    @staticmethod
-    def _extract_phone_number_from_text(text: str) -> Optional[str]:
-        if not text:
-            return None
-
-        pattern = (
-            r"(?<!\d)0507[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
-            r"|(?<!\d)(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
-            r"|(?<!\d)(?:1544|1566|1577|1588|1599|1600|1644|1661|1670|1688)[\s\-]?\d{4}(?!\d)"
-        )
-        best: Optional[Tuple[int, str]] = None
-
-        for match in re.finditer(pattern, text):
-            candidate = match.group(0)
-            digits = re.sub(r"\D", "", candidate)
-            if digits.startswith("82") and len(digits) >= 10:
-                digits = "0" + digits[2:]
-            if len(digits) < 8 or len(digits) > 12:
-                continue
-
-            left = max(0, match.start() - 24)
-            right = min(len(text), match.end() + 24)
-            window = text[left:right].lower()
-            score = 1
-            if re.search(r"(전화|문의|연락|콜|tel|phone|contact|call)", window):
-                score += 10
-            if digits.startswith(("010", "011", "016", "017", "018", "019", "02", "0507")):
-                score += 5
-            elif digits.startswith(("031", "032", "033", "041", "042", "043", "044", "051", "052", "053", "054", "055", "061", "062", "063", "064", "070")):
-                score += 4
-            elif digits.startswith(("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")):
-                score += 3
-
-            normalized = re.sub(r"[.\s]+", "-", candidate).strip("-")
-            if "-" not in normalized and len(digits) == 8 and digits.startswith(
-                ("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")
-            ):
-                normalized = f"{digits[:4]}-{digits[4:]}"
-            if best is None or score > best[0]:
-                best = (score, normalized)
-
-        if best:
-            return best[1]
-        return None
-
-    @classmethod
-    def _extract_business_phone_number(
-        cls,
-        business: Dict[str, Any],
-        rooms: List[Dict[str, Any]],
-        source_hint: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
-        business_candidates = [
-            business.get("phoneInformationJson"),
-            business.get("phone"),
-            business.get("phoneNumber"),
-            business.get("telephone"),
-            business.get("tel"),
-            business,
-        ]
-        for candidate in business_candidates:
-            found = cls._extract_phone_number_from_payload(candidate)
-            if found:
-                return found
-
-        if source_hint:
-            found = cls._extract_phone_number_from_payload(source_hint)
-            if found:
-                return found
-
-        for room in rooms:
-            room_candidates = [
-                room.get("phone"),
-                room.get("phoneNumber"),
-                room.get("telephone"),
-                room.get("tel"),
-                room.get("bookingPrecautionJson"),
-                room.get("extraDescJson"),
-                room.get("desc"),
-            ]
-            for candidate in room_candidates:
-                found = cls._extract_phone_number_from_payload(candidate)
-                if found:
-                    return found
-        return None
 
 

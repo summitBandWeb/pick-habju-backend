@@ -37,7 +37,6 @@ def test_get_rooms_by_criteria_keeps_room_when_branch_missing(monkeypatch):
     mock_query = MagicMock()
     mock_query.select.return_value = mock_query
     mock_query.gte.return_value = mock_query
-    mock_query.in_.return_value = mock_query
     mock_query.execute.return_value = SimpleNamespace(
         data=[missing_branch_row, out_of_bound_row, in_bound_row]
     )
@@ -54,24 +53,3 @@ def test_get_rooms_by_criteria_keeps_room_when_branch_missing(monkeypatch):
     assert {r.biz_item_id for r in rooms} == {"item-1", "item-3"}
     missing_branch = next(r for r in rooms if r.biz_item_id == "item-1")
     assert missing_branch.branch == "지점 정보 없음"
-    mock_query.in_.assert_called_once()
-
-
-def test_get_rooms_by_criteria_can_disable_priority_filter(monkeypatch):
-    row = _room_row(branch={"name": "Branch", "lat": 37.5, "lng": 127.1})
-
-    mock_query = MagicMock()
-    mock_query.select.return_value = mock_query
-    mock_query.gte.return_value = mock_query
-    mock_query.in_.return_value = mock_query
-    mock_query.execute.return_value = SimpleNamespace(data=[row])
-
-    mock_supabase = MagicMock()
-    mock_supabase.table.return_value = mock_query
-    monkeypatch.setattr(room_loader, "supabase", mock_supabase)
-    monkeypatch.setenv("PRIORITY_AREA_ONLY_FILTER", "false")
-
-    rooms = room_loader.get_rooms_by_criteria(capacity=1)
-
-    assert len(rooms) == 1
-    mock_query.in_.assert_not_called()
