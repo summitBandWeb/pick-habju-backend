@@ -477,7 +477,7 @@ class AvailabilityService:
                 else:
                     branch_obj = branch_dict[bid]
                     branch_obj.rooms.append(room_resp)
-                    if res.available is not "unknown":
+                    if res.available != "unknown":
                         branch_obj.available_count += 1
                     
                     AvailabilityService._update_min_prices(branch_obj, res.available, total_price, is_partial)
