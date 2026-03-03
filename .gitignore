@@ -181,6 +181,9 @@ cython_debug/
 
 logs/
 
-CONVENTION.md
+/convention.md
+/PR_DESCRIPTION.md
+/scripts/
 *.db
+# ignore Windows NUL device
 nul
