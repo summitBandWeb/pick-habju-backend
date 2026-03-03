@@ -204,6 +204,30 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("룸A", "Orange OB1-500 Head, Marshall 앰프")
         assert result["max_capacity"] is None
 
+    def test_clean_name_strips_promo_bracket_and_capacity_note(self, parser):
+        result = parser._parse_with_regex("[개강특가] 블랙룸 (정원 20명, 최대 30명)", "")
+        assert result["clean_name"] == "블랙룸"
+        assert result["max_capacity"] == 30
+        assert result["recommend_capacity"] == 20
+
+    def test_clean_name_strips_reservation_parenthetical_note(self, parser):
+        result = parser._parse_with_regex("Room A (예약 시 오전, 오후 확인)", "")
+        assert result["clean_name"] == "Room A"
+
+    def test_clean_name_strips_event_prefix_noise(self, parser):
+        result = parser._parse_with_regex("EVENT))1번방", "")
+        assert result["clean_name"] == "1번방"
+
+    def test_name_with_max_people_label(self, parser):
+        result = parser._parse_with_regex("브라더 1번방 (최대인원 10명)", "")
+        assert result["clean_name"] == "브라더 1번방"
+        assert result["max_capacity"] == 10
+
+    def test_clean_name_parenthetical_capacity_suffix_does_not_leave_dangling_paren(self, parser):
+        result = parser._parse_with_regex("[개강특가] C룸(그랜드피아노 보유/최대 20명)", "")
+        assert result["clean_name"] == "C룸"
+        assert result["max_capacity"] == 20
+
 
 
 class TestExtractJsonFromResponse:
