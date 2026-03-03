@@ -136,7 +136,7 @@ class TestCollectByIdFlow:
         
         assert room1_data is not None
         assert room1_data["business_id"] == "test123"
-        assert room1_data["name"] == "[평일] A룸"
+        assert room1_data["name"] == "A룸"
         assert room1_data["price_per_hour"] == 15000
         assert room1_data["max_capacity"] == 6
         assert room1_data["recommend_capacity"] == 4
