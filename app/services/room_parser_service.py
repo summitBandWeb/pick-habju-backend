@@ -65,18 +65,9 @@ class RoomParserService:
 
         if "[평일]" in name or "(평일)" in name:
             day_type = "weekday"
-            clean_name = re.sub(r"\[평일\]|\(평일\)", "", clean_name).strip()
         elif "[주말]" in name or "(주말)" in name or "주말/공휴일" in name:
             day_type = "weekend"
-            clean_name = re.sub(r"\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]", "", clean_name).strip()
-
-        clean_name = re.sub(
-            r"\s*\(?\s*정원\s*\d+\s*(?:인|명)\s*,?\s*(?:최대\s*\d+\s*(?:인|명))?\s*\)?",
-            "",
-            clean_name,
-        ).strip()
-        clean_name = re.sub(r"\s*\(?\s*최대\s*\d+\s*(?:인|명)\s*\)?", "", clean_name).strip()
-        clean_name = re.sub(r"\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)", "", clean_name).strip()
+        clean_name = self._clean_room_name(clean_name)
 
         max_cap, rec_cap, parsed_range = self._extract_capacity_from_text(desc)
         max_cap_from_name, rec_cap_from_name, range_from_name = self._extract_capacity_from_text(name)
@@ -180,6 +171,84 @@ class RoomParserService:
             "can_reserve_one_hour": can_reserve_1h,
         }
 
+    @staticmethod
+    def _clean_room_name(name: str) -> str:
+        """Normalize room display name by stripping promo/policy noise."""
+        clean = re.sub(r"\s+", " ", (name or "")).strip()
+        if not clean:
+            return clean
+
+        # Common prefix noise: EVENT))1번방 -> 1번방
+        clean = re.sub(r"^\s*(?:event|이벤트)\s*[)\]-]*\s*", "", clean, flags=re.IGNORECASE)
+
+        # Remove day-type tags and capacity tags anywhere in name.
+        clean = re.sub(r"\[평일\]|\(평일\)", " ", clean)
+        clean = re.sub(r"\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]", " ", clean)
+        clean = re.sub(
+            "(\\([^)]*(?:\\uc815\\uc6d0|\\ucd5c\\ub300\\s*\\uc778\\uc6d0|\\ucd5c\\ub300\\uc778\\uc6d0|\\ucd5c\\ub300)\\s*\\d+\\s*(?:\\uc778|\\uba85)[^)]*\\))",
+            " ",
+            clean,
+        )
+        clean = re.sub(
+            r"\s*\(?\s*(?:정원\s*\d+\s*(?:인|명)\s*,?\s*)?(?:최대\s*\d+\s*(?:인|명))\s*\)?",
+            " ",
+            clean,
+        )
+        clean = re.sub(r"\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)", " ", clean)
+
+        # Remove leading bracket labels when they look like promo/operation notes.
+        promo_markers = (
+            "특가",
+            "할인",
+            "이벤트",
+            "event",
+            "평일",
+            "주말",
+            "공휴일",
+            "심야",
+            "야간",
+            "주간",
+            "요금",
+            "운영",
+            "한정",
+            "예약",
+            "문의",
+            "전화",
+        )
+        while True:
+            m = re.match(r"^\s*\[([^\]]{1,60})\]\s*", clean)
+            if not m:
+                break
+            tag = m.group(1).strip().lower()
+            if any(marker in tag for marker in promo_markers):
+                clean = clean[m.end():].strip()
+                continue
+            break
+
+        # Remove trailing parenthetical notes related to reservation/promo/time.
+        note_pattern = re.compile(
+            r"(예약|입금|문의|전화|필수|요망|확인|할인|특가|평일|주말|공휴일|심야|야간|주간|요금|당일|event|이벤트|정원|최대|\d+\s*%|\d{1,2}\s*시|~|원)",
+            re.IGNORECASE,
+        )
+        while True:
+            m = re.search(r"\s*\(([^)]{1,80})\)\s*$", clean)
+            if not m:
+                break
+            note = m.group(1).strip()
+            if note_pattern.search(note):
+                clean = clean[:m.start()].strip()
+                continue
+            break
+
+        # Guard against dangling parenthesis after partial tag stripping.
+        if clean.count("(") > clean.count(")"):
+            clean = re.sub(r"\([^)]*$", "", clean).strip()
+        elif clean.count(")") > clean.count("("):
+            clean = clean.replace(")", " ")
+
+        clean = re.sub(r"\s+", " ", clean).strip(" -_/")
+        return clean or (name or "").strip()
+
     def _extract_capacity_from_text(
         self, text: str
     ) -> Tuple[Optional[int], Optional[int], Optional[List[int]]]:
@@ -201,7 +270,11 @@ class RoomParserService:
         if recommend_match:
             rec_cap = int(recommend_match.group(1))
 
-        max_match = re.search(r"(?:최대|max|MAX)\s*(\d+)", text, re.IGNORECASE)
+        max_match = re.search(
+            "(?:(?:\ucd5c\ub300\\s*\uc778\uc6d0|\ucd5c\ub300\uc778\uc6d0|\ucd5c\ub300)|max)\\s*(\\d+)",
+            text,
+            re.IGNORECASE,
+        )
         if max_match:
             max_cap = int(max_match.group(1))
 

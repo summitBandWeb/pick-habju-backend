@@ -444,6 +444,34 @@ class TestV2NewFields:
         assert room_data["price_config"] == price_cfg
 
     @pytest.mark.asyncio
+    async def test_room_upsert_uses_clean_name_when_available(self, service, mock_supabase):
+        """파서 clean_name이 있으면 DB room.name에 우선 반영한다."""
+        business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room A (예약 시 오전, 오후 확인)",
+                "bizItemResources": [],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {
+            "r1": {
+                "clean_name": "Room A",
+                "max_capacity": 6,
+                "recommend_capacity": 4,
+                "recommend_capacity_range": [4, 4],
+                "requires_contact_on_sameday": False,
+            }
+        }
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        room_data = upsert_call[0][0]
+        assert room_data["name"] == "Room A"
+
+    @pytest.mark.asyncio
     async def test_branch_upsert_does_not_overwrite_coordinates_with_null(self, service, mock_supabase):
         """coordinates가 없으면 branch upsert payload에 lat/lng를 넣지 않는다."""
         business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
@@ -457,6 +485,24 @@ class TestV2NewFields:
 
         assert "lat" not in branch_data
         assert "lng" not in branch_data
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_swaps_reversed_coordinates(self, service, mock_supabase):
+        """upstream에서 latitude/longitude가 뒤집혀 오면 정상 lat/lng로 보정한다."""
+        business = {
+            "businessId": "biz1",
+            "businessDisplayName": "Test Branch",
+            "coordinates": {"latitude": 126.99, "longitude": 37.48},
+        }
+        rooms = [{"bizItemId": "r1", "name": "Room 1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert branch_data["lat"] == 37.48
+        assert branch_data["lng"] == 126.99
 
     @pytest.mark.asyncio
     async def test_branch_upsert_saves_phone_number_from_business_payload(self, service, mock_supabase):

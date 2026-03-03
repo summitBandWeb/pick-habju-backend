@@ -602,14 +602,8 @@ class RoomCollectionService:
         }
 
         # Do not overwrite existing coordinates with null when business payload is missing.
-        lat_val: Optional[float] = None
-        lng_val: Optional[float] = None
-        if isinstance(coords, dict):
-            lat_val = self._coerce_float(coords.get("latitude"))
-            lng_val = self._coerce_float(coords.get("longitude"))
-        elif isinstance(coords, list) and len(coords) >= 2:
-            lng_val = self._coerce_float(coords[0])
-            lat_val = self._coerce_float(coords[1])
+        # Some upstream payloads occasionally swap latitude/longitude, so normalize first.
+        lat_val, lng_val = self._normalize_coordinates(coords)
 
         if lat_val is not None:
             branch_data["lat"] = lat_val
@@ -636,6 +630,12 @@ class RoomCollectionService:
             rid = room["bizItemId"]
             parsed = parsed_results.get(rid, {})
             existing = existing_map.get(rid)
+            parsed_clean_name = parsed.get("clean_name")
+            final_room_name = room["name"]
+            if isinstance(parsed_clean_name, str):
+                candidate = parsed_clean_name.strip()
+                if candidate:
+                    final_room_name = candidate
 
             # Extract image URLs
             images = room.get("bizItemResources", [])
@@ -770,7 +770,7 @@ class RoomCollectionService:
             room_data = {
                 "business_id": business["businessId"],
                 "biz_item_id": rid,
-                "name": room["name"],
+                "name": final_room_name,
                 "price_per_hour": final_price,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
@@ -1058,6 +1058,37 @@ class RoomCollectionService:
             except ValueError:
                 return None
         return None
+
+    @classmethod
+    def _normalize_coordinates(cls, coords: Any) -> Tuple[Optional[float], Optional[float]]:
+        """Parse and normalize coordinates to (lat, lng)."""
+        lat_val: Optional[float] = None
+        lng_val: Optional[float] = None
+
+        if isinstance(coords, dict):
+            lat_val = cls._coerce_float(coords.get("latitude"))
+            if lat_val is None:
+                lat_val = cls._coerce_float(coords.get("lat"))
+            lng_val = cls._coerce_float(coords.get("longitude"))
+            if lng_val is None:
+                lng_val = cls._coerce_float(coords.get("lng"))
+        elif isinstance(coords, list) and len(coords) >= 2:
+            # Naver default list order: [lng, lat]
+            lng_val = cls._coerce_float(coords[0])
+            lat_val = cls._coerce_float(coords[1])
+
+        # Heuristic: if lat is impossible but lng looks like latitude, swap.
+        if lat_val is not None and lng_val is not None:
+            if abs(lat_val) > 90 and abs(lng_val) <= 90:
+                lat_val, lng_val = lng_val, lat_val
+
+        # Final sanity guard.
+        if lat_val is not None and abs(lat_val) > 90:
+            lat_val = None
+        if lng_val is not None and abs(lng_val) > 180:
+            lng_val = None
+
+        return lat_val, lng_val
 
     @classmethod
     def _extract_phone_number_from_payload(cls, payload: Any) -> Optional[str]:
