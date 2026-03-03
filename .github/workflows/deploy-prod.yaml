@@ -239,7 +239,7 @@ jobs:
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             RATE_LIMIT_PER_MINUTE=${{ secrets.RATE_LIMIT_PER_MINUTE }}
             APP_ENV=production
-            DISCORD_HEALTH_REPORT_WEBHOOK_URLL=${{ secrets.DISCORD_HEALTH_REPORT_WEBHOOK_URL }}
+            DISCORD_HEALTH_REPORT_WEBHOOK_URL=${{ secrets.DISCORD_HEALTH_REPORT_WEBHOOK_URL }}
 
       # -----------------------------------------------------------------------
       # Discord 알림
