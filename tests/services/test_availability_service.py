@@ -184,6 +184,43 @@ class TestApplyPolicies:
         assert kwargs["end_dt"] == datetime(2099, 1, 2, 0, 0)
         assert results[0].estimated_price == 20000
 
+    def test_calculate_total_price_partial_longest_block(self, service):
+        """가장 긴 연속된 빈 슬롯 블록을 찾아 요금을 계산하는 로직 검증 (min_price_partial)"""
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, 
+            priceConfig={"default": 10000},
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
+        )
+        
+        # hour_slots: 14:00 ~ 18:00 (총 4슬롯 크기, billable_slots = ["14:00", "15:00", "16:00", "17:00"])
+        hour_slots = ["14:00", "15:00", "16:00", "17:00", "18:00"]
+        
+        # available 상태: 14, 15 가능 / 16 불가 / 17 가능
+        # 따라서 가장 긴 블록은 ["14:00", "15:00"] (2시간)
+        available_slots = {"14:00": True, "15:00": True, "16:00": False, "17:00": True}
+        
+        # 10000 * 2시간 = 20000원이 연산되어야 함
+        total_price = service.calculate_total_price(room, "2026-03-10", hour_slots, available_slots)
+        assert total_price == 20000
+
+    def test_calculate_total_price_overnight(self, service):
+        """심야 예약 시 자정을 넘기는 슬롯의 익일 날짜 반영 로직 검증"""
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, 
+            priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
+        )
+        # 평일 목요일 시나리오 ("2026-03-05" is Thursday)
+        # hour_slots: 23:00 ~ 02:00 (총 3슬롯)
+        hour_slots = ["23:00", "00:00", "01:00", "02:00"]
+        
+        # 23:00 슬롯은 10000, 00:00과 01:00 슬롯은 overrides에 의해 15000이 적용되어야 함. 익일이지만 평일이라 똑같이 weekday 규칙 탑승
+        # 10000 + 15000 + 15000 = 40000원
+        total_price = service.calculate_total_price(room, "2026-03-05", hour_slots, available_slots=None)
+        assert total_price == 40000
+
 
 class TestAvailabilityServiceFlow:
     """check_availability 전체 흐름 테스트 (DB/Crawler Mocking)

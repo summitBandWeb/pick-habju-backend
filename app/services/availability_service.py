@@ -312,6 +312,7 @@ class AvailabilityService:
         
         for room in target_rooms:
             if room.standbyDays is not None and days_diff < room.standbyDays:
+                logger.info(f"[standby_filter] biz_item_id={room.biz_item_id} excluded: standby_days={room.standbyDays} > days_diff={days_diff}")
                 standby_results.append(RoomAvailability(
                     room_detail=room,
                     available="unknown",
@@ -419,6 +420,8 @@ class AvailabilityService:
                 logger.warning(f"Unexpected available value: {res.available!r} for biz_item_id={room_detail.biz_item_id}")
 
             is_partial = is_partial_available(res)
+            if is_partial:
+                logger.info(f"[partial_availability] biz_item_id={room_detail.biz_item_id} marked as partial (available=False but has true slots)")
 
             # 예약 가능한 룸, 부분 예약 룸, 결제 불가능한 오픈대기 룸만 포함
             if res.available is True or res.available == "unknown" or is_partial:

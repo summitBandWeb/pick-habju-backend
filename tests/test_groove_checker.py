@@ -112,5 +112,5 @@ async def test_availability_at_and_after_84_days_boundary(sample_groove_rooms):
     # 검증
     result = results[0]
     assert result.available == "unknown"
-    assert result.available_slots["20:00"] == "unknown"
-    assert result.available_slots["21:00"] == "unknown"
+    assert result.available_slots["20:00"] is False
+    assert "21:00" not in result.available_slots

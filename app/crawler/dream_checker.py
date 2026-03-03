@@ -56,7 +56,7 @@ class DreamCrawler(BaseCrawler):
                 RoomAvailability(
                     room_detail=room,
                     available="unknown",
-                    available_slots={hour_str: "unknown" for hour_str in hour_slots},
+                    available_slots={hour_str: False for hour_str in hour_slots[:-1]},
                 )
                 for room in target_rooms
             ]
