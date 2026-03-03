@@ -166,6 +166,8 @@ jobs:
             SUPABASE_KEY=${{ secrets.ALPHA_SUPABASE_KEY }}
             GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
             RATE_LIMIT_PER_MINUTE=${{ secrets.RATE_LIMIT_PER_MINUTE }}
+            APP_ENV=alpha
+            DISCORD_HEALTH_REPORT_WEBHOOK_URL=${{ secrets.DISCORD_HEALTH_REPORT_WEBHOOK_URL }}
 
       # -----------------------------------------------------------------------
       # Discord 알림
