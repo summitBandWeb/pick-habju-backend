@@ -221,3 +221,142 @@ async def test_collect_by_id_skips_when_all_rooms_filtered():
     service.parser_service.parse_room_desc_batch.assert_not_awaited()
     service._save_to_db.assert_not_awaited()
     service._export_unresolved.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collect_by_id_skips_non_rehearsal_when_source_hint_has_no_domain_keyword():
+    with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
+        "app.services.room_collection_service.NaverRoomFetcher"
+    ), patch("app.services.room_collection_service.RoomParserService"), patch(
+        "app.services.room_collection_service.get_supabase_client"
+    ):
+        from app.services.room_collection_service import RoomCollectionService
+
+        service = RoomCollectionService()
+
+    service._source_item_hints["nondomain-1"] = {
+        "id": "nondomain-1",
+        "name": "Binary Creative Lab",
+        "category": "엔터테인먼트",
+    }
+    service.room_fetcher.fetch_full_info = AsyncMock(
+        return_value={
+            "business": {
+                "businessId": "nondomain-1",
+                "businessDisplayName": "Binary Creative Lab",
+                "desc": "콘텐츠 제작 스튜디오",
+                "coordinates": {"latitude": 37.0, "longitude": 127.0},
+            },
+            "rooms": [
+                {
+                    "bizItemId": "room-1",
+                    "name": "Studio A",
+                    "desc": "촬영 전용",
+                    "minMaxPrice": {"minPrice": 12000},
+                }
+            ],
+            "subway": None,
+        }
+    )
+    service.parser_service.parse_room_desc_batch = AsyncMock(return_value={})
+    service._save_to_db = AsyncMock()
+    service._export_unresolved = AsyncMock()
+
+    result = await service.collect_by_id("nondomain-1")
+
+    assert result["status"] == "skipped_non_rehearsal"
+    service.parser_service.parse_room_desc_batch.assert_not_awaited()
+    service._save_to_db.assert_not_awaited()
+    service._export_unresolved.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collect_by_id_returns_skip_reason_when_room_inventory_empty():
+    with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
+        "app.services.room_collection_service.NaverRoomFetcher"
+    ), patch("app.services.room_collection_service.RoomParserService"), patch(
+        "app.services.room_collection_service.get_supabase_client"
+    ):
+        from app.services.room_collection_service import RoomCollectionService
+
+        service = RoomCollectionService()
+
+    service._source_item_hints["habju-1"] = {
+        "id": "habju-1",
+        "name": "사당 합주실",
+        "category": "연습실",
+    }
+    service.room_fetcher.fetch_full_info = AsyncMock(
+        return_value={
+            "business": {
+                "businessId": "habju-1",
+                "businessDisplayName": "사당 합주실",
+                "desc": "합주 연습실",
+                "coordinates": {"latitude": 37.0, "longitude": 127.0},
+            },
+            "rooms": [],
+            "subway": None,
+        }
+    )
+    service.parser_service.parse_room_desc_batch = AsyncMock(return_value={})
+    service._save_to_db = AsyncMock()
+    service._export_unresolved = AsyncMock()
+
+    result = await service.collect_by_id("habju-1")
+
+    assert result["status"] == "skipped_no_rooms"
+    assert result["reason"] == "biz_items_empty"
+    assert result["is_rehearsal_candidate"] is True
+    service.parser_service.parse_room_desc_batch.assert_not_awaited()
+    service._save_to_db.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collect_by_id_uses_place_page_representative_keywords_for_domain_decision():
+    with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
+        "app.services.room_collection_service.NaverRoomFetcher"
+    ), patch("app.services.room_collection_service.RoomParserService"), patch(
+        "app.services.room_collection_service.get_supabase_client"
+    ):
+        from app.services.room_collection_service import RoomCollectionService
+
+        service = RoomCollectionService()
+
+    service._source_item_hints["kw-fallback-1"] = {
+        "id": "kw-fallback-1",
+        "placeId": "244676732",
+        "name": "헤일 뮤직 스튜디오",
+    }
+    service.map_crawler.reveal_representative_keywords = AsyncMock(return_value=["합주실", "음악연습실"])
+    service.room_fetcher.fetch_full_info = AsyncMock(
+        return_value={
+            "business": {
+                "businessId": "kw-fallback-1",
+                "businessDisplayName": "헤일 뮤직 스튜디오",
+                "desc": "실시간 예약 가능",
+                "coordinates": {"latitude": 37.0, "longitude": 127.0},
+            },
+            "rooms": [
+                {
+                    "bizItemId": "room-1",
+                    "name": "A room",
+                    "desc": "최대 6명",
+                    "minMaxPrice": {"minPrice": 15000},
+                }
+            ],
+            "subway": None,
+        }
+    )
+    service.parser_service.parse_room_desc_batch = AsyncMock(
+        return_value={"room-1": {"clean_name": "A room", "max_capacity": 6, "recommend_capacity": 4}}
+    )
+    service._save_to_db = AsyncMock()
+    service._export_unresolved = AsyncMock()
+
+    result = await service.collect_by_id("kw-fallback-1")
+
+    assert result["status"] == "collected"
+    assert result["is_rehearsal_candidate"] is True
+    assert "합주실" in result["representative_keywords"]
+    service.map_crawler.reveal_representative_keywords.assert_awaited_once_with("244676732")
+    service._save_to_db.assert_awaited()
