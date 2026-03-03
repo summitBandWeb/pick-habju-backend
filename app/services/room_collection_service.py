@@ -28,6 +28,7 @@ class RoomCollectionService:
     # Capacity value indicating parsing failure - flags for manual review
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
+    MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
     # Global fallback when room-level basic capacity info is missing.
     # Rule from ops:
@@ -220,7 +221,17 @@ class RoomCollectionService:
             query: Search keyword (e.g., "Hongdae practice room")
             
         Returns:
-            Dict containing counts of successful and failed collections.
+            Dict containing:
+            - mode: collection mode identifier
+            - queries: configured priority-area query list
+            - query_reports: per-query discovery summary
+            - total_unique_before_limit: deduplicated targets before max_targets
+            - total_unique: deduplicated targets after max_targets
+            - success: number of collected businesses
+            - failed: number of failed businesses
+            - failures: per-business failure details
+            - skipped: per-business skip details
+            - requested_query: original query string (for audit only)
         """
         logger.info(
             "Ignoring direct query '%s' due to global priority-area policy. "
@@ -277,7 +288,7 @@ class RoomCollectionService:
                         continue
                 success_count += 1
             except Exception as e:
-                logger.error("Failed to collect item=%s: %s", item, e)
+                logger.exception("Failed to collect item=%s", item)
                 failed_count += 1
                 failures.append({
                     "business_id": item.get("id", ""),
@@ -402,15 +413,14 @@ class RoomCollectionService:
             )
 
         # 2. 규칙 기반 파싱 (배치 + 동시성)
-        # Rationale: business.desc에 가게 전체 장비/규칙이 담겨 있으므로
-        #            개별 룸 파싱 시 컨텍스트로 함께 전달하여 정확도를 높임
-        business_desc = business.get("desc") or ""
+        # Keep business-level context in payload for downstream compatibility.
+        business_desc = (business.get("desc") or "")[: self.MAX_BUSINESS_DESC_CHARS]
         parse_items = []
         for room in target_rooms:
             parse_items.append({
                 "id": room["bizItemId"],
                 "name": room["name"],
-                "desc": room.get("desc"),
+                "desc": room.get("desc") or "",
                 "business_desc": business_desc
             })
         

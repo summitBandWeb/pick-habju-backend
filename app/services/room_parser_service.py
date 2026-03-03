@@ -43,7 +43,10 @@ class RoomParserService:
         results: Dict[str, Dict[str, Any]] = {}
         for item in items:
             room_id = item["id"]
-            results[room_id] = self._parse_with_regex(item["name"], item.get("desc"))
+            room_desc = item.get("desc") or ""
+            if not room_desc:
+                room_desc = item.get("business_desc") or ""
+            results[room_id] = self._parse_with_regex(item["name"], room_desc)
             keyword_capacity = self._infer_capacity_from_keyword(item["name"])
             if keyword_capacity:
                 results[room_id]["max_capacity"] = keyword_capacity
