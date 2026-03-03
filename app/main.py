@@ -34,8 +34,6 @@ import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
 from app.core.scheduler import start_scheduler, shutdown_scheduler
-from app.services.monitoring_service import send_discord_report
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -101,11 +99,6 @@ if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower()
 @app.get("/ping")
 def ping():
     return {"ok": True}
-
-@app.get("/test-report")
-async def test_report():
-    await send_discord_report()
-    return {"message": "Discord report triggered manually."}
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check(response: Response) -> HealthResponse:
