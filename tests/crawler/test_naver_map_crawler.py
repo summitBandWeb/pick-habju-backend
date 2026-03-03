@@ -21,8 +21,8 @@ class TestMergeResults:
     def test_basic_merge(self, crawler):
         target = {}
         source = [
-            {"id": "1", "name": "Room A"},
-            {"id": "2", "name": "Room B"},
+            {"id": "1", "bookingBusinessId": "1", "name": "Room A"},
+            {"id": "2", "bookingBusinessId": "2", "name": "Room B"},
         ]
 
         crawler._merge_results(target, source)
@@ -34,8 +34,8 @@ class TestMergeResults:
     def test_deduplication(self, crawler):
         target = {"1": {"id": "1", "name": "Existing Room"}}
         source = [
-            {"id": "1", "name": "Duplicate Room"},
-            {"id": "2", "name": "New Room"},
+            {"id": "1", "bookingBusinessId": "1", "name": "Duplicate Room"},
+            {"id": "2", "bookingBusinessId": "2", "name": "New Room"},
         ]
 
         crawler._merge_results(target, source)
@@ -55,10 +55,10 @@ class TestMergeResults:
     def test_skip_non_dict_items(self, crawler):
         target = {}
         source = [
-            {"id": "1", "name": "Room A"},
+            {"id": "1", "bookingBusinessId": "1", "name": "Room A"},
             "invalid_string",
             123,
-            {"id": "2", "name": "Room B"},
+            {"id": "2", "bookingBusinessId": "2", "name": "Room B"},
         ]
 
         crawler._merge_results(target, source)
@@ -70,11 +70,11 @@ class TestMergeResults:
     def test_skip_dict_without_id(self, crawler):
         target = {}
         source = [
-            {"id": "1", "name": "Room A"},
+            {"id": "1", "bookingBusinessId": "1", "name": "Room A"},
             {"name": "Missing ID"},
             {},
             {"id": None, "name": "Invalid ID"},
-            {"id": "2", "name": "Room B"},
+            {"id": "2", "bookingBusinessId": "2", "name": "Room B"},
         ]
 
         crawler._merge_results(target, source)
@@ -86,9 +86,9 @@ class TestMergeResults:
     def test_multiple_merges(self, crawler):
         target = {}
 
-        crawler._merge_results(target, [{"id": "1", "name": "Room A"}])
-        crawler._merge_results(target, [{"id": "2", "name": "Room B"}])
-        crawler._merge_results(target, [{"id": "1", "name": "Duplicate A"}])
+        crawler._merge_results(target, [{"id": "1", "bookingBusinessId": "1", "name": "Room A"}])
+        crawler._merge_results(target, [{"id": "2", "bookingBusinessId": "2", "name": "Room B"}])
+        crawler._merge_results(target, [{"id": "1", "bookingBusinessId": "1", "name": "Duplicate A"}])
 
         assert len(target) == 2
         assert target["1"]["name"] == "Room A"
@@ -152,3 +152,17 @@ class TestCrawlerRobustness:
         assert ok is False
         assert page.goto.call_count == 3
         page.wait_for_load_state.assert_not_called()
+
+
+class TestPhoneRevealHelpers:
+    @pytest.fixture
+    def crawler(self):
+        return NaverMapCrawler(headless=True)
+
+    def test_extract_phone_candidate_from_text(self, crawler):
+        text = "문의는 전화번호 보기 클릭 후 0507-1461-8067로 연락해주세요."
+        assert crawler._extract_phone_candidate(text) == "0507-1461-8067"
+
+    def test_decode_phone_payload_from_base64_json(self, crawler):
+        payload = "eyJudW1iZXIiOiIwMTAtMzAzMi02MDMzIn0="
+        assert crawler._decode_phone_payload(payload) == "010-3032-6033"

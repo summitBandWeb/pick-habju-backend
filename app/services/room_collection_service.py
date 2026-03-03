@@ -4,6 +4,7 @@ import json
 import os
 import re
 import random
+import inspect
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +29,37 @@ class RoomCollectionService:
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
     PRICE_MATCH_TOLERANCE = 1000
+    # Global fallback when room-level basic capacity info is missing.
+    # Rule from ops:
+    # - 10,000~14,999 KRW -> 4~5 people
+    # - 15,000~19,999 KRW -> 7~8 people
+    # - 20,000+ KRW -> 10+ people
+    PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
+        {
+            "name": "10k_15k",
+            "min_price": 10000,
+            "max_price": 14999,
+            "max_capacity": 5,
+            "recommend_capacity": 4,
+            "recommend_range": [4, 4],
+        },
+        {
+            "name": "15k_20k",
+            "min_price": 15000,
+            "max_price": 19999,
+            "max_capacity": 8,
+            "recommend_capacity": 7,
+            "recommend_range": [7, 7],
+        },
+        {
+            "name": "20k_plus",
+            "min_price": 20000,
+            "max_price": None,  # open upper bound
+            "max_capacity": 11,
+            "recommend_capacity": 10,
+            "recommend_range": [10, 11],
+        },
+    ]
     PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
         # Groove sadang (manual baseline)
         "sadang": [
@@ -56,6 +88,7 @@ class RoomCollectionService:
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
         self._unsupported_room_columns: set[str] = set()
+        self._source_item_hints: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def _resolve_priority_area_queries(cls, area_queries: Optional[List[str]]) -> List[str]:
@@ -89,11 +122,16 @@ class RoomCollectionService:
                 results = await self.map_crawler.search_rehearsal_rooms(query)
                 discovered_business_ids: List[str] = []
                 missing_id_count = 0
+                excluded_non_bookable_count = 0
 
                 for item in results:
                     business_id = item.get("id")
+                    booking_business_id = item.get("bookingBusinessId")
                     if not business_id:
                         missing_id_count += 1
+                        continue
+                    if not booking_business_id or str(booking_business_id) != str(business_id):
+                        excluded_non_bookable_count += 1
                         continue
                     business_id = str(business_id)
                     discovered_business_ids.append(business_id)
@@ -106,6 +144,7 @@ class RoomCollectionService:
                         "discovered": len(results),
                         "discovered_with_id": len(discovered_business_ids),
                         "missing_id": missing_id_count,
+                        "excluded_non_bookable": excluded_non_bookable_count,
                         "unique_businesses_in_query": len(set(discovered_business_ids)),
                     }
                 )
@@ -119,6 +158,7 @@ class RoomCollectionService:
                         "discovered": 0,
                         "discovered_with_id": 0,
                         "missing_id": 0,
+                        "excluded_non_bookable": 0,
                         "unique_businesses_in_query": 0,
                         "query_error": str(e),
                     }
@@ -193,6 +233,7 @@ class RoomCollectionService:
                     item.get("name", ""),
                     business_id,
                 )
+                self._source_item_hints[str(business_id)] = item
                 await self.collect_by_id(str(business_id))
                 success_count += 1
             except Exception as e:
@@ -210,9 +251,13 @@ class RoomCollectionService:
     async def collect_by_id(self, business_id: str):
         """Collect and save room information for a specific Business ID."""
         logger.info(f"Collecting business_id: {business_id}")
+        source_hint = self._source_item_hints.get(str(business_id))
 
         # 1. Fetch Full Info
-        data = await self.room_fetcher.fetch_full_info(business_id)
+        data = await self.room_fetcher.fetch_full_info(
+            business_id,
+            source_hint=source_hint,
+        )
         if not data:
             raise ValueError(f"No data found for business {business_id}")
 
@@ -220,15 +265,38 @@ class RoomCollectionService:
         rooms = data["rooms"]
         
         if not rooms:
-            logger.warning(f"No rooms found for business {business_id}")
+            logger.warning(
+                "No room inventory for business %s. Skipping collection (contact-required candidate).",
+                business_id,
+            )
             return
+
+        target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(rooms)
+        if not target_rooms:
+            logger.warning(
+                "All rooms filtered out for business %s (inquiry_required=%s, missing_reservation=%s).",
+                business_id,
+                filtered_stats["inquiry_required"],
+                filtered_stats["missing_reservation"],
+            )
+            return
+
+        if filtered_stats["inquiry_required"] or filtered_stats["missing_reservation"]:
+            logger.info(
+                "Room selection summary for business %s: inquiry_required=%s (included), missing_reservation=%s (excluded), remaining=%s/%s",
+                business_id,
+                filtered_stats["inquiry_required"],
+                filtered_stats["missing_reservation"],
+                len(target_rooms),
+                len(rooms),
+            )
 
         # 2. Rule-based parsing (Batch with Concurrency)
         # Rationale: business.desc에 가게 전체 장비/규칙이 담겨 있으므로
         #            개별 룸 파싱 시 컨텍스트로 함께 전달하여 정확도를 높임
         business_desc = business.get("desc") or ""
         parse_items = []
-        for room in rooms:
+        for room in target_rooms:
             parse_items.append({
                 "id": room["bizItemId"],
                 "name": room["name"],
@@ -240,11 +308,11 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 3. Save to DB (Branch -> Room(with images))
-        await self._save_to_db(business, rooms, parsed_results)
-        logger.info(f"Successfully saved business {business_id} with {len(rooms)} rooms")
+        await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        logger.info(f"Successfully saved business {business_id} with {len(target_rooms)} rooms")
 
         # 4. Export unresolved items (Phase 6: Manual verification queue)
-        await self._export_unresolved(business, rooms, parsed_results)
+        await self._export_unresolved(business, target_rooms, parsed_results)
 
     async def _parse_with_concurrency(self, items: List[Dict]) -> Dict[str, Dict]:
         """Parse items in concurrent batches."""
@@ -271,11 +339,46 @@ class RoomCollectionService:
             merged.update(r)
         return merged
 
-    async def _save_to_db(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
+    async def _save_to_db(
+        self,
+        business: Dict,
+        rooms: List[Dict],
+        parsed_results: Dict,
+        source_hint: Optional[Dict[str, Any]] = None,
+    ):
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
         coords = business.get("coordinates")
+        display_name = business.get("businessDisplayName") or business.get("name") or business.get("businessId")
+        branch_phone_number = self._extract_business_phone_number(
+            business,
+            rooms,
+            source_hint=source_hint,
+        )
+        place_id = (source_hint or {}).get("placeId")
+        if not branch_phone_number and place_id:
+            reveal_phone = getattr(self.map_crawler, "reveal_phone_number", None)
+            if callable(reveal_phone):
+                try:
+                    if inspect.iscoroutinefunction(reveal_phone):
+                        revealed = await reveal_phone(str(place_id))
+                    else:
+                        revealed = reveal_phone(str(place_id))
+                    if isinstance(revealed, str) and revealed.strip():
+                        branch_phone_number = revealed.strip()
+                        logger.info(
+                            "Recovered phone via place click fallback: business_id=%s place_id=%s",
+                            business.get("businessId"),
+                            place_id,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Phone reveal fallback failed: business_id=%s place_id=%s err=%s",
+                        business.get("businessId"),
+                        place_id,
+                        e,
+                    )
         # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
         # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
         branch_standby_days = None
@@ -288,12 +391,28 @@ class RoomCollectionService:
 
         branch_data = {
             "business_id": business["businessId"],
-            "name": business["businessDisplayName"],
-            "display_name": business.get("businessDisplayName"), 
-            "lat": coords.get("latitude") if coords else None,
-            "lng": coords.get("longitude") if coords else None,
-            "standby_days": branch_standby_days, 
+            "name": display_name,
+            "display_name": display_name,
         }
+
+        # Do not overwrite existing coordinates with null when business payload is missing.
+        lat_val: Optional[float] = None
+        lng_val: Optional[float] = None
+        if isinstance(coords, dict):
+            lat_val = self._coerce_float(coords.get("latitude"))
+            lng_val = self._coerce_float(coords.get("longitude"))
+        elif isinstance(coords, list) and len(coords) >= 2:
+            lng_val = self._coerce_float(coords[0])
+            lat_val = self._coerce_float(coords[1])
+
+        if lat_val is not None:
+            branch_data["lat"] = lat_val
+        if lng_val is not None:
+            branch_data["lng"] = lng_val
+        if branch_standby_days is not None:
+            branch_data["standby_days"] = branch_standby_days
+        if branch_phone_number:
+            branch_data["phone_number"] = branch_phone_number
         
         # Upsert Branch
         self.supabase.table("branch").upsert(branch_data).execute()
@@ -488,39 +607,81 @@ class RoomCollectionService:
             return None
 
         rules = self.PRICE_CAPACITY_RULES.get(str(business_id))
-        if not rules:
-            return None
+        if rules:
+            best_rule: Optional[Dict[str, Any]] = None
+            best_gap: Optional[int] = None
 
-        best_rule: Optional[Dict[str, Any]] = None
-        best_gap: Optional[int] = None
+            for rule in rules:
+                rule_price = rule.get("price")
+                if not isinstance(rule_price, int):
+                    continue
+                gap = abs(rule_price - price_per_hour)
+                if gap > self.PRICE_MATCH_TOLERANCE:
+                    continue
+                if best_gap is None or gap < best_gap:
+                    best_gap = gap
+                    best_rule = rule
 
-        for rule in rules:
-            rule_price = rule.get("price")
-            if not isinstance(rule_price, int):
+            if best_rule:
+                logger.info(
+                    "Price-based capacity inference applied: business_id=%s room=%s price=%s rule_price=%s max=%s",
+                    business_id,
+                    room_name or "",
+                    price_per_hour,
+                    best_rule.get("price"),
+                    best_rule.get("max_capacity"),
+                )
+                return {
+                    "max_capacity": best_rule.get("max_capacity"),
+                    "recommend_capacity": best_rule.get("recommend_capacity"),
+                    "recommend_range": best_rule.get("recommend_range"),
+                }
+
+        # Global fallback by price band when no business-specific rule matched.
+        for band_rule in self.PRICE_BAND_CAPACITY_DEFAULTS:
+            band_name = band_rule.get("name")
+            min_price = band_rule.get("min_price")
+            max_price = band_rule.get("max_price")
+            default_max = band_rule.get("max_capacity")
+            default_rec = band_rule.get("recommend_capacity")
+            default_range = band_rule.get("recommend_range")
+
+            if not isinstance(min_price, int) or not isinstance(default_max, int):
                 continue
-            gap = abs(rule_price - price_per_hour)
-            if gap > self.PRICE_MATCH_TOLERANCE:
+            if max_price is not None and not isinstance(max_price, int):
                 continue
-            if best_gap is None or gap < best_gap:
-                best_gap = gap
-                best_rule = rule
+            if price_per_hour < min_price:
+                continue
+            if max_price is not None and price_per_hour > max_price:
+                continue
 
-        if not best_rule:
-            return None
+            if not isinstance(default_rec, int):
+                default_rec = default_max // 2 if default_max > 4 else default_max
+            if not (
+                isinstance(default_range, list)
+                and len(default_range) == 2
+                and all(isinstance(v, int) for v in default_range)
+            ):
+                default_range = [max(default_rec - 1, 1), min(default_rec + 1, default_max)]
 
-        logger.info(
-            "Price-based capacity inference applied: business_id=%s room=%s price=%s rule_price=%s max=%s",
-            business_id,
-            room_name or "",
-            price_per_hour,
-            best_rule.get("price"),
-            best_rule.get("max_capacity"),
-        )
-        return {
-            "max_capacity": best_rule.get("max_capacity"),
-            "recommend_capacity": best_rule.get("recommend_capacity"),
-            "recommend_range": best_rule.get("recommend_range"),
-        }
+            rec_cap = default_rec
+            rec_range = default_range
+
+            logger.info(
+                "Price-band fallback inference applied: business_id=%s room=%s price=%s band=%s max=%s",
+                business_id,
+                room_name or "",
+                price_per_hour,
+                band_name,
+                default_max,
+            )
+            return {
+                "max_capacity": default_max,
+                "recommend_capacity": rec_cap,
+                "recommend_range": rec_range,
+            }
+
+        return None
 
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
         """Upsert room row and retry if payload contains unknown columns.
@@ -675,6 +836,174 @@ class RoomCollectionService:
                 return False
         return None
 
+    @staticmethod
+    def _coerce_float(value: Any) -> Optional[float]:
+        """Best-effort conversion of number-like values to float."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                return float(stripped)
+            except ValueError:
+                return None
+        return None
+
+    @classmethod
+    def _extract_phone_number_from_payload(cls, payload: Any) -> Optional[str]:
+        """Recursively extract a plausible phone number from JSON-like payloads."""
+        if payload is None:
+            return None
+
+        if isinstance(payload, str):
+            stripped = payload.strip()
+            if not stripped:
+                return None
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                # Ignore URL noise when parsing free-form text payloads.
+                cleaned = re.sub(r"https?://\S+", " ", stripped)
+                return cls._extract_phone_number_from_text(cleaned)
+            return cls._extract_phone_number_from_payload(parsed)
+
+        if isinstance(payload, list):
+            for item in payload:
+                found = cls._extract_phone_number_from_payload(item)
+                if found:
+                    return found
+            return None
+
+        if isinstance(payload, dict):
+            preferred_keys = (
+                "phone",
+                "phoneNumber",
+                "representativePhoneNumber",
+                "tel",
+                "telephone",
+                "mobile",
+                "number",
+            )
+            for key in preferred_keys:
+                if key in payload:
+                    found = cls._extract_phone_number_from_payload(payload.get(key))
+                    if found:
+                        return found
+
+            ignored_key_tokens = (
+                "url",
+                "image",
+                "img",
+                "photo",
+                "thumbnail",
+                "resource",
+                "icon",
+                "logo",
+            )
+            for key, value in payload.items():
+                key_lower = str(key).lower()
+                if any(token in key_lower for token in ignored_key_tokens):
+                    continue
+                found = cls._extract_phone_number_from_payload(value)
+                if found:
+                    return found
+
+        return None
+
+    @staticmethod
+    def _extract_phone_number_from_text(text: str) -> Optional[str]:
+        """Extract a Korean business phone-like token from plain text."""
+        if not text:
+            return None
+
+        # Keep this allow-list tight to avoid false positives from timestamps/URLs.
+        pattern = (
+            r"(?<!\d)0507[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
+            r"|(?<!\d)(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
+            r"|(?<!\d)(?:1544|1566|1577|1588|1599|1600|1644|1661|1670|1688)[\s\-]?\d{4}(?!\d)"
+        )
+        best: Optional[Tuple[int, str]] = None
+
+        for match in re.finditer(pattern, text):
+            candidate = match.group(0)
+            digits = re.sub(r"\D", "", candidate)
+            if digits.startswith("82") and len(digits) >= 10:
+                digits = "0" + digits[2:]
+            if len(digits) < 8 or len(digits) > 12:
+                continue
+
+            # Prefer tokens near contact keywords to avoid non-phone numeric noise.
+            left = max(0, match.start() - 24)
+            right = min(len(text), match.end() + 24)
+            window = text[left:right].lower()
+            score = 1
+            if re.search(r"(전화|문의|연락|콜|tel|phone|contact|call)", window):
+                score += 10
+            if digits.startswith(("010", "011", "016", "017", "018", "019", "02", "0507")):
+                score += 5
+            elif digits.startswith(("031", "032", "033", "041", "042", "043", "044", "051", "052", "053", "054", "055", "061", "062", "063", "064", "070")):
+                score += 4
+            elif digits.startswith(("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")):
+                score += 3
+
+            normalized = re.sub(r"[.\s]+", "-", candidate).strip("-")
+            if "-" not in normalized and len(digits) == 8 and digits.startswith(
+                ("1544", "1566", "1577", "1588", "1599", "1600", "1644", "1661", "1670", "1688")
+            ):
+                normalized = f"{digits[:4]}-{digits[4:]}"
+            if best is None or score > best[0]:
+                best = (score, normalized)
+
+        if best:
+            return best[1]
+        return None
+
+    @classmethod
+    def _extract_business_phone_number(
+        cls,
+        business: Dict[str, Any],
+        rooms: List[Dict[str, Any]],
+        source_hint: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """Extract branch phone number from business payload, map hint, and room payloads."""
+        business_candidates = [
+            business.get("phoneInformationJson"),
+            business.get("phone"),
+            business.get("phoneNumber"),
+            business.get("telephone"),
+            business.get("tel"),
+            business,
+        ]
+        for candidate in business_candidates:
+            found = cls._extract_phone_number_from_payload(candidate)
+            if found:
+                return found
+
+        if source_hint:
+            found = cls._extract_phone_number_from_payload(source_hint)
+            if found:
+                return found
+
+        for room in rooms:
+            room_candidates = [
+                room.get("phone"),
+                room.get("phoneNumber"),
+                room.get("telephone"),
+                room.get("tel"),
+                room.get("bookingPrecautionJson"),
+                room.get("extraDescJson"),
+                room.get("desc"),
+            ]
+            for candidate in room_candidates:
+                found = cls._extract_phone_number_from_payload(candidate)
+                if found:
+                    return found
+        return None
+
     def _extract_capacity_text_signals(
         self, room: Dict[str, Any]
     ) -> Tuple[Optional[int], Optional[int], Optional[List[int]]]:
@@ -718,6 +1047,130 @@ class RoomCollectionService:
             max_cap = int(max_match.group(1))
 
         return max_cap, rec_cap, rec_range
+
+    def _filter_rooms_for_regex_parsing(self, rooms: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+        """Exclude only rooms lacking reservation metadata.
+
+        Inquiry-required rooms are still included because they can be reservable
+        via phone/chat/manual confirmation flows.
+        """
+        selected: List[Dict[str, Any]] = []
+        filtered_stats = {
+            "inquiry_required": 0,
+            "missing_reservation": 0,
+        }
+
+        for room in rooms:
+            if self._requires_inquiry(room):
+                filtered_stats["inquiry_required"] += 1
+            if not self._has_reservation_metadata(room):
+                filtered_stats["missing_reservation"] += 1
+                continue
+            selected.append(room)
+
+        return selected, filtered_stats
+
+    def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
+        """Detect inquiry-required rooms from structured/text policy blocks."""
+        structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
+        if structured_requires_call is True:
+            return True
+        if structured_requires_call is False:
+            return False
+
+        joined_text = " ".join(self._collect_room_policy_texts(room))
+        if not joined_text:
+            return False
+
+        normalized = joined_text.lower()
+        negative_patterns = (
+            r"(문의|상담|전화)\s*(없이|불필요)",
+            r"(no|not)\s+(need|required).*(call|contact|inquiry)",
+            r"(call|contact|inquiry)\s*(is\s*)?(not required|optional)",
+        )
+        for pattern in negative_patterns:
+            if re.search(pattern, normalized, re.IGNORECASE):
+                return False
+
+        positive_patterns = (
+            r"(문의|상담|전화).{0,8}(필수|필요|요망|후)",
+            r"(예약|당일).{0,12}(문의|상담|전화).{0,8}(필수|필요|요망)",
+            r"(call|phone|contact|inquiry).{0,12}(required|must|needed)",
+        )
+        for pattern in positive_patterns:
+            if re.search(pattern, normalized, re.IGNORECASE):
+                return True
+
+        return False
+
+    def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
+        """Check if room has enough reservation-related metadata to parse."""
+        base_price = self._extract_price(room)
+        if isinstance(base_price, int) and base_price > 0:
+            return True
+
+        raw_price = self._coerce_int(room.get("price"))
+        if raw_price is not None and raw_price > 0:
+            return True
+
+        for key in ("minBookingCount", "maxBookingCount", "minBookingTime", "maxBookingTime", "stock"):
+            if key in room and room.get(key) is not None:
+                return True
+
+        time_unit_code = room.get("bookingTimeUnitCode")
+        if isinstance(time_unit_code, str) and time_unit_code.strip():
+            return True
+
+        for key in ("bookingCountSettingJson", "bookingPrecautionJson"):
+            if self._has_non_empty_payload(room.get(key)):
+                return True
+
+        return False
+
+    @staticmethod
+    def _has_non_empty_payload(value: Any) -> bool:
+        """Return True for non-empty JSON-like payloads."""
+        if value is None:
+            return False
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return False
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                return True
+            return RoomCollectionService._has_non_empty_payload(parsed)
+        if isinstance(value, dict):
+            return len(value) > 0
+        if isinstance(value, list):
+            return len(value) > 0
+        return True
+
+    @staticmethod
+    def _collect_room_policy_texts(room: Dict[str, Any]) -> List[str]:
+        """Collect policy-related text snippets for inquiry detection."""
+        texts: List[str] = []
+
+        def walk(value: Any) -> None:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped:
+                    texts.append(stripped)
+                return
+            if isinstance(value, list):
+                for item in value:
+                    walk(item)
+                return
+            if isinstance(value, dict):
+                for nested_value in value.values():
+                    walk(nested_value)
+
+        walk(room.get("name"))
+        walk(room.get("desc"))
+        walk(room.get("extraDescJson"))
+        walk(room.get("bookingPrecautionJson"))
+        return texts
 
     def _extract_structured_requires_call_on_same_day(self, room: Dict[str, Any]) -> Optional[bool]:
         """Extract requires-call-on-same-day from structured JSON-like fields."""

@@ -4,7 +4,7 @@ import random
 import asyncio
 import json
 import httpx
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,11 @@ class NaverRoomFetcher:
             self.headers["Cookie"] = cookie_from_state
             logger.info("Using NAVER_STORAGE_STATE_PATH cookies for GraphQL requests")
     
-    async def fetch_full_info(self, business_id: str) -> Optional[Dict]:
+    async def fetch_full_info(
+        self,
+        business_id: str,
+        source_hint: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict]:
         """
         Fetch full room info for a business ID (business, rooms, nearby subway).
         
@@ -58,14 +62,20 @@ class NaverRoomFetcher:
                 # 2) Room list (BizItems)
                 rooms = await self._fetch_biz_items(client, business_id)
 
+                # 보수적 운영 규칙:
+                # business 정보가 비어도 rooms가 있으면 수집/파싱을 계속한다.
+                # (예약 불가 단정 대신 '정보 부족/문의 필요'로 해석)
                 if not business_info:
                     if not rooms:
                         logger.warning(f"Failed to fetch business info for {business_id}")
                         return None
-                    business_info = self._build_business_fallback(business_id, rooms)
                     logger.warning(
                         "Business query returned null; using fallback business payload for %s",
                         business_id,
+                    )
+                    business_info = self._build_business_fallback(
+                        business_id,
+                        source_hint=source_hint,
                     )
                 
                 # 3) Nearby subway info (only when coordinates are available)
@@ -90,14 +100,25 @@ class NaverRoomFetcher:
                 return None
 
     @staticmethod
-    def _build_business_fallback(business_id: str, rooms: List[Dict]) -> Dict:
-        room_hint = rooms[0].get("name") if rooms else None
-        fallback_name = room_hint or f"business-{business_id}"
+    def _build_business_fallback(
+        business_id: str,
+        source_hint: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
+        hint_name = (source_hint or {}).get("name")
+        fallback_name = (
+            hint_name.strip()
+            if isinstance(hint_name, str) and hint_name.strip()
+            else f"business-{business_id}"
+        )
         return {
             "id": business_id,
             "businessId": business_id,
             "name": fallback_name,
             "businessDisplayName": fallback_name,
+            "businessCategory": None,
+            "bookingUrl": None,
+            "bookingGuideJson": None,
+            "businessResources": None,
             "desc": "",
             "coordinates": None,
             "placeId": None,
@@ -117,6 +138,9 @@ class NaverRoomFetcher:
                 businessId
                 name
                 businessDisplayName
+                businessCategory
+                bookingUrl
+                bookingGuideJson
                 desc
                 coordinates
                 placeId
@@ -126,6 +150,11 @@ class NaverRoomFetcher:
                 extraDescJson
                 additionalPropertyJson
                 eventDescJson
+                businessResources {
+                    resourceTypeCode
+                    resourceUrl
+                    order
+                }
             }
         }
         """
@@ -159,6 +188,7 @@ class NaverRoomFetcher:
           bizItems(input: $input) {
             bizItemId
             name
+            phone
             desc
             stock
             price
@@ -169,6 +199,10 @@ class NaverRoomFetcher:
             maxBookingTime
             isOnsitePayment
             bookingCountSettingJson
+            bookingPrecautionJson {
+              title
+              desc
+            }
             extraFeeSettingJson
             extraDescJson
             minMaxPrice {

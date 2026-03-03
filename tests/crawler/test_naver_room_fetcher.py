@@ -83,8 +83,50 @@ async def test_fetch_full_info_uses_business_fallback_when_business_is_null():
 
     assert result is not None
     assert result["business"]["businessId"] == "522011"
-    assert result["business"]["businessDisplayName"] == "블랙룸"
+    assert result["business"]["businessDisplayName"] == "business-522011"
     assert len(result["rooms"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_full_info_uses_source_hint_name_for_business_fallback():
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "블랙룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info(
+            "522011",
+            source_hint={"name": "비쥬 합주실 1호점"},
+        )
+
+    assert result is not None
+    assert result["business"]["businessId"] == "522011"
+    assert result["business"]["businessDisplayName"] == "비쥬 합주실 1호점"
+
+
+@pytest.mark.asyncio
+async def test_fetch_full_info_allows_empty_biz_items_without_marking_non_bookable():
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(
+        fetcher,
+        "_fetch_business",
+        AsyncMock(
+            return_value={
+                "businessId": "522011",
+                "coordinates": {"longitude": 127.0, "latitude": 37.0},
+            }
+        ),
+    ), patch.object(fetcher, "_fetch_biz_items", AsyncMock(return_value=[])), patch.object(
+        fetcher, "_fetch_near_subway", AsyncMock(return_value=None)
+    ):
+        result = await fetcher.fetch_full_info("522011")
+
+    assert result is not None
+    assert result["business"]["businessId"] == "522011"
+    assert result["rooms"] == []
 
 
 @pytest.mark.asyncio

@@ -442,3 +442,170 @@ class TestV2NewFields:
         room_data = upsert_call[0][0]
         
         assert room_data["price_config"] == price_cfg
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_does_not_overwrite_coordinates_with_null(self, service, mock_supabase):
+        """coordinates가 없으면 branch upsert payload에 lat/lng를 넣지 않는다."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [{"bizItemId": "r1", "name": "Room 1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+
+        assert "lat" not in branch_data
+        assert "lng" not in branch_data
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_saves_phone_number_from_business_payload(self, service, mock_supabase):
+        """business.phoneInformationJson에서 대표 전화번호를 추출해 저장한다."""
+        business = {
+            "businessId": "biz1",
+            "businessDisplayName": "Test Branch",
+            "coordinates": None,
+            "phoneInformationJson": {"phoneNumber": "02-123-4567"},
+        }
+        rooms = [{"bizItemId": "r1", "name": "Room 1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+
+        assert branch_data["phone_number"] == "02-123-4567"
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_saves_phone_number_from_room_payload_fallback(self, service, mock_supabase):
+        """business에 전화번호가 없으면 room.phone을 fallback으로 사용한다."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room 1",
+                "phone": "010-1234-5678",
+                "bizItemResources": [],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+
+        assert branch_data["phone_number"] == "010-1234-5678"
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_extracts_phone_from_booking_precaution_text(self, service, mock_supabase):
+        """room 예약 주의사항 텍스트에서 전화번호를 fallback 추출한다."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room 1",
+                "desc": "당일 예약 문의 필수",
+                "bookingPrecautionJson": [
+                    {
+                        "title": None,
+                        "desc": "입금 계좌 3333134566206 / 문의 0507-1343-7985",
+                    }
+                ],
+                "bizItemResources": [],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert branch_data["phone_number"] == "0507-1343-7985"
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_uses_source_hint_phone_fallback(self, service, mock_supabase):
+        """business/room에 번호가 없으면 map source_hint의 번호를 fallback으로 사용한다."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [{"bizItemId": "r1", "name": "Room 1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+        source_hint = {"id": "biz1", "name": "테스트 합주실", "phone": "02-123-4567"}
+
+        await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert branch_data["phone_number"] == "02-123-4567"
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_ignores_resource_url_numeric_noise(self, service, mock_supabase):
+        """resourceUrl timestamp-like digits must not be treated as phone number."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room 1",
+                "desc": "전화번호 보기",
+                "bizItemResources": [
+                    {"resourceUrl": "https://foo.cdn.net/20251005_152/17596265723914UtbY_JPEG/8705"}
+                ],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert "phone_number" not in branch_data
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_prefers_real_phone_over_resource_url_noise(self, service, mock_supabase):
+        """When both exist, real contact number in text should win."""
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room 1",
+                "bookingPrecautionJson": [{"desc": "문의 0507-1461-8067"}],
+                "bizItemResources": [
+                    {"resourceUrl": "https://foo.cdn.net/20251005_152/17596265723914UtbY_JPEG/8705"}
+                ],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert branch_data["phone_number"] == "0507-1461-8067"
+
+    @pytest.mark.asyncio
+    async def test_branch_upsert_uses_place_click_phone_fallback(self, service, mock_supabase):
+        """When GraphQL/source text has no phone, place click fallback should fill phone_number."""
+        service.map_crawler.reveal_phone_number = AsyncMock(return_value="010-3032-6033")
+        business = {"businessId": "biz1", "businessDisplayName": "Test Branch", "coordinates": None}
+        rooms = [
+            {
+                "bizItemId": "r1",
+                "name": "Room 1",
+                "desc": "전화번호 보기",
+                "bizItemResources": [],
+                "minMaxPrice": {"minPrice": 15000},
+            }
+        ]
+        parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+        source_hint = {"id": "biz1", "name": "Test Branch", "placeId": "1770803230"}
+
+        await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+        upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+        branch_data = upsert_call[0][0]
+        assert branch_data["phone_number"] == "010-3032-6033"
+        service.map_crawler.reveal_phone_number.assert_awaited_once_with("1770803230")

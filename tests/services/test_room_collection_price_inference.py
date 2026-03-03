@@ -125,3 +125,81 @@ async def test_price_inference_uses_tolerance_window(service, mock_supabase):
     assert room_data["max_capacity"] == 10
     assert room_data["recommend_capacity"] == 5
     assert room_data["recommend_capacity_range"] == [3, 5]
+
+
+@pytest.mark.asyncio
+async def test_price_band_fallback_applied_for_unknown_business_in_10k_15k_band(service, mock_supabase):
+    business = {
+        "businessId": "unknown-biz",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Fallback Room",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 14000},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": None, "recommend_capacity": None}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 5
+    assert room_data["recommend_capacity"] == 4
+    assert room_data["recommend_capacity_range"] == [4, 4]
+
+
+@pytest.mark.asyncio
+async def test_price_band_fallback_applied_for_unknown_business_in_15k_20k_band(service, mock_supabase):
+    business = {
+        "businessId": "unknown-biz",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Fallback Room",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 17000},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": None, "recommend_capacity": None}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 8
+    assert room_data["recommend_capacity"] == 7
+    assert room_data["recommend_capacity_range"] == [7, 7]
+
+
+@pytest.mark.asyncio
+async def test_price_band_fallback_applied_for_unknown_business_in_20k_plus_band(service, mock_supabase):
+    business = {
+        "businessId": "unknown-biz",
+        "businessDisplayName": "Test",
+        "coordinates": None,
+    }
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "Fallback Room",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 22000},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": None, "recommend_capacity": None}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+    room_data = upsert_call[0][0]
+    assert room_data["max_capacity"] == 11
+    assert room_data["recommend_capacity"] == 10
+    assert room_data["recommend_capacity_range"] == [10, 11]

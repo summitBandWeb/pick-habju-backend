@@ -11,7 +11,9 @@ async def test_collect_by_query_forces_priority_area_mode():
         from app.services.room_collection_service import RoomCollectionService
 
         mock_crawler = mock_crawler_cls.return_value
-        mock_crawler.search_rehearsal_rooms = AsyncMock(return_value=[{"id": "biz1", "name": "ok-room"}])
+        mock_crawler.search_rehearsal_rooms = AsyncMock(
+            return_value=[{"id": "biz1", "bookingBusinessId": "biz1", "name": "ok-room"}]
+        )
 
         service = RoomCollectionService()
         service.map_crawler = mock_crawler
@@ -35,7 +37,9 @@ async def test_collect_all_regions_uses_priority_area_mode():
         from app.services.room_collection_service import RoomCollectionService
 
         mock_crawler = mock_crawler_cls.return_value
-        mock_crawler.search_rehearsal_rooms = AsyncMock(return_value=[{"id": "biz1", "name": "ok-room"}])
+        mock_crawler.search_rehearsal_rooms = AsyncMock(
+            return_value=[{"id": "biz1", "bookingBusinessId": "biz1", "name": "ok-room"}]
+        )
 
         service = RoomCollectionService()
         service.map_crawler = mock_crawler
@@ -61,8 +65,14 @@ async def test_collect_priority_areas_deduplicates_overlapping_queries():
         mock_crawler = mock_crawler_cls.return_value
         mock_crawler.search_rehearsal_rooms = AsyncMock(
             side_effect=[
-                [{"id": "biz1", "name": "A"}, {"id": "biz2", "name": "B"}],
-                [{"id": "biz2", "name": "B"}, {"id": "biz3", "name": "C"}],
+                [
+                    {"id": "biz1", "bookingBusinessId": "biz1", "name": "A"},
+                    {"id": "biz2", "bookingBusinessId": "biz2", "name": "B"},
+                ],
+                [
+                    {"id": "biz2", "bookingBusinessId": "biz2", "name": "B"},
+                    {"id": "biz3", "bookingBusinessId": "biz3", "name": "C"},
+                ],
             ]
         )
 
@@ -90,7 +100,7 @@ async def test_collect_priority_areas_includes_source_queries_on_failure():
 
         mock_crawler = mock_crawler_cls.return_value
         mock_crawler.search_rehearsal_rooms = AsyncMock(
-            return_value=[{"id": "biz1", "name": "A"}]
+            return_value=[{"id": "biz1", "bookingBusinessId": "biz1", "name": "A"}]
         )
 
         service = RoomCollectionService()
@@ -121,9 +131,9 @@ async def test_collect_priority_areas_respects_max_targets():
         mock_crawler = mock_crawler_cls.return_value
         mock_crawler.search_rehearsal_rooms = AsyncMock(
             return_value=[
-                {"id": "biz1", "name": "A"},
-                {"id": "biz2", "name": "B"},
-                {"id": "biz3", "name": "C"},
+                {"id": "biz1", "bookingBusinessId": "biz1", "name": "A"},
+                {"id": "biz2", "bookingBusinessId": "biz2", "name": "B"},
+                {"id": "biz3", "bookingBusinessId": "biz3", "name": "C"},
             ]
         )
 
