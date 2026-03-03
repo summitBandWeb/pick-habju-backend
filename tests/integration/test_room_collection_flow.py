@@ -105,7 +105,7 @@ class TestCollectByIdFlow:
         await service.collect_by_id("test123")
         
         # 1. Fetcher가 호출되었는지
-        mock_fetcher.fetch_full_info.assert_called_once_with("test123")
+        mock_fetcher.fetch_full_info.assert_called_once_with("test123", source_hint=None)
         
         # 2. Parser가 호출되었는지
         mock_parser.parse_room_desc_batch.assert_called_once()
@@ -179,8 +179,8 @@ class TestCollectByQueryFlow:
         """NaverMapCrawler Mock"""
         mock = MagicMock()
         mock.search_rehearsal_rooms = AsyncMock(return_value=[
-            {"id": "biz1", "name": "합주실A"},
-            {"id": "biz2", "name": "합주실B"}
+            {"id": "biz1", "bookingBusinessId": "biz1", "name": "합주실A"},
+            {"id": "biz2", "bookingBusinessId": "biz2", "name": "합주실B"}
         ])
         return mock
     
