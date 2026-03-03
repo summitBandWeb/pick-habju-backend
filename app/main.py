@@ -44,8 +44,12 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         # 종료 시 정리
-        shutdown_scheduler()
-        await close_global_client()
+        try:
+            shutdown_scheduler()
+        except Exception as e:
+            logger.error(f"Error shutting down scheduler: {e}", exc_info=True)
+        finally:
+            await close_global_client()
 
 
 app = FastAPI(
@@ -93,9 +97,20 @@ app.add_middleware(CacheControlMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(TraceIDMiddleware)
 
-if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower() != "true":
-    metrics_app = make_asgi_app()
-    app.mount("/metrics", metrics_app)
+import sys
+
+if ENABLE_METRICS:
+    is_internal_only = os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower() == "true"
+    allow_external = os.getenv("METRICS_ALLOW_EXTERNAL", "false").strip().lower() == "true"
+    auth_proxy = os.getenv("METRICS_AUTH_PROXY", "false").strip().lower() == "true"
+    
+    if not is_internal_only and not (allow_external or auth_proxy):
+        logger.error("METRICS_INTERNAL_ONLY is false but no secondary guard (METRICS_ALLOW_EXTERNAL or METRICS_AUTH_PROXY) is provided. Refusing to expose /metrics unauthenticated.")
+        sys.exit(1)
+        
+    if is_internal_only or allow_external or auth_proxy:
+        metrics_app = make_asgi_app()
+        app.mount("/metrics", metrics_app)
 
 
 @app.get("/ping")

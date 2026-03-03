@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 class SnapshotStore:
     async def acquire_lock(self, lock_key: str, ttl_seconds: int = 60) -> bool:
         raise NotImplementedError
-    def release_lock(self, lock_key: str):
+    async def release_lock(self, lock_key: str):
         raise NotImplementedError
-    def load_snapshot(self) -> dict:
+    async def load_snapshot(self) -> dict:
         raise NotImplementedError
-    def save_snapshot(self, data: dict):
+    async def save_snapshot(self, data: dict):
         raise NotImplementedError
 
 class LocalSnapshotStore(SnapshotStore):
@@ -51,7 +51,7 @@ class LocalSnapshotStore(SnapshotStore):
             logger.warning(f"Lock acquisition error: {e}", exc_info=True)
             return False
 
-    def release_lock(self, lock_key: str):
+    async def release_lock(self, lock_key: str):
         lock_file = os.path.join(tempfile.gettempdir(), f"{lock_key}.lock")
         try:
             if os.path.exists(lock_file):
@@ -62,7 +62,7 @@ class LocalSnapshotStore(SnapshotStore):
         except Exception as e:
             logger.warning(f"Failed to release lock {lock_file}: {e}", exc_info=True)
 
-    def load_snapshot(self) -> dict:
+    async def load_snapshot(self) -> dict:
         try:
             if os.path.exists(self.snapshot_file):
                 with open(self.snapshot_file, 'r') as f:
@@ -71,16 +71,14 @@ class LocalSnapshotStore(SnapshotStore):
             logger.warning(f"Failed to load snapshot {self.snapshot_file}: {e}", exc_info=True)
         return {"total_requests": 0, "total_errors": 0, "total_duration": 0.0}
 
-    def save_snapshot(self, data: dict):
+    async def save_snapshot(self, data: dict):
         try:
             with open(self.snapshot_file, 'w') as f:
                 json.dump(data, f)
         except Exception as e:
             logger.warning(f"Failed to save metrics snapshot: {e}", exc_info=True)
 
-# TODO: Replace with remote store (e.g. RedisSnapshotStore) when multi-node scaling is configured
 snapshot_store: SnapshotStore = LocalSnapshotStore()
-
 
 async def send_discord_report():
     """
@@ -120,7 +118,7 @@ async def send_discord_report():
                     current_duration += sample.value
                     
         # 3. 누적 누수 방지를 위한 Delta 계산 및 카운터 재시작 대처
-        snapshot = snapshot_store.load_snapshot()
+        snapshot = await snapshot_store.load_snapshot()
         snap_reqs = snapshot.get("total_requests", 0)
         snap_errs = snapshot.get("total_errors", 0)
         snap_dur = snapshot.get("total_duration", 0.0)
@@ -131,7 +129,7 @@ async def send_discord_report():
         total_duration = current_duration if current_duration < snap_dur else current_duration - snap_dur
         
         # 새로운 스냅샷 반영
-        snapshot_store.save_snapshot({
+        await snapshot_store.save_snapshot({
             "total_requests": current_requests,
             "total_errors": current_errors,
             "total_duration": current_duration
@@ -188,4 +186,4 @@ async def send_discord_report():
     except Exception as e:
         logger.error(f"Failed to generate or send daily report: {e}", exc_info=True)
     finally:
-        snapshot_store.release_lock(lock_key)
+        await snapshot_store.release_lock(lock_key)
