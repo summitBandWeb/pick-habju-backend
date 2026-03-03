@@ -107,6 +107,25 @@ async def test_fetch_full_info_uses_source_hint_name_for_business_fallback():
 
 
 @pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_source_hint_room_name_collision():
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info(
+            "522011",
+            source_hint={"name": "A룸"},
+        )
+
+    assert result is not None
+    assert result["business"]["businessId"] == "522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
+
+
+@pytest.mark.asyncio
 async def test_fetch_full_info_allows_empty_biz_items_without_marking_non_bookable():
     fetcher = NaverRoomFetcher()
 

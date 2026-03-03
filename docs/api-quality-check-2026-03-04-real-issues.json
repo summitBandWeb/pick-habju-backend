@@ -1,0 +1,313 @@
+{
+  "mismatch_rows_total": 50,
+  "partial_only_request_count": 36,
+  "real_issue_request_count": 14,
+  "real_issue_id_total_count": 34,
+  "real_issue_id_unique_count": 26,
+  "real_issue_id_unique_sorted": [
+    "25",
+    "26",
+    "2907182",
+    "3361595",
+    "3968896",
+    "4118737",
+    "5486506",
+    "5486623",
+    "5521127",
+    "5588476",
+    "5588817",
+    "5836982",
+    "5910577",
+    "5910581",
+    "5933800",
+    "5979448",
+    "5979479",
+    "6190915",
+    "6646565",
+    "6651547",
+    "6651554",
+    "6761302",
+    "6999824",
+    "6999954",
+    "7422867",
+    "7422868"
+  ],
+  "real_issue_requests": [
+    {
+      "area_key": "isoo",
+      "area_label": "이수",
+      "date": "2026-03-05",
+      "start_hour": "01:00",
+      "end_hour": "03:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "25",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sadang",
+      "area_label": "사당",
+      "date": "2026-03-05",
+      "start_hour": "01:00",
+      "end_hour": "03:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "25",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sadang",
+      "area_label": "사당",
+      "date": "2026-03-11",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "25",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "26",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sinchon",
+      "area_label": "신촌",
+      "date": "2026-03-05",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "6999954",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sinchon",
+      "area_label": "신촌",
+      "date": "2026-03-11",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "5979448",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5979479",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sinchon",
+      "area_label": "신촌",
+      "date": "2026-03-11",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "5979448",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sinchon",
+      "area_label": "신촌",
+      "date": "2026-03-18",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "6999824",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "sinchon",
+      "area_label": "신촌",
+      "date": "2026-03-18",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "6999824",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "01:00",
+      "end_hour": "03:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "5486506",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "01:00",
+      "end_hour": "03:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "5486506",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "01:00",
+      "end_hour": "03:00",
+      "capacity": "12",
+      "hard_issues": [
+        {
+          "biz_item_id": "25",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "10:00",
+      "end_hour": "12:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "7422867",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "10:00",
+      "end_hour": "12:00",
+      "capacity": "8",
+      "hard_issues": [
+        {
+          "biz_item_id": "7422867",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    },
+    {
+      "area_key": "seoul_all",
+      "area_label": "서울광역",
+      "date": "2026-03-05",
+      "start_hour": "19:00",
+      "end_hour": "21:00",
+      "capacity": "2",
+      "hard_issues": [
+        {
+          "biz_item_id": "2907182",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "3361595",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "3968896",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "4118737",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5486623",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5521127",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5588476",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5588817",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5836982",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5910577",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5910581",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "5933800",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6190915",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6646565",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6651547",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6651554",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6761302",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "6999954",
+          "reason": "id_not_in_rooms"
+        },
+        {
+          "biz_item_id": "7422868",
+          "reason": "id_not_in_rooms"
+        }
+      ]
+    }
+  ]
+}

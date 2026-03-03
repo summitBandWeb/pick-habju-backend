@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-03-04",
+  "basis": "availability API sample matrix (dates:+1,+7,+14; times:01-03,10-12,19-21; capacity:12)",
+  "assumption": "heukseok/sangdo bboxes are inferred for temporary verification because frontend region bbox is not yet published",
+  "bbox": {
+    "heukseok_assumed": {
+      "swLat": 37.5011,
+      "swLng": 126.9539,
+      "neLat": 37.5171,
+      "neLng": 126.9731
+    },
+    "sangdo_assumed": {
+      "swLat": 37.4951,
+      "swLng": 126.9379,
+      "neLat": 37.5111,
+      "neLng": 126.9571
+    }
+  },
+  "area_unique_business_counts": {
+    "isoo": 6,
+    "sadang": 6,
+    "hongdae": 7,
+    "sinchon": 0,
+    "heukseok_assumed": 0,
+    "sangdo_assumed": 2,
+    "seoul_all": 19
+  },
+  "gap_comparison": {
+    "local4_to_seoul": 6,
+    "local6_to_seoul": 4,
+    "newly_covered_by_added_areas": [
+      "1384809",
+      "570236"
+    ],
+    "remaining_gap_after_added_areas": [
+      "1415457",
+      "1500479",
+      "1593535",
+      "759837"
+    ]
+  }
+}
