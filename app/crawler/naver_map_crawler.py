@@ -1,4 +1,4 @@
-import os
+﻿import os
 import asyncio
 import logging
 import random
@@ -6,7 +6,7 @@ import time
 import json
 import base64
 import re
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
 from app.core.constants import PRIORITY_AREA_QUERIES
@@ -26,13 +26,14 @@ class NaverMapCrawler:
     
     # Configurable timeouts via environment variables
     PAGE_WAIT_MS = int(os.getenv("CRAWLER_PAGE_WAIT_MS", "3000"))
-    SCROLL_WAIT_MS = int(os.getenv("CRAWLER_SCROLL_WAIT_MS", "1500"))
     MAX_PAGES = int(os.getenv("CRAWLER_MAX_PAGES", "5"))
     RATE_LIMIT_RETRIES = int(os.getenv("CRAWLER_RATE_LIMIT_RETRIES", "3"))
     RATE_LIMIT_BACKOFF_SEC = float(os.getenv("CRAWLER_RATE_LIMIT_BACKOFF_SEC", "2.0"))
     PAGE_WAIT_JITTER_MS = int(os.getenv("CRAWLER_PAGE_WAIT_JITTER_MS", "800"))
     STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
-    PHONE_VIEW_LABEL = "전화번호 보기"
+    INFO_TAB_LABEL = "정보"
+    REPRESENTATIVE_KEYWORDS_LABEL = "대표 키워드"
+    PHONE_VIEW_LABEL = "?꾪솕踰덊샇 蹂닿린"
     PHONE_PATTERN = re.compile(
         r"(?<!\d)(?:0507[\s\-]?\d{3,4}[\s\-]?\d{4}|(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}|(?:1544|1566|1577|1588|1599|1600|1644|1661|1670|1688)[\s\-]?\d{4})(?!\d)"
     )
@@ -60,6 +61,17 @@ class NaverMapCrawler:
             return None
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._reveal_phone_sync, str(place_id))
+
+    async def reveal_representative_keywords(self, place_id: str) -> List[str]:
+        """장소 상세 페이지(정보 탭)에서 대표 키워드를 추출한다."""
+        if not place_id:
+            return []
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            self._reveal_representative_keywords_sync,
+            str(place_id),
+        )
 
     def _search_sync(self, query: str) -> List[Dict[str, str]]:
         """Synchronous search implementation."""
@@ -292,6 +304,208 @@ class NaverMapCrawler:
             finally:
                 browser.close()
 
+    def _reveal_representative_keywords_sync(self, place_id: str) -> List[str]:
+        """장소 상세 페이지에서 대표 키워드를 직접 추출한다."""
+        user_agent_str = self._resolve_user_agent()
+        entry_url = f"https://map.naver.com/p/entry/place/{place_id}"
+
+        with sync_playwright() as p:
+            browser = None
+            try:
+                browser = p.chromium.launch(
+                    headless=self.headless,
+                    channel="chrome",
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                    ],
+                )
+            except Exception as e:
+                logger.warning(f"Failed to launch Chrome channel for keyword reveal: {e}. Falling back.")
+                try:
+                    browser = p.chromium.launch(
+                        headless=self.headless,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--no-sandbox",
+                        ],
+                    )
+                except Exception as e2:
+                    logger.error(f"Failed to launch browser for keyword reveal: {e2}")
+                    return []
+
+            context_kwargs = {
+                "user_agent": user_agent_str,
+                "extra_http_headers": {"Referer": "https://map.naver.com/"},
+                "viewport": {"width": 430, "height": 920},
+                "locale": "ko-KR",
+                "timezone_id": "Asia/Seoul",
+            }
+            if self.storage_state_path and os.path.exists(self.storage_state_path):
+                context_kwargs["storage_state"] = self.storage_state_path
+
+            context = browser.new_context(**context_kwargs)
+
+            try:
+                from playwright_stealth import stealth_sync
+
+                stealth_sync(context)
+            except Exception:
+                pass
+
+            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            page = context.new_page()
+
+            try:
+                page.goto(entry_url)
+                page.wait_for_load_state("domcontentloaded")
+                page.wait_for_timeout(self._wait_with_jitter(self.PAGE_WAIT_MS))
+
+                target_frame = None
+                for frame in page.frames:
+                    if frame.url and f"pcmap.place.naver.com/place/{place_id}" in frame.url:
+                        target_frame = frame
+                        break
+                if not target_frame:
+                    return []
+
+                self._open_info_tab(target_frame)
+                page.wait_for_timeout(self._wait_with_jitter(1200))
+
+                apollo_keywords: List[str] = []
+                try:
+                    raw = target_frame.evaluate(
+                        """() => {
+                            const state = window.__APOLLO_STATE__;
+                            if (!state || typeof state !== 'object') return [];
+                            const out = [];
+                            const seen = new Set();
+                            const keyMatched = (k) => /keyword|hashtag|tag/i.test(String(k || ""));
+                            const push = (v) => {
+                                if (typeof v !== 'string') return;
+                                const t = v.trim();
+                                if (!t || seen.has(t)) return;
+                                seen.add(t);
+                                out.push(t);
+                            };
+                            const walk = (obj, depth = 0, key = "") => {
+                                if (depth > 6 || obj == null) return;
+                                if (typeof obj === 'string') {
+                                    if (keyMatched(key)) push(obj);
+                                    return;
+                                }
+                                if (Array.isArray(obj)) {
+                                    for (const item of obj) walk(item, depth + 1, key);
+                                    return;
+                                }
+                                if (typeof obj === 'object') {
+                                    for (const [k, v] of Object.entries(obj)) {
+                                        walk(v, depth + 1, k);
+                                    }
+                                }
+                            };
+                            walk(state);
+                            return out.slice(0, 40);
+                        }"""
+                    )
+                    if isinstance(raw, list):
+                        apollo_keywords = [str(x).strip() for x in raw if isinstance(x, str) and str(x).strip()]
+                except Exception:
+                    apollo_keywords = []
+
+                text_keywords: List[str] = []
+                try:
+                    body_text = target_frame.locator("body").inner_text(timeout=5000)
+                    text_keywords = self._extract_representative_keywords_from_text(body_text)
+                except Exception:
+                    text_keywords = []
+
+                return self._normalize_representative_keywords(apollo_keywords + text_keywords)
+            except Exception as e:
+                logger.warning("Failed to reveal representative keywords for place_id=%s: %s", place_id, e)
+                return []
+            finally:
+                browser.close()
+
+    def _open_info_tab(self, target_frame) -> None:
+        """정보 탭 클릭을 시도한다. 실패해도 다음 추출 로직은 계속 진행한다."""
+        try:
+            target_frame.get_by_text(self.INFO_TAB_LABEL, exact=False).first.click(timeout=2500, force=True)
+            return
+        except Exception:
+            pass
+
+        try:
+            target_frame.evaluate(
+                """(label) => {
+                    const nodes = [...document.querySelectorAll('*')];
+                    const el = nodes.find((n) => n.textContent && n.textContent.trim() === label);
+                    if (el) { try { el.click(); } catch (e) {} }
+                }""",
+                self.INFO_TAB_LABEL,
+            )
+        except Exception:
+            return
+
+    @classmethod
+    def _extract_representative_keywords_from_text(cls, text: str) -> List[str]:
+        """본문 텍스트에서 '대표 키워드' 섹션의 키워드를 추출한다."""
+        if not text:
+            return []
+
+        marker_idx = text.find(cls.REPRESENTATIVE_KEYWORDS_LABEL)
+        if marker_idx < 0:
+            return []
+
+        tail = text[marker_idx + len(cls.REPRESENTATIVE_KEYWORDS_LABEL):]
+        lines = [ln.strip() for ln in tail.splitlines()]
+        candidates: List[str] = []
+
+        for line in lines:
+            if not line:
+                if candidates:
+                    break
+                continue
+
+            if line in {"홈", "소식", "예약", "리뷰", "사진", "정보", "문의", cls.REPRESENTATIVE_KEYWORDS_LABEL}:
+                continue
+
+            parts = re.split(r"\s{2,}|,|/|\|", line)
+            for part in parts:
+                token = part.strip("[](){}-•· ")
+                if not token:
+                    continue
+                if len(token) > 20:
+                    continue
+                if re.search(r"\d{2,}", token):
+                    continue
+                if "http" in token.lower():
+                    continue
+                candidates.append(token)
+
+            if len(candidates) >= 12:
+                break
+
+        return cls._normalize_representative_keywords(candidates)
+
+    @staticmethod
+    def _normalize_representative_keywords(values: List[str]) -> List[str]:
+        """대표 키워드 리스트를 공백/중복 정리한다."""
+        cleaned: List[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            token = re.sub(r"\s+", " ", value).strip()
+            if not token:
+                continue
+            lowered = token.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            cleaned.append(token)
+        return cleaned[:20]
+
     def _wait_with_jitter(self, base_ms: int) -> int:
         return max(0, int(base_ms + random.randint(0, self.PAGE_WAIT_JITTER_MS)))
 
@@ -324,16 +538,16 @@ class NaverMapCrawler:
             return None
 
         # Some endpoints return base64-encoded JSON like {"number":"010-xxxx-xxxx"}.
-        for raw in (payload.strip(),):
-            try:
-                decoded = base64.b64decode(raw).decode("utf-8", errors="ignore")
-                parsed = json.loads(decoded)
-                if isinstance(parsed, dict):
-                    phone = cls._extract_phone_candidate(str(parsed.get("number", "")))
-                    if phone:
-                        return phone
-            except Exception:
-                pass
+        raw = payload.strip()
+        try:
+            decoded = base64.b64decode(raw).decode("utf-8", errors="ignore")
+            parsed = json.loads(decoded)
+            if isinstance(parsed, dict):
+                phone = cls._extract_phone_candidate(str(parsed.get("number", "")))
+                if phone:
+                    return phone
+        except Exception:
+            pass
 
         # Fallback: payload itself may contain JSON/plain phone token.
         try:
@@ -483,7 +697,7 @@ class NaverMapCrawler:
             logger.info(f"[{idx+1}/{len(all_queries)}] Searching: {query}")
             try:
                 region_results = await self.search_rehearsal_rooms(query)
-                logger.info(f"✅ Finished {query}: Found {len(region_results)} rooms")
+                logger.info(f"??Finished {query}: Found {len(region_results)} rooms")
                 
                 for item in region_results:
                     if item["id"] not in all_results:
@@ -493,7 +707,7 @@ class NaverMapCrawler:
                 await asyncio.sleep(2 + random.uniform(0, 1.5))
                 
             except Exception as e:
-                logger.error(f"❌ Failed to crawl {query}: {e}")
+                logger.error(f"??Failed to crawl {query}: {e}")
             
         logger.info(f"Total unique businesses found in priority areas: {len(all_results)}")
         return list(all_results.values())
@@ -506,3 +720,5 @@ if __name__ == "__main__":
     print(f"Total found: {len(results)}")
     for r in results[:5]:
         print(r)
+
+
