@@ -34,6 +34,7 @@ import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
 from app.core.scheduler import start_scheduler, shutdown_scheduler
+from app.services.monitoring_service import send_discord_report
 
 
 @asynccontextmanager
@@ -92,7 +93,7 @@ app.add_middleware(CacheControlMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(TraceIDMiddleware)
 
-if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true") != "true":
+if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower() != "true":
     metrics_app = make_asgi_app()
     app.mount("/metrics", metrics_app)
 
@@ -100,6 +101,11 @@ if ENABLE_METRICS and os.getenv("METRICS_INTERNAL_ONLY", "true") != "true":
 @app.get("/ping")
 def ping():
     return {"ok": True}
+
+@app.get("/test-report")
+async def test_report():
+    await send_discord_report()
+    return {"message": "Discord report triggered manually."}
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check(response: Response) -> HealthResponse:

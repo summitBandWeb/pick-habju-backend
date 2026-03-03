@@ -113,7 +113,7 @@ class RealIPMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception as e:
             # 예상치 못한 에러 발생 시 로깅을 위해 캐치 (글로벌 핸들러에서 다시 처리됨)
-            logger.exception(f"Unhandled exception in RealIPMiddleware: {e}")
+            logger.exception("Unhandled exception in RealIPMiddleware")
             raise
 
         process_time = time.perf_counter() - start_time
@@ -191,6 +191,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
             
         start_time = time.perf_counter()
+        status_code = 500
         
         try:
             response = await call_next(request)
