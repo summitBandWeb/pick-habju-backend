@@ -137,7 +137,10 @@ async def health_check(response: Response) -> HealthResponse:
     
     # 안전장치: 전역 클라이언트가 없는 경우(예: 일부 테스트 환경 등) 임시 생성
     if client is None:
-        client = httpx.AsyncClient()
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(HEALTH_CHECK_TIMEOUT, connect=2.0),
+            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0)
+        )
         should_close = True
         
     try:        
