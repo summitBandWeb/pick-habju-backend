@@ -25,9 +25,9 @@ async def test_metrics_collection_error(async_client: AsyncClient):
     에러 발생 시 상태 코드가 메트릭에 500번대로 잘 기록되는지 확인
     모의 에러 엔드포인트를 통해 500/503을 테스트합니다.
     """
-    with patch("app.main.httpx.AsyncClient") as mock_client_cls:
+    with patch("app.main.get_global_client") as mock_get_global_client:
         mock_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_get_global_client.return_value = mock_client
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
         
         response = await async_client.get("/health", follow_redirects=True)

@@ -183,12 +183,12 @@ class TestRealIPMiddleware:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/ping", "/health"])
-    @patch("httpx.AsyncClient")
-    async def test_real_ip_healthcheck_no_log(self, mock_client_class, client, caplog, path):
+    @patch("app.main.get_global_client")
+    async def test_real_ip_healthcheck_no_log(self, mock_get_global_client, client, caplog, path):
         """/ping, /health 요청 시 RealIPMiddleware의 IP 로깅이 스킵되는지 검증"""
         # /health 검증을 위해 정상 응답 셋업
         mock_client = AsyncMock()
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_get_global_client.return_value = mock_client
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
         mock_client.get.return_value = mock_response
@@ -206,12 +206,12 @@ class TestRealIPMiddleware:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/health"])
-    @patch("httpx.AsyncClient")
-    async def test_real_ip_healthcheck_503_log(self, mock_client_class, client, caplog, path):
+    @patch("app.main.get_global_client")
+    async def test_real_ip_healthcheck_503_log(self, mock_get_global_client, client, caplog, path):
         """/health 요청이 503 실패일 경우 RealIPMiddleware에서 에러 로깅이 수행되는지 검증"""
         # 503 발생을 위해 예외 모의
         mock_client = AsyncMock()
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_get_global_client.return_value = mock_client
         mock_client.get.side_effect = Exception("DB Connection Error")
 
         with caplog.at_level(logging.ERROR, logger="app.core.middleware"):
