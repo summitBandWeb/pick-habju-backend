@@ -6,6 +6,7 @@ import json
 import re
 import httpx
 from typing import Any, Dict, List, Optional
+from app.core.name_utils import normalize_name_token
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class NaverRoomFetcher:
         rooms: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict:
         room_name_tokens = {
-            NaverRoomFetcher._normalize_name_token((room or {}).get("name"))
+            normalize_name_token((room or {}).get("name"))
             for room in (rooms or [])
             if isinstance(room, dict)
         }
@@ -117,7 +118,7 @@ class NaverRoomFetcher:
         hint_name = (source_hint or {}).get("name")
         fallback_name = f"business-{business_id}"
         if isinstance(hint_name, str) and hint_name.strip():
-            normalized_hint = NaverRoomFetcher._normalize_name_token(hint_name)
+            normalized_hint = normalize_name_token(hint_name)
             if normalized_hint and normalized_hint not in room_name_tokens:
                 fallback_name = hint_name.strip()
             else:
@@ -146,14 +147,6 @@ class NaverRoomFetcher:
             "eventDescJson": None,
         }
 
-    @staticmethod
-    def _normalize_name_token(value: Any) -> str:
-        if not isinstance(value, str):
-            return ""
-        cleaned = re.sub(r"\s+", " ", value).strip()
-        if not cleaned:
-            return ""
-        return re.sub(r"[\s\-\_\(\)\[\]\{\}]+", "", cleaned).lower()
 
     async def _fetch_business(self, client: httpx.AsyncClient, business_id: str) -> Optional[Dict]:
         query = """

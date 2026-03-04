@@ -19,6 +19,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from app.core.supabase_client import get_supabase_client
 from app.crawler.naver_room_fetcher import NaverRoomFetcher
+from app.core.name_utils import normalize_name_token
 
 
 @dataclass
@@ -31,14 +32,6 @@ class Target:
     candidate_source: str | None = None
     candidate_reason: str | None = None
 
-
-def normalize_name_token(value: Any) -> str:
-    if not isinstance(value, str):
-        return ""
-    cleaned = re.sub(r"\s+", " ", value).strip()
-    if not cleaned:
-        return ""
-    return re.sub(r"[\s\-\_\(\)\[\]\{\}]+", "", cleaned).lower()
 
 
 def is_placeholder_name(candidate: str, business_id: str) -> bool:
@@ -86,6 +79,8 @@ def fetch_rows_by_business_ids(
     *,
     page_size: int = 1000,
 ) -> list[dict[str, Any]]:
+    if not business_ids:
+        return []
     supabase = get_supabase_client()
     rows: list[dict[str, Any]] = []
     start = 0
@@ -110,30 +105,35 @@ async def collect_candidates(targets: list[Target]) -> None:
     fetcher = NaverRoomFetcher()
     async with httpx.AsyncClient() as client:
         for idx, target in enumerate(targets, start=1):
-            business = await fetcher._fetch_business(client, target.business_id)  # noqa: SLF001
-            if isinstance(business, dict):
-                for source, key in (
-                    ("business.businessDisplayName", "businessDisplayName"),
-                    ("business.name", "name"),
-                ):
-                    raw = business.get(key)
-                    if not isinstance(raw, str):
-                        continue
-                    candidate = re.sub(r"\s+", " ", raw).strip()
-                    if not candidate:
-                        continue
-                    if is_placeholder_name(candidate, target.business_id):
-                        continue
-                    room_tokens = {normalize_name_token(x) for x in target.room_names if normalize_name_token(x)}
-                    if normalize_name_token(candidate) in room_tokens:
-                        continue
-                    target.candidate_name = candidate
-                    target.candidate_source = source
-                    target.candidate_reason = "safe_business_name"
-                    break
+            try:
+                business = await fetcher._fetch_business(client, target.business_id)  # noqa: SLF001
+                if isinstance(business, dict):
+                    for source, key in (
+                        ("business.businessDisplayName", "businessDisplayName"),
+                        ("business.name", "name"),
+                    ):
+                        raw = business.get(key)
+                        if not isinstance(raw, str):
+                            continue
+                        candidate = re.sub(r"\s+", " ", raw).strip()
+                        if not candidate:
+                            continue
+                        if is_placeholder_name(candidate, target.business_id):
+                            continue
+                        room_tokens = {normalize_name_token(x) for x in target.room_names if normalize_name_token(x)}
+                        if normalize_name_token(candidate) in room_tokens:
+                            continue
+                        target.candidate_name = candidate
+                        target.candidate_source = source
+                        target.candidate_reason = "safe_business_name"
+                        break
 
-            if not target.candidate_name:
-                target.candidate_reason = "no_safe_candidate"
+                if not target.candidate_name:
+                    target.candidate_reason = "no_safe_candidate"
+            except Exception as e:
+                print(f"[candidate] fetch failed for {target.business_id}: {e}")
+                target.candidate_name = None
+                target.candidate_reason = "fetch_failure"
 
             if idx % 10 == 0:
                 print(f"[candidate] progress {idx}/{len(targets)}")
@@ -305,7 +305,8 @@ def main() -> None:
 
     log_dir = Path(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{mode}_{datetime.now().date().isoformat()}.json"
+    ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    log_path = log_dir / f"{mode}_{ts}.json"
     log_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"mode": mode, "log_path": str(log_path), "summary": payload["summary"]}, ensure_ascii=False, indent=2))
 

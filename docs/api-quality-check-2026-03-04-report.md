@@ -5,7 +5,7 @@
 - Dates: 2026-03-05, 2026-03-11, 2026-03-18
 - Time ranges: 01:00-03:00, 10:00-12:00, 19:00-21:00
 - Capacities: 2, 8, 12
-- Areas: 이수, 사당, 홍대입구, 신촌, 서울광역
+- Areas: ?�수, ?�당, ?��??�구, ?�촌, ?�울광역
 
 ## Endpoint Snapshot
 - `GET /ping`: 200
@@ -31,13 +31,14 @@
 - `display_name`: null=943, non_null=0
 
 ## Coverage
-- Local union business IDs (이수/사당/홍대입구/신촌): 34
-- 서울광역 business IDs: 43
-- 서울광역 only business IDs: 9
+- Local union business IDs (?�수/?�당/?��??�구/?�촌): 34
+- ?�울광역 business IDs: 43
+- ?�울광역 only business IDs: 9
 
 ## Output Files
-- Summary JSON: `docs\api-quality-check-2026-03-04-summary.json`
-- Mismatch CSV: `docs\api-quality-check-2026-03-04-mismatch.csv`
-- Coverage CSV: `docs\api-quality-check-2026-03-04-coverage.csv`
-- Branch/Room overlap CSV: `docs\api-quality-check-2026-03-04-branch-room-overlap.csv`
-- Markdown report: `docs\api-quality-check-2026-03-04-report.md`
+- Summary JSON: `docs/api-quality-check-2026-03-04-summary.json`
+- Mismatch CSV: `docs/api-quality-check-2026-03-04-mismatch.csv`
+- Coverage CSV: `docs/api-quality-check-2026-03-04-coverage.csv`
+- Branch/Room overlap CSV: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv`
+- Markdown report: `docs/api-quality-check-2026-03-04-report.md`
+
