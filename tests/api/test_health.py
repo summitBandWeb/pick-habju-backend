@@ -129,3 +129,30 @@ def test_health_check_timeout(mock_get_global_client, client):
     data = response.json()
     assert data["status"] == "degraded"
     assert data["dependencies"]["database"] == "down"
+
+@patch("app.main.httpx.AsyncClient", autospec=True)
+@patch("app.main.get_global_client", return_value=None)
+def test_health_check_fallback_client_used(mock_get_global_client, mock_async_client_cls, client):
+    """전역 클라이언트 미초기화 시 폴백 클라이언트가 사용되고 정상 종료되는지 검증합니다.
+    
+    Args:
+        mock_get_global_client (MagicMock): None을 반환하도록 설정된 mock 객체
+        mock_async_client_cls (MagicMock): httpx.AsyncClient 생성자를 모방하는 mock 객체
+        client (TestClient): FastAPI 테스트 클라이언트
+        
+    Rationale:
+        테스트 환경 등에서 전역 클라이언트 리소스가 생성되지 않았을 때, 헬스체크가 
+        단일 요청용 임시(fallback) 클라이언트를 자동 생성하여 안전하게 사용한 뒤 
+        `aclose()`로 명확히 자원을 반납하는지 검증합니다. (Connection/Socket 고갈 방지)
+    """
+    mock_fallback = AsyncMock()
+    mock_async_client_cls.return_value = mock_fallback
+    
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_fallback.get.return_value = mock_response
+    
+    response = client.get("/health")
+    
+    assert response.status_code == 200
+    mock_fallback.aclose.assert_called_once()  # 폴백 클라이언트 명시적 종료 검증
