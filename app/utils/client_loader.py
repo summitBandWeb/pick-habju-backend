@@ -38,6 +38,18 @@ async def close_global_client():
             await _shared_client.aclose()
             _shared_client = None
 
+def get_global_client() -> "httpx.AsyncClient | None":
+    """전역 설정된 비동기 HTTP 클라이언트를 반환합니다.
+    
+    애플리케이션 시작 시(lifespan) 초기화된 인스턴스를 사용하여
+    연결 풀(Connection Pool)을 재사용함으로써 네트워크 비용을 최적화하고 
+    포트고갈 현상을 방지합니다.
+    
+    Returns:
+        httpx.AsyncClient | None: 전역 클라이언트 인스턴스. 초기화 전이면 None.
+    """
+    return _shared_client
+
 async def _retry_request(client: httpx.AsyncClient, url: str, max_retries: int = 2, **kwargs):
     """재시도 로직을 분리한 헬퍼 함수.
     
