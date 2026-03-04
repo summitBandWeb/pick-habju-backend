@@ -456,7 +456,18 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 3. DB 저장 (Branch -> Room(이미지 포함))
-        await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        saved = await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        if not saved:
+            logger.warning(
+                "Skipped DB save for requested business_id=%s due to missing business_id in fetched payload",
+                business_id,
+            )
+            return {
+                "status": "skipped_missing_business_id",
+                "reason": "missing_business_id",
+                "is_rehearsal_candidate": domain_decision["is_candidate"],
+                "representative_keywords": domain_decision["representative_keywords"],
+            }
         logger.info(f"Successfully saved business {business_id} with {len(target_rooms)} rooms")
 
         # 4. 미해결 항목 내보내기 (수동 검증 큐)
@@ -605,6 +616,13 @@ class RoomCollectionService:
         token = normalize_name_token(candidate)
         return bool(token) and token in room_name_tokens
 
+    @staticmethod
+    def _is_missing_display_name_column_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return "display_name" in message and (
+            "42703" in message or "column" in message or "schema cache" in message
+        )
+
     def _fetch_existing_branch_name_candidates(self, business_id: str) -> List[str]:
         if not business_id:
             return []
@@ -616,12 +634,32 @@ class RoomCollectionService:
                 .execute()
             )
         except Exception as e:
-            logger.warning(
-                "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
-                business_id,
-                e,
-            )
-            return []
+            if self._is_missing_display_name_column_error(e):
+                logger.info(
+                    "branch.display_name column unavailable; falling back to name-only fetch: business_id=%s",
+                    business_id,
+                )
+                try:
+                    response = (
+                        self.supabase.table("branch")
+                        .select("name")
+                        .eq("business_id", business_id)
+                        .execute()
+                    )
+                except Exception as fallback_error:
+                    logger.warning(
+                        "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                        business_id,
+                        fallback_error,
+                    )
+                    return []
+            else:
+                logger.warning(
+                    "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                    business_id,
+                    e,
+                )
+                return []
 
         rows = getattr(response, "data", None)
         if not isinstance(rows, list) or not rows:
@@ -758,7 +796,18 @@ class RoomCollectionService:
             branch_data["phone_number"] = branch_phone_number
         
         # Upsert Branch
-        self.supabase.table("branch").upsert(branch_data).execute()
+        try:
+            self.supabase.table("branch").upsert(branch_data).execute()
+        except Exception as e:
+            if not self._is_missing_display_name_column_error(e):
+                raise
+            logger.warning(
+                "branch.display_name column unavailable; retrying branch upsert without display_name: business_id=%s",
+                business_id,
+            )
+            branch_data_without_display_name = dict(branch_data)
+            branch_data_without_display_name.pop("display_name", None)
+            self.supabase.table("branch").upsert(branch_data_without_display_name).execute()
 
         # [Data Preservation] Fetch existing rooms for this business to check for manual overrides
         try:
