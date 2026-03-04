@@ -99,6 +99,10 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
+    DESCRIPTION_FIELDS: Tuple[str, ...] = (
+        "description",
+        "desc",
+    )
     # Exclude lesson/recording service labels from rehearsal-room inventory.
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         "레슨",
@@ -563,18 +567,44 @@ class RoomCollectionService:
         return sorted(hits)
 
     @classmethod
+    def _collect_description_text(
+        cls,
+        source_hint: Optional[Dict[str, Any]],
+        business: Dict[str, Any],
+    ) -> str:
+        """소개글 계열 텍스트를 source_hint/business 양쪽에서 수집한다."""
+        fragments: List[str] = []
+        for payload in (source_hint, business):
+            if not isinstance(payload, dict):
+                continue
+            for field in cls.DESCRIPTION_FIELDS:
+                value = payload.get(field)
+                if isinstance(value, str):
+                    text = value.strip().lower()
+                    if text:
+                        fragments.append(text)
+        # 동일 텍스트는 한 번만 남겨 키워드 판별 근거를 단순화한다.
+        return " ".join(dict.fromkeys(fragments))
+
+    @classmethod
     def _evaluate_rehearsal_domain(
         cls,
         source_hint: Optional[Dict[str, Any]],
         business: Dict[str, Any],
         rooms: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        representative_candidates = cls._collect_representative_keywords(
-            source_hint=source_hint,
-            business=business,
-        )
-        representative_hits = cls._extract_representative_keywords(representative_candidates)
+        """
+        4단계 Waterfall 로직으로 합주실 도메인인지 판별한다:
+        1. 지점명 (Name)
+        2. 대표 키워드 (Representative Keywords)
+        3. 소개글 (Description)
+        4. 개별 룸 이름 (Rooms Name)
+        하나라도 합주실 키워드가 발견되면 즉시 is_candidate=True.
+        """
+        positive_hits: List[str] = []
+        reason = "no_rehearsal_keyword_match"
 
+        # 1. 지점명 (Name) 탐색
         raw_name = (
             (source_hint or {}).get("name")
             or business.get("businessDisplayName")
@@ -583,10 +613,49 @@ class RoomCollectionService:
         )
         name_text = str(raw_name).lower()
         name_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in name_text})
+        if name_hits:
+            positive_hits.extend(name_hits)
+            reason = "matched_name_keyword"
 
-        positive_hits = sorted(set(representative_hits + name_hits))
+        # 2. 대표 키워드 (Representative Keywords) 탐색
+        representative_candidates = cls._collect_representative_keywords(
+            source_hint=source_hint,
+            business=business,
+        )
+        representative_hits = cls._extract_representative_keywords(representative_candidates)
+        if representative_hits:
+            positive_hits.extend(representative_hits)
+            if reason == "no_rehearsal_keyword_match":
+                reason = "matched_representative_keyword"
+
+        # 3. 소개글 (Description) 탐색
+        if not positive_hits:
+            desc_text = cls._collect_description_text(
+                source_hint=source_hint,
+                business=business,
+            )
+            if desc_text:
+                desc_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in desc_text})
+                if desc_hits:
+                    positive_hits.extend(desc_hits)
+                    reason = "matched_description_keyword"
+
+        # 4. 개별 룸 이름 (Rooms Name) 탐색
+        if not positive_hits and rooms:
+            room_hits = []
+            for room in rooms:
+                room_name = str(room.get("name") or "").lower()
+                matched = {kw for kw in cls.REHEARSAL_KEYWORDS if kw in room_name}
+                if matched:
+                    room_hits.extend(list(matched))
+            room_hits = sorted(set(room_hits))
+            if room_hits:
+                positive_hits.extend(room_hits)
+                reason = "matched_room_name_keyword"
+
+        # 최종 판별
+        positive_hits = sorted(set(positive_hits))
         is_candidate = bool(positive_hits)
-        reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
 
         return {
             "is_candidate": is_candidate,

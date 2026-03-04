@@ -271,6 +271,50 @@ async def test_collect_by_id_skips_non_rehearsal_when_source_hint_has_no_domain_
 
 
 @pytest.mark.asyncio
+async def test_collect_by_id_uses_source_hint_description_for_domain_decision():
+    with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
+        "app.services.room_collection_service.NaverRoomFetcher"
+    ), patch("app.services.room_collection_service.RoomParserService"), patch(
+        "app.services.room_collection_service.get_supabase_client"
+    ):
+        from app.services.room_collection_service import RoomCollectionService
+
+        service = RoomCollectionService()
+
+    # source_hint.description 에만 도메인 키워드가 있는 케이스를 검증한다.
+    service._source_item_hints["desc-fallback-1"] = {
+        "id": "desc-fallback-1",
+        "name": "Binary Creative Lab",
+        "description": "밴드합주 가능한 연습 공간",
+    }
+    service.room_fetcher.fetch_full_info = AsyncMock(
+        return_value={
+            "business": {
+                "businessId": "desc-fallback-1",
+                "businessDisplayName": "Binary Creative Lab",
+                "desc": "",
+                "coordinates": {"latitude": 37.0, "longitude": 127.0},
+            },
+            "rooms": [],
+            "subway": None,
+        }
+    )
+    service.parser_service.parse_room_desc_batch = AsyncMock(return_value={})
+    service._save_to_db = AsyncMock()
+    service._export_unresolved = AsyncMock()
+
+    result = await service.collect_by_id("desc-fallback-1")
+
+    assert result["status"] == "skipped_no_rooms"
+    assert result["reason"] == "biz_items_empty"
+    assert result["is_rehearsal_candidate"] is True
+    assert "밴드합주" in result["positive_hits"]
+    service.parser_service.parse_room_desc_batch.assert_not_awaited()
+    service._save_to_db.assert_not_awaited()
+    service._export_unresolved.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_collect_by_id_returns_skip_reason_when_room_inventory_empty():
     with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
         "app.services.room_collection_service.NaverRoomFetcher"

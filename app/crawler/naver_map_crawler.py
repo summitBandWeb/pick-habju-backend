@@ -30,6 +30,8 @@ class NaverMapCrawler:
     RATE_LIMIT_RETRIES = int(os.getenv("CRAWLER_RATE_LIMIT_RETRIES", "3"))
     RATE_LIMIT_BACKOFF_SEC = float(os.getenv("CRAWLER_RATE_LIMIT_BACKOFF_SEC", "2.0"))
     PAGE_WAIT_JITTER_MS = int(os.getenv("CRAWLER_PAGE_WAIT_JITTER_MS", "800"))
+    # 정보 탭 클릭 후 Apollo state/DOM이 안정화될 때까지 기다리는 시간(운영 중 튜닝 가능).
+    INFO_TAB_RENDER_WAIT_MS = int(os.getenv("CRAWLER_INFO_TAB_RENDER_WAIT_MS", "2000"))
     PHONE_REVEAL_TIMEOUT_SEC = float(os.getenv("CRAWLER_PHONE_REVEAL_TIMEOUT_SEC", "30"))
     STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
     INFO_TAB_LABEL = "정보"
@@ -390,7 +392,7 @@ class NaverMapCrawler:
                     return []
 
                 self._open_info_tab(target_frame)
-                page.wait_for_timeout(self._wait_with_jitter(1200))
+                page.wait_for_timeout(self._wait_with_jitter(self.INFO_TAB_RENDER_WAIT_MS))
 
                 apollo_keywords: List[str] = []
                 try:

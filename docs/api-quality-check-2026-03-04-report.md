@@ -42,3 +42,8 @@
 - Coverage CSV: `docs/api-quality-check-2026-03-04-coverage.csv`
 - Branch/Room overlap CSV: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv`
 - Markdown report: `docs/api-quality-check-2026-03-04-report.md`
+
+## Why Commit CSV/JSON Artifacts?
+- DB를 매번 직접 조회하면 시점마다 결과가 달라질 수 있어, PR 리뷰 시 동일 증적을 재현하기 어렵다.
+- 그래서 검증 스크립트의 결과 스냅샷(CSV/JSON)을 함께 커밋해 리뷰어가 동일 데이터로 확인할 수 있게 유지한다.
+- 운영 검증 자체는 DB 연동으로 수행하고, 이 파일들은 "검증 결과 증적" 역할만 담당한다.
