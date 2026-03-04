@@ -28,7 +28,7 @@ from app.exception.envelope_handlers import (
     rate_limit_exception_handler,
     validation_exception_handler,
 )
-from app.utils.client_loader import close_global_client, set_global_client
+from app.utils.client_loader import close_global_client, set_global_client, get_global_client
 from pydantic import ValidationError
 import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
@@ -130,32 +130,55 @@ async def health_check(response: Response) -> HealthResponse:
     해당 /health 엔드포인트는 트래픽 수신 가능 여부(Readiness) 판단에만 사용해야 합니다.
     """
     health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
+    
+    # 전역 클라이언트 가져오기 (Connection Pool 재사용)
+    client = get_global_client()
+    should_close = False
+    
+    # 안전장치: 전역 클라이언트가 없는 경우(예: 일부 테스트 환경 등) 임시 생성
+    if client is None:
+        client = httpx.AsyncClient()
+        should_close = True
+        
     try:        
-        # 설정된 타임아웃(기본 2.0초) 제한으로 Supabase REST API 테이블 조회를 통해 실제 DB 연결 상태 점검
-        async with httpx.AsyncClient(timeout=HEALTH_CHECK_TIMEOUT) as client:
-            # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
-            # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
-            supabase_resp = await client.get(
-                f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
-                headers={
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_KEY}"
-                },
-                params={"select": "id", "limit": "1"}
-            )
-            supabase_resp.raise_for_status()
+        # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
+        # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
+        # timeout 파라미터를 개별 요청에 부여하여, 전역 클라이언트 설정을 오버라이드합니다.
+        supabase_resp = await client.get(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}"
+            },
+            params={"select": "id", "limit": "1"},
+            timeout=HEALTH_CHECK_TIMEOUT
+        )
+        supabase_resp.raise_for_status()
     except httpx.TimeoutException:
-        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase connection took too long", exc_info=True)
+        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase DB query took too long. Check connection pool or DB load.", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
-        return HealthResponse(**health_status)
-    except Exception:  # noqa: BLE001
-        logger.error("Health check failed: Supabase connection error", exc_info=True)
+    except httpx.HTTPStatusError as e:
+        status_code = getattr(e.response, 'status_code', None)
+        logger.error(f"Health check failed with HTTP {status_code}: Authorization or Configuration error with Supabase. Check SUPABASE_URL and SUPABASE_KEY.", exc_info=True)
+        health_status["status"] = "unhealthy"
+        health_status["dependencies"]["database"] = "unauthorized_or_not_found"
+        response.status_code = 503
+    except httpx.RequestError as e:
+        logger.error(f"Health check failed due to Network/Request error: {e}. Cannot reach Supabase.", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
-        return HealthResponse(**health_status)
+    except Exception as e:
+        logger.error(f"Health check failed due to unexpected error: {e}", exc_info=True)
+        health_status["status"] = "degraded"
+        health_status["dependencies"]["database"] = "down"
+        response.status_code = 503
+    finally:
+        if should_close:
+            await client.aclose()
+            
     return HealthResponse(**health_status)
 
 
