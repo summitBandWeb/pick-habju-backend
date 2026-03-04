@@ -15,4 +15,4 @@
 
 ## Notes
 - Exact room-name == branch-name collisions were removed for all 41 targets.
-- Substring containment can still appear for semantically valid names (e.g., branch includes a generic token like "???").
+- Substring containment can still appear for semantically valid names (e.g., branch includes a generic token like "dev").

@@ -14,6 +14,7 @@ from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
 from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
+from app.core.name_utils import normalize_name_token
 
 logger = logging.getLogger(__name__)
 
@@ -583,19 +584,11 @@ class RoomCollectionService:
             "representative_keywords": representative_candidates,
         }
 
-    @staticmethod
-    def _normalize_name_token(value: Any) -> str:
-        if not isinstance(value, str):
-            return ""
-        cleaned = re.sub(r"\s+", " ", value).strip()
-        if not cleaned:
-            return ""
-        return re.sub(r"[\s\-\_\(\)\[\]\{\}]+", "", cleaned).lower()
 
     @classmethod
     def _build_room_name_tokens(cls, rooms: List[Dict[str, Any]]) -> set[str]:
         tokens = {
-            cls._normalize_name_token((room or {}).get("name"))
+            normalize_name_token((room or {}).get("name"))
             for room in rooms
             if isinstance(room, dict)
         }
@@ -609,7 +602,7 @@ class RoomCollectionService:
 
     @classmethod
     def _is_room_name_collision(cls, candidate: str, room_name_tokens: set[str]) -> bool:
-        token = cls._normalize_name_token(candidate)
+        token = normalize_name_token(candidate)
         return bool(token) and token in room_name_tokens
 
     def _fetch_existing_branch_name_candidates(self, business_id: str) -> List[str]:
@@ -651,8 +644,8 @@ class RoomCollectionService:
     ) -> str:
         room_name_tokens = cls._build_room_name_tokens(rooms)
         candidates: List[Tuple[str, Any]] = [
-            ("business.businessDisplayName", business.get("businessDisplayName")),
             ("source_hint.name", (source_hint or {}).get("name")),
+            ("business.businessDisplayName", business.get("businessDisplayName")),
             ("business.name", business.get("name")),
             ("existing.name", existing_candidates[0] if len(existing_candidates) > 0 else None),
             ("existing.display_name", existing_candidates[1] if len(existing_candidates) > 1 else None),
@@ -690,7 +683,9 @@ class RoomCollectionService:
         # 1. Save Branch
         business_id = str(business.get("businessId") or business.get("id") or "").strip()
         if not business_id:
-            business_id = "unknown-business"
+            logger.warning("Skipping DB save: Received empty business_id for business data=%s", business)
+            return
+
         coords = business.get("coordinates")
         existing_name_candidates = self._fetch_existing_branch_name_candidates(business_id)
         display_name = self._resolve_branch_display_name(

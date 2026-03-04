@@ -18,11 +18,11 @@
       12
     ],
     "areas": [
-      "이수",
-      "사당",
-      "홍대입구",
-      "신촌",
-      "서울광역"
+      "?�수",
+      "?�당",
+      "?��??�구",
+      "?�촌",
+      "?�울광역"
     ],
     "workers": 1,
     "timeout_seconds": 25.0,
@@ -97,7 +97,7 @@
     "branch_contains_room_name_count": 833,
     "area_stats": {
       "isoo": {
-        "label": "이수",
+        "label": "?�수",
         "requests": 27,
         "success_responses": 27,
         "empty_responses": 0,
@@ -105,7 +105,7 @@
         "unique_biz_item_ids": 51
       },
       "sadang": {
-        "label": "사당",
+        "label": "?�당",
         "requests": 27,
         "success_responses": 27,
         "empty_responses": 0,
@@ -113,7 +113,7 @@
         "unique_biz_item_ids": 37
       },
       "hongdae": {
-        "label": "홍대입구",
+        "label": "?��??�구",
         "requests": 27,
         "success_responses": 27,
         "empty_responses": 13,
@@ -121,7 +121,7 @@
         "unique_biz_item_ids": 94
       },
       "sinchon": {
-        "label": "신촌",
+        "label": "?�촌",
         "requests": 27,
         "success_responses": 27,
         "empty_responses": 9,
@@ -129,7 +129,7 @@
         "unique_biz_item_ids": 11
       },
       "seoul_all": {
-        "label": "서울광역",
+        "label": "?�울광역",
         "requests": 27,
         "success_responses": 27,
         "empty_responses": 0,
@@ -186,10 +186,10 @@
     "missing_business_id_code": "VALIDATION-001"
   },
   "output_files": {
-    "summary_json": "docs\\api-quality-check-2026-03-04-summary.json",
-    "mismatch_csv": "docs\\api-quality-check-2026-03-04-mismatch.csv",
-    "coverage_csv": "docs\\api-quality-check-2026-03-04-coverage.csv",
-    "branch_room_overlap_csv": "docs\\api-quality-check-2026-03-04-branch-room-overlap.csv",
-    "report_md": "docs\\api-quality-check-2026-03-04-report.md"
+    "summary_json": "docs/api-quality-check-2026-03-04-summary.json",
+    "mismatch_csv": "docs/api-quality-check-2026-03-04-mismatch.csv",
+    "coverage_csv": "docs/api-quality-check-2026-03-04-coverage.csv",
+    "branch_room_overlap_csv": "docs/api-quality-check-2026-03-04-branch-room-overlap.csv",
+    "report_md": "docs/api-quality-check-2026-03-04-report.md"
   }
 }

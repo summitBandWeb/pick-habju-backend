@@ -35,11 +35,11 @@
   "real_issue_requests": [
     {
       "area_key": "isoo",
-      "area_label": "이수",
+      "area_label": "?�수",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "25",
@@ -49,11 +49,11 @@
     },
     {
       "area_key": "sadang",
-      "area_label": "사당",
+      "area_label": "?�당",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "25",
@@ -63,11 +63,11 @@
     },
     {
       "area_key": "sadang",
-      "area_label": "사당",
+      "area_label": "?�당",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "25",
@@ -81,11 +81,11 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "신촌",
+      "area_label": "?�촌",
       "date": "2026-03-05",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "6999954",
@@ -95,11 +95,11 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "신촌",
+      "area_label": "?�촌",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "5979448",
@@ -113,11 +113,11 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "신촌",
+      "area_label": "?�촌",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "5979448",
@@ -127,11 +127,11 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "신촌",
+      "area_label": "?�촌",
       "date": "2026-03-18",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "6999824",
@@ -141,11 +141,11 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "신촌",
+      "area_label": "?�촌",
       "date": "2026-03-18",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "6999824",
@@ -155,11 +155,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "5486506",
@@ -169,11 +169,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "5486506",
@@ -183,11 +183,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
-      "capacity": "12",
+      "capacity": 12,
       "hard_issues": [
         {
           "biz_item_id": "25",
@@ -197,11 +197,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "10:00",
       "end_hour": "12:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "7422867",
@@ -211,11 +211,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "10:00",
       "end_hour": "12:00",
-      "capacity": "8",
+      "capacity": 8,
       "hard_issues": [
         {
           "biz_item_id": "7422867",
@@ -225,11 +225,11 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "서울광역",
+      "area_label": "?�울광역",
       "date": "2026-03-05",
       "start_hour": "19:00",
       "end_hour": "21:00",
-      "capacity": "2",
+      "capacity": 2,
       "hard_issues": [
         {
           "biz_item_id": "2907182",
