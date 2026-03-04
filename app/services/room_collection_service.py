@@ -99,6 +99,10 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
+    DESCRIPTION_FIELDS: Tuple[str, ...] = (
+        "description",
+        "desc",
+    )
     # Exclude lesson/recording service labels from rehearsal-room inventory.
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         "레슨",
@@ -563,6 +567,26 @@ class RoomCollectionService:
         return sorted(hits)
 
     @classmethod
+    def _collect_description_text(
+        cls,
+        source_hint: Optional[Dict[str, Any]],
+        business: Dict[str, Any],
+    ) -> str:
+        """소개글 계열 텍스트를 source_hint/business 양쪽에서 수집한다."""
+        fragments: List[str] = []
+        for payload in (source_hint, business):
+            if not isinstance(payload, dict):
+                continue
+            for field in cls.DESCRIPTION_FIELDS:
+                value = payload.get(field)
+                if isinstance(value, str):
+                    text = value.strip().lower()
+                    if text:
+                        fragments.append(text)
+        # 동일 텍스트는 한 번만 남겨 키워드 판별 근거를 단순화한다.
+        return " ".join(dict.fromkeys(fragments))
+
+    @classmethod
     def _evaluate_rehearsal_domain(
         cls,
         source_hint: Optional[Dict[str, Any]],
@@ -606,7 +630,10 @@ class RoomCollectionService:
 
         # 3. 소개글 (Description) 탐색
         if not positive_hits:
-            desc_text = str(business.get("desc") or "").lower()
+            desc_text = cls._collect_description_text(
+                source_hint=source_hint,
+                business=business,
+            )
             if desc_text:
                 desc_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in desc_text})
                 if desc_hits:
