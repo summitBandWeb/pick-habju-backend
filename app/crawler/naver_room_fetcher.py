@@ -58,9 +58,17 @@ class NaverRoomFetcher:
         """
         async with httpx.AsyncClient() as client:
             try:
-                # 1) Business-level info
-                business_info = await self._fetch_business(client, business_id)
-                
+                # 1) Business-level info (best-effort)
+                business_info = None
+                try:
+                    business_info = await self._fetch_business(client, business_id)
+                except Exception as e:
+                    logger.warning(
+                        "Business query failed; continuing with room-based fallback: business_id=%s err=%s",
+                        business_id,
+                        e,
+                    )
+                 
                 # 2) Room list (BizItems)
                 rooms = await self._fetch_biz_items(client, business_id)
 
