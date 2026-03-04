@@ -139,3 +139,32 @@ async def test_save_to_db_keeps_branch_name_when_partially_overlaps_room_name(se
     assert branch_data["name"] == "A룸 합주실"
     assert branch_data["display_name"] == "A룸 합주실"
 
+
+@pytest.mark.asyncio
+async def test_save_to_db_prefers_source_hint_when_both_hint_and_business_name_are_safe(service, mock_supabase):
+    business = {"businessId": "biz1", "businessDisplayName": "원본 합주실", "name": "원본 합주실", "coordinates": None}
+    rooms = [{"bizItemId": "r1", "name": "A룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+    parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+    source_hint = {"id": "biz1", "name": "검색된 합주실"}
+
+    await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+    upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+    branch_data = upsert_call[0][0]
+    assert branch_data["name"] == "검색된 합주실"
+    assert branch_data["display_name"] == "검색된 합주실"
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_detects_normalized_collision(service, mock_supabase):
+    business = {"businessId": "biz1", "businessDisplayName": "A 룸", "name": "A 룸", "coordinates": None}
+    rooms = [{"bizItemId": "r1", "name": "A룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+    parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+    source_hint = {"id": "biz1", "name": "A 룸"}
+
+    await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+    upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+    branch_data = upsert_call[0][0]
+    assert branch_data["name"] == "biz1"  # Collided with normalized room name "A룸" -> fallback to biz1
+    assert branch_data["display_name"] == "biz1"
