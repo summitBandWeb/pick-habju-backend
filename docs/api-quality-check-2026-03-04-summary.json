@@ -1,0 +1,195 @@
+{
+  "generated_at": "2026-03-04T01:39:52",
+  "base_url": "https://alpha-api.pickhabju.com",
+  "matrix": {
+    "dates": [
+      "2026-03-05",
+      "2026-03-11",
+      "2026-03-18"
+    ],
+    "time_ranges": [
+      "01:00-03:00",
+      "10:00-12:00",
+      "19:00-21:00"
+    ],
+    "capacities": [
+      2,
+      8,
+      12
+    ],
+    "areas": [
+      "이수",
+      "사당",
+      "홍대입구",
+      "신촌",
+      "서울광역"
+    ],
+    "workers": 1,
+    "timeout_seconds": 25.0,
+    "retries": 1
+  },
+  "endpoint_checks": {
+    "GET /ping": {
+      "status": 200,
+      "transport_ok": true,
+      "envelope_ok": false,
+      "code": null,
+      "isSuccess": null
+    },
+    "GET /health": {
+      "status": 503,
+      "transport_ok": true,
+      "envelope_ok": false,
+      "code": null,
+      "isSuccess": null
+    },
+    "GET /api/test/success": {
+      "status": 200,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "COMMON200",
+      "isSuccess": true
+    },
+    "GET /api/test/error?status_code=400": {
+      "status": 400,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "HTTP_400",
+      "isSuccess": false
+    },
+    "GET /api/test/server-error": {
+      "status": 500,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "COMMON-001",
+      "isSuccess": false
+    },
+    "GET /api/favorites (missing header)": {
+      "status": 422,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "VALIDATION-001"
+    },
+    "GET /api/favorites (invalid header)": {
+      "status": 400,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "HTTP_400"
+    },
+    "GET /api/favorites (valid header)": {
+      "status": 200,
+      "transport_ok": true,
+      "envelope_ok": true,
+      "code": "COMMON200",
+      "favorite_count": 1
+    }
+  },
+  "availability_summary": {
+    "total_requests": 135,
+    "status_distribution": {
+      "200": 135
+    },
+    "transport_error_count": 0,
+    "non_200_count": 0,
+    "envelope_invalid_count": 0,
+    "is_success_false_count": 0,
+    "available_ids_mismatch_request_count": 50,
+    "branch_contains_room_name_count": 833,
+    "area_stats": {
+      "isoo": {
+        "label": "이수",
+        "requests": 27,
+        "success_responses": 27,
+        "empty_responses": 0,
+        "unique_business_ids": 13,
+        "unique_biz_item_ids": 51
+      },
+      "sadang": {
+        "label": "사당",
+        "requests": 27,
+        "success_responses": 27,
+        "empty_responses": 0,
+        "unique_business_ids": 9,
+        "unique_biz_item_ids": 37
+      },
+      "hongdae": {
+        "label": "홍대입구",
+        "requests": 27,
+        "success_responses": 27,
+        "empty_responses": 13,
+        "unique_business_ids": 20,
+        "unique_biz_item_ids": 94
+      },
+      "sinchon": {
+        "label": "신촌",
+        "requests": 27,
+        "success_responses": 27,
+        "empty_responses": 9,
+        "unique_business_ids": 3,
+        "unique_biz_item_ids": 11
+      },
+      "seoul_all": {
+        "label": "서울광역",
+        "requests": 27,
+        "success_responses": 27,
+        "empty_responses": 0,
+        "unique_business_ids": 43,
+        "unique_biz_item_ids": 182
+      }
+    },
+    "transport_error_samples": []
+  },
+  "field_quality": {
+    "phone": {
+      "null_count": 943,
+      "non_null_count": 0,
+      "valid_format_count": 0,
+      "invalid_format_count": 0
+    },
+    "display_name": {
+      "null_count": 943,
+      "non_null_count": 0
+    }
+  },
+  "coverage_summary": {
+    "local_union_count": 34,
+    "seoul_all_count": 43,
+    "seoul_all_only_count": 9,
+    "seoul_all_only_business_ids": [
+      "1314022",
+      "1384809",
+      "1415457",
+      "1500479",
+      "1593535",
+      "247786",
+      "570236",
+      "706413",
+      "759837"
+    ]
+  },
+  "favorites_roundtrip": {
+    "executed": true,
+    "sample": {
+      "business_id": "522011",
+      "biz_item_id": "7283343"
+    },
+    "before_count": 1,
+    "after_add_count": 2,
+    "after_delete_count": 1,
+    "add_status": 200,
+    "delete_status": 200,
+    "add_envelope_ok": true,
+    "delete_envelope_ok": true,
+    "added_present_after_add": true,
+    "removed_after_delete": true,
+    "missing_business_id_status": 422,
+    "missing_business_id_code": "VALIDATION-001"
+  },
+  "output_files": {
+    "summary_json": "docs/api-quality-check-2026-03-04-summary.json",
+    "mismatch_csv": "docs/api-quality-check-2026-03-04-mismatch.csv",
+    "coverage_csv": "docs/api-quality-check-2026-03-04-coverage.csv",
+    "branch_room_overlap_csv": "docs/api-quality-check-2026-03-04-branch-room-overlap.csv",
+    "report_md": "docs/api-quality-check-2026-03-04-report.md"
+  }
+}

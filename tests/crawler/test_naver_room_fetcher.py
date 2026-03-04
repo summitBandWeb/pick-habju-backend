@@ -88,6 +88,24 @@ async def test_fetch_full_info_uses_business_fallback_when_business_is_null():
 
 
 @pytest.mark.asyncio
+async def test_fetch_full_info_keeps_fallback_path_when_business_query_raises():
+    # 왜: business GraphQL 조회가 예외여도 fallback 경로가 살아 있어야 전체 수집이 끊기지 않는다.
+    # 사용처: fetch_full_info(입력: business_id/source_hint) 호출 시 예외 복구 후 fallback business payload를 반환하는지 검증한다.
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(side_effect=RuntimeError("boom"))), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "블랙룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info("522011", source_hint={"name": "비쥬 합주실 1호점"})
+
+    assert result is not None
+    assert result["business"]["businessId"] == "522011"
+    assert result["business"]["businessDisplayName"] == "비쥬 합주실 1호점"
+
+
+@pytest.mark.asyncio
 async def test_fetch_full_info_uses_source_hint_name_for_business_fallback():
     fetcher = NaverRoomFetcher()
 
@@ -104,6 +122,25 @@ async def test_fetch_full_info_uses_source_hint_name_for_business_fallback():
     assert result is not None
     assert result["business"]["businessId"] == "522011"
     assert result["business"]["businessDisplayName"] == "비쥬 합주실 1호점"
+
+
+@pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_source_hint_room_name_collision():
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info(
+            "522011",
+            source_hint={"name": "A룸"},
+        )
+
+    assert result is not None
+    assert result["business"]["businessId"] == "522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
 
 
 @pytest.mark.asyncio
@@ -232,3 +269,46 @@ def test_fetcher_storage_state_rejects_lookalike_domain(tmp_path: Path):
     assert "Cookie" in fetcher.headers
     assert "NID_SES=good" in fetcher.headers["Cookie"]
     assert "NID_FAKE=bad" not in fetcher.headers["Cookie"]
+
+
+@pytest.mark.parametrize("hint_name", ["A 룸", "A-룸", "(A룸)", "A_룸", "A@룸", "A#룸"])
+@pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_normalized_source_hint_room_name_collision(hint_name: str):
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info("522011", source_hint={"name": hint_name})
+
+    assert result is not None
+    assert result["business"]["name"] == "business-522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
+
+
+@pytest.mark.parametrize("hint_name", [None, ""])
+@pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_empty_source_hint_name(hint_name):
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info("522011", source_hint={"name": hint_name})
+
+    assert result is not None
+    assert result["business"]["name"] == "business-522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
+
+
+def test_build_business_fallback_accepts_source_hint_when_rooms_empty():
+    result = NaverRoomFetcher._build_business_fallback("522011", source_hint={"name": "A룸"}, rooms=[])
+
+    assert result is not None
+    assert result["name"] == "A룸"
+    assert result["businessDisplayName"] == "A룸"
+

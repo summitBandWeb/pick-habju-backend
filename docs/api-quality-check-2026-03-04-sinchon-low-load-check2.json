@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-03-04",
+  "base_url": "https://alpha-api.pickhabju.com/api/rooms/availability/",
+  "sample": {
+    "date_offsets": [
+      1
+    ],
+    "time_ranges": [
+      "01:00-03:00",
+      "10:00-12:00",
+      "19:00-21:00"
+    ],
+    "capacities": [
+      2
+    ],
+    "request_count_per_bbox": 3
+  },
+  "bboxes": {
+    "sinchon_current": {
+      "bbox": {
+        "swLat": 37.547,
+        "swLng": 126.928,
+        "neLat": 37.563,
+        "neLng": 126.948
+      },
+      "total_requests": 3,
+      "http_200": 3,
+      "empty_responses": 3,
+      "error_count": 0,
+      "unique_business_id_count": 0,
+      "unique_business_ids": [],
+      "sample_non_empty": [],
+      "errors": []
+    },
+    "sinchon_expanded_small": {
+      "bbox": {
+        "swLat": 37.542,
+        "swLng": 126.918,
+        "neLat": 37.568,
+        "neLng": 126.952
+      },
+      "total_requests": 3,
+      "http_200": 3,
+      "empty_responses": 3,
+      "error_count": 0,
+      "unique_business_id_count": 0,
+      "unique_business_ids": [],
+      "sample_non_empty": [],
+      "errors": []
+    },
+    "sinchon_expanded_wide": {
+      "bbox": {
+        "swLat": 37.535,
+        "swLng": 126.905,
+        "neLat": 37.575,
+        "neLng": 126.965
+      },
+      "total_requests": 3,
+      "http_200": 3,
+      "empty_responses": 3,
+      "error_count": 0,
+      "unique_business_id_count": 0,
+      "unique_business_ids": [],
+      "sample_non_empty": [],
+      "errors": []
+    }
+  }
+}

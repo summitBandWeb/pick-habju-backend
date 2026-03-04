@@ -3,8 +3,10 @@ import os
 import random
 import asyncio
 import json
+import re
 import httpx
 from typing import Any, Dict, List, Optional
+from app.core.name_utils import normalize_name_token
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +58,17 @@ class NaverRoomFetcher:
         """
         async with httpx.AsyncClient() as client:
             try:
-                # 1) Business-level info
-                business_info = await self._fetch_business(client, business_id)
-                
+                # 1) Business-level info (best-effort)
+                business_info = None
+                try:
+                    business_info = await self._fetch_business(client, business_id)
+                except Exception as e:
+                    logger.warning(
+                        "Business query failed; continuing with room-based fallback: business_id=%s err=%s",
+                        business_id,
+                        e,
+                    )
+                 
                 # 2) Room list (BizItems)
                 rooms = await self._fetch_biz_items(client, business_id)
 
@@ -76,6 +86,7 @@ class NaverRoomFetcher:
                     business_info = self._build_business_fallback(
                         business_id,
                         source_hint=source_hint,
+                        rooms=rooms,
                     )
                 
                 # 3) Nearby subway info (only when coordinates are available)
@@ -103,13 +114,27 @@ class NaverRoomFetcher:
     def _build_business_fallback(
         business_id: str,
         source_hint: Optional[Dict[str, Any]] = None,
+        rooms: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict:
+        room_name_tokens = {
+            normalize_name_token((room or {}).get("name"))
+            for room in (rooms or [])
+            if isinstance(room, dict)
+        }
+        room_name_tokens.discard("")
+
         hint_name = (source_hint or {}).get("name")
-        fallback_name = (
-            hint_name.strip()
-            if isinstance(hint_name, str) and hint_name.strip()
-            else f"business-{business_id}"
-        )
+        fallback_name = f"business-{business_id}"
+        if isinstance(hint_name, str) and hint_name.strip():
+            normalized_hint = normalize_name_token(hint_name)
+            if normalized_hint and normalized_hint not in room_name_tokens:
+                fallback_name = hint_name.strip()
+            else:
+                logger.warning(
+                    "Fallback business name rejected due to room-name collision: business_id=%s hint_name=%s",
+                    business_id,
+                    hint_name,
+                )
         return {
             "id": business_id,
             "businessId": business_id,
@@ -129,6 +154,7 @@ class NaverRoomFetcher:
             "additionalPropertyJson": None,
             "eventDescJson": None,
         }
+
 
     async def _fetch_business(self, client: httpx.AsyncClient, business_id: str) -> Optional[Dict]:
         query = """

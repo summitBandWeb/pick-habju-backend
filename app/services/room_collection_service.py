@@ -14,6 +14,7 @@ from app.crawler.naver_room_fetcher import NaverRoomFetcher
 from app.services.room_parser_service import RoomParserService
 from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
+from app.core.name_utils import normalize_name_token
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +99,21 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
+    # Exclude lesson/recording service labels from rehearsal-room inventory.
+    NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
+        "레슨",
+        "lesson",
+        "레코딩",
+        "recording",
+        "녹음",
+    )
 
     def __init__(self):
         self.map_crawler = NaverMapCrawler()
         self.room_fetcher = NaverRoomFetcher()
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
+        self._unsupported_branch_columns: set[str] = set()
         self._unsupported_room_columns: set[str] = set()
         self._source_item_hints: Dict[str, Dict[str, Any]] = {}
 
@@ -385,29 +395,48 @@ class RoomCollectionService:
 
         target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(rooms)
         if not target_rooms:
+            if (
+                filtered_stats["non_rehearsal_keyword"] > 0
+                and filtered_stats["missing_reservation"] == 0
+            ):
+                skip_reason = "rooms_filtered_non_rehearsal_keywords"
+            elif (
+                filtered_stats["missing_reservation"] > 0
+                and filtered_stats["non_rehearsal_keyword"] == 0
+            ):
+                skip_reason = "rooms_missing_reservation_metadata"
+            else:
+                skip_reason = "rooms_filtered_mixed_rules"
             logger.warning(
-                "All rooms filtered out for business %s (inquiry_required=%s, missing_reservation=%s).",
+                "All rooms filtered out for business %s (inquiry_required=%s, missing_reservation=%s, non_rehearsal_keyword=%s).",
                 business_id,
                 filtered_stats["inquiry_required"],
                 filtered_stats["missing_reservation"],
+                filtered_stats["non_rehearsal_keyword"],
             )
             return {
                 "status": "skipped_all_rooms_filtered",
-                "reason": "rooms_missing_reservation_metadata",
+                "reason": skip_reason,
                 "inquiry_required": filtered_stats["inquiry_required"],
                 "missing_reservation": filtered_stats["missing_reservation"],
+                "non_rehearsal_keyword": filtered_stats["non_rehearsal_keyword"],
                 "is_rehearsal_candidate": domain_decision["is_candidate"],
                 "positive_hits": domain_decision["positive_hits"],
                 "negative_hits": domain_decision["negative_hits"],
                 "representative_keywords": domain_decision["representative_keywords"],
             }
 
-        if filtered_stats["inquiry_required"] or filtered_stats["missing_reservation"]:
+        if (
+            filtered_stats["inquiry_required"]
+            or filtered_stats["missing_reservation"]
+            or filtered_stats["non_rehearsal_keyword"]
+        ):
             logger.info(
-                "Room selection summary for business %s: inquiry_required=%s (included), missing_reservation=%s (excluded), remaining=%s/%s",
+                "Room selection summary for business %s: inquiry_required=%s (included), missing_reservation=%s (excluded), non_rehearsal_keyword=%s (excluded), remaining=%s/%s",
                 business_id,
                 filtered_stats["inquiry_required"],
                 filtered_stats["missing_reservation"],
+                filtered_stats["non_rehearsal_keyword"],
                 len(target_rooms),
                 len(rooms),
             )
@@ -428,7 +457,18 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 3. DB 저장 (Branch -> Room(이미지 포함))
-        await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        saved = await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        if not saved:
+            logger.warning(
+                "Skipped DB save for requested business_id=%s due to missing business_id in fetched payload",
+                business_id,
+            )
+            return {
+                "status": "skipped_missing_business_id",
+                "reason": "missing_business_id",
+                "is_rehearsal_candidate": domain_decision["is_candidate"],
+                "representative_keywords": domain_decision["representative_keywords"],
+            }
         logger.info(f"Successfully saved business {business_id} with {len(target_rooms)} rooms")
 
         # 4. 미해결 항목 내보내기 (수동 검증 큐)
@@ -556,18 +596,144 @@ class RoomCollectionService:
             "representative_keywords": representative_candidates,
         }
 
+
+    @classmethod
+    def _build_room_name_tokens(cls, rooms: List[Dict[str, Any]]) -> set[str]:
+        tokens = {
+            normalize_name_token((room or {}).get("name"))
+            for room in rooms
+            if isinstance(room, dict)
+        }
+        tokens.discard("")
+        return tokens
+
+    @staticmethod
+    def _is_placeholder_branch_name(candidate: str, business_id: str) -> bool:
+        lowered = candidate.strip().lower()
+        return lowered in {str(business_id).lower(), f"business-{str(business_id).lower()}"}
+
+    @classmethod
+    def _is_room_name_collision(cls, candidate: str, room_name_tokens: set[str]) -> bool:
+        token = normalize_name_token(candidate)
+        return bool(token) and token in room_name_tokens
+
+    @staticmethod
+    def _is_missing_display_name_column_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return "display_name" in message and (
+            "42703" in message or "column" in message or "schema cache" in message
+        )
+
+    def _fetch_existing_branch_name_candidates(self, business_id: str) -> List[str]:
+        if not business_id:
+            return []
+        try:
+            response = (
+                self.supabase.table("branch")
+                .select("name,display_name")
+                .eq("business_id", business_id)
+                .execute()
+            )
+        except Exception as e:
+            if self._is_missing_display_name_column_error(e):
+                logger.info(
+                    "branch.display_name column unavailable; falling back to name-only fetch: business_id=%s",
+                    business_id,
+                )
+                try:
+                    response = (
+                        self.supabase.table("branch")
+                        .select("name")
+                        .eq("business_id", business_id)
+                        .execute()
+                    )
+                except Exception as fallback_error:
+                    logger.warning(
+                        "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                        business_id,
+                        fallback_error,
+                    )
+                    return []
+            else:
+                logger.warning(
+                    "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                    business_id,
+                    e,
+                )
+                return []
+
+        rows = getattr(response, "data", None)
+        if not isinstance(rows, list) or not rows:
+            return []
+
+        row = rows[0]
+        if not isinstance(row, dict):
+            return []
+        return [row.get("name"), row.get("display_name")]
+
+    @classmethod
+    def _resolve_branch_display_name(
+        cls,
+        *,
+        business_id: str,
+        business: Dict[str, Any],
+        source_hint: Optional[Dict[str, Any]],
+        rooms: List[Dict[str, Any]],
+        existing_candidates: List[str],
+    ) -> str:
+        room_name_tokens = cls._build_room_name_tokens(rooms)
+        candidates: List[Tuple[str, Any]] = [
+            ("source_hint.name", (source_hint or {}).get("name")),
+            ("business.businessDisplayName", business.get("businessDisplayName")),
+            ("business.name", business.get("name")),
+            ("existing.name", existing_candidates[0] if len(existing_candidates) > 0 else None),
+            ("existing.display_name", existing_candidates[1] if len(existing_candidates) > 1 else None),
+        ]
+
+        for source, raw_candidate in candidates:
+            if not isinstance(raw_candidate, str):
+                continue
+            candidate = re.sub(r"\s+", " ", raw_candidate).strip()
+            if not candidate:
+                continue
+            if cls._is_placeholder_branch_name(candidate, business_id):
+                continue
+            if cls._is_room_name_collision(candidate, room_name_tokens):
+                logger.warning(
+                    "Rejected branch name candidate due to room-name collision: business_id=%s source=%s candidate=%s",
+                    business_id,
+                    source,
+                    candidate,
+                )
+                continue
+            return candidate
+
+        return business_id
+
     async def _save_to_db(
         self,
         business: Dict,
         rooms: List[Dict],
         parsed_results: Dict,
         source_hint: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> bool:
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
+        business_id = str(business.get("businessId") or business.get("id") or "").strip()
+        if not business_id:
+            logger.warning("Skipping DB save: Received empty business_id for business data=%s", business)
+            return False
+
         coords = business.get("coordinates")
-        display_name = business.get("businessDisplayName") or business.get("name") or business.get("businessId")
+        existing_name_candidates = self._fetch_existing_branch_name_candidates(business_id)
+        display_name = self._resolve_branch_display_name(
+            business_id=business_id,
+            business=business,
+            source_hint=source_hint,
+            rooms=rooms,
+            existing_candidates=existing_name_candidates,
+        )
         branch_phone_number = self._extract_business_phone_number(
             business,
             rooms,
@@ -606,7 +772,7 @@ class RoomCollectionService:
                 break
 
         branch_data = {
-            "business_id": business["businessId"],
+            "business_id": business_id,
             "name": display_name,
             "display_name": display_name,
         }
@@ -630,12 +796,12 @@ class RoomCollectionService:
         if branch_phone_number:
             branch_data["phone_number"] = branch_phone_number
         
-        # Upsert Branch
-        self.supabase.table("branch").upsert(branch_data).execute()
+        # Branch도 room과 동일하게 롤링 배포 중 스키마 차이를 허용한다.
+        self._upsert_branch_with_schema_fallback(branch_data)
 
         # [Data Preservation] Fetch existing rooms for this business to check for manual overrides
         try:
-            existing_resp = self.supabase.table("room").select("*").eq("business_id", business["businessId"]).execute()
+            existing_resp = self.supabase.table("room").select("*").eq("business_id", business_id).execute()
             existing_map = {r["biz_item_id"]: r for r in existing_resp.data}
         except Exception as e:
             logger.warning(f"Failed to fetch existing rooms: {e}")
@@ -673,7 +839,7 @@ class RoomCollectionService:
                 
             new_price = self._extract_price(room)
             price_inferred = self._infer_capacity_from_price(
-                business_id=business.get("businessId"),
+                business_id=business_id,
                 room_name=room.get("name"),
                 price_per_hour=new_price,
             )
@@ -776,12 +942,16 @@ class RoomCollectionService:
 
             final_base_cap_int = self._coerce_int(final_base_cap)
             final_extra_charge_int = self._coerce_int(final_extra_charge)
+            final_price_int = self._coerce_int(final_price)
+            if final_price_int is None or final_price_int < 0:
+                # DB constraint requires non-null numeric price.
+                final_price_int = 0
 
             room_data = {
-                "business_id": business["businessId"],
+                "business_id": business_id,
                 "biz_item_id": rid,
                 "name": room["name"],
-                "price_per_hour": final_price,
+                "price_per_hour": final_price_int,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
                 "recommend_capacity": final_rec_cap_int,
@@ -811,6 +981,8 @@ class RoomCollectionService:
             
             # Upsert Room (with schema-compat fallback for rolling migrations)
             self._upsert_room_with_schema_fallback(room_data)
+
+        return True
 
     def _infer_capacity_from_price(
         self,
@@ -926,6 +1098,35 @@ class RoomCollectionService:
 
         # Defensive fallback (should not be reached under normal circumstances)
         self.supabase.table("room").upsert(payload).execute()
+
+    # 왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라도 수집 파이프라인을 중단시키지 않기 위해 필요하다.
+    # 사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력 branch_data(dict)를 fallback 처리해 저장한다.
+    def _upsert_branch_with_schema_fallback(self, branch_data: Dict[str, Any]) -> None:
+        """
+        왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라질 수 있어 수집 파이프라인이 중단되지 않게 한다.
+        사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력은 branch_data(dict), 출력은 DB upsert 완료(예외 시 상위 전파)다.
+        """
+        payload = dict(branch_data)
+        for col in list(self._unsupported_branch_columns):
+            payload.pop(col, None)
+
+        for _ in range(6):
+            try:
+                self.supabase.table("branch").upsert(payload).execute()
+                return
+            except Exception as exc:
+                missing_col = self._extract_missing_column_from_error(exc)
+                if not missing_col or missing_col not in payload:
+                    raise
+                logger.warning(
+                    "Branch upsert fallback: removing missing column '%s' and retrying",
+                    missing_col,
+                )
+                self._unsupported_branch_columns.add(missing_col)
+                payload.pop(missing_col, None)
+
+        # 방어 코드: 정상적으로는 위 루프에서 return 된다.
+        self.supabase.table("branch").upsert(payload).execute()
 
     @staticmethod
     def _extract_missing_column_from_error(exc: Exception) -> Optional[str]:
@@ -1265,7 +1466,7 @@ class RoomCollectionService:
         return max_cap, rec_cap, rec_range
 
     def _filter_rooms_for_regex_parsing(self, rooms: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-        """Exclude only rooms lacking reservation metadata.
+        """Exclude non-rehearsal labels and rooms lacking reservation metadata.
 
         Inquiry-required rooms are still included because they can be reservable
         via phone/chat/manual confirmation flows.
@@ -1274,9 +1475,13 @@ class RoomCollectionService:
         filtered_stats = {
             "inquiry_required": 0,
             "missing_reservation": 0,
+            "non_rehearsal_keyword": 0,
         }
 
         for room in rooms:
+            if self._is_non_rehearsal_room_name(room):
+                filtered_stats["non_rehearsal_keyword"] += 1
+                continue
             if self._requires_inquiry(room):
                 filtered_stats["inquiry_required"] += 1
             if not self._has_reservation_metadata(room):
@@ -1285,6 +1490,14 @@ class RoomCollectionService:
             selected.append(room)
 
         return selected, filtered_stats
+
+    def _is_non_rehearsal_room_name(self, room: Dict[str, Any]) -> bool:
+        """Detect lesson/recording labels in room name."""
+        name = room.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return False
+        normalized = name.lower()
+        return any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS)
 
     def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
         """Detect inquiry-required rooms from structured/text policy blocks."""
@@ -1486,12 +1699,32 @@ class RoomCollectionService:
         return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:
-        """Extract pricing information."""
+        """Extract pricing information with fallbacks for sparse payloads."""
         min_max = room.get("minMaxPrice")
-        if not min_max:
-            return None
-        # Use minPrice as the base price
-        return min_max.get("minPrice")
+        if isinstance(min_max, dict):
+            # Primary source: booking GraphQL min price.
+            min_price = self._coerce_int(min_max.get("minPrice"))
+            if min_price is not None and min_price >= 0:
+                return min_price
+
+        # Secondary source: direct price field.
+        direct_price = self._coerce_int(room.get("price"))
+        if direct_price is not None and direct_price >= 0:
+            return direct_price
+
+        # Last-resort source: textual hints like "(18,000원/1시간)" in room name/desc.
+        for text in (room.get("name"), room.get("desc")):
+            if not isinstance(text, str) or not text.strip():
+                continue
+            for raw in re.findall(
+                r"(\d[\d,\s]{2,})\s*(?:원|krw|won)",
+                text,
+                flags=re.IGNORECASE,
+            ):
+                candidate = self._coerce_int(raw)
+                if candidate is not None and candidate >= 1000:
+                    return candidate
+        return None
 
     def _calculate_capacity_range(
         self,
