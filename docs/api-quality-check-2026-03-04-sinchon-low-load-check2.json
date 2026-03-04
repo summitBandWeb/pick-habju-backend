@@ -29,7 +29,6 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": [],
       "errors": []
     },
     "sinchon_expanded_small": {
@@ -45,7 +44,6 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": [],
       "errors": []
     },
     "sinchon_expanded_wide": {
@@ -61,7 +59,6 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": [],
       "errors": []
     }
   }
