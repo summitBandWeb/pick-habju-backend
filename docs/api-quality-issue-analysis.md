@@ -56,7 +56,7 @@
 
 ### 원인(코드 기준)
 - branch 저장 시 이름 결정 로직:
-  - `display_name = business.businessDisplayName or business.name or businessId`
+  - `source_hint.name -> business.businessDisplayName -> business.name -> existing.name -> existing.display_name -> business_id`
   - 위치: `app/services/room_collection_service.py` (`_save_to_db`)
 - 즉, Naver Booking의 business 단 이름이 룸 단위 상품명(`A룸`, `S룸`, `ROOM 1`)으로 내려오면,
   branch에도 그대로 저장됨
@@ -66,8 +66,9 @@
 ### 수정 방향(권장)
 1. branch canonical name 결정 규칙 추가
    - 룸명 패턴(`A룸`, `S룸`, `N번방`, `X ROOM`)이 branch 후보와 동일하고 room이 2개 이상이면 저신뢰로 분류
-2. 저신뢰 branch 후보일 때 대체 우선순위
-   - `source_hint.name`(지도 PlaceSummary) -> 기존 DB `branch.name` 유지 -> 마지막 fallback
+2. 우선순위 및 저신뢰 branch 후보일 때 대체 정책
+   - 우선순위 체인: `source_hint.name` -> `business.businessDisplayName` -> `business.name` -> `existing.name` -> `existing.display_name` -> `business_id`
+   - 룸명과 정규화 충돌하는 후보(`A룸` vs `A 룸`)는 건너뛰고 다음 우선순위를 평가
 3. 보정 배치
    - 이미 오염된 41개 business_id 대상 업데이트 스크립트 실행
 4. 회귀 방지

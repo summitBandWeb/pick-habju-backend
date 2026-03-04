@@ -18,6 +18,7 @@
 - `GET /api/favorites` (valid header): 200
 
 ## Availability Quality
+- Scope note: 이 섹션의 `HTTP status distribution`과 `Non-200 count`는 availability matrix 135건만 집계하며, `Endpoint Snapshot`의 헬스체크/테스트 엔드포인트는 포함하지 않습니다.
 - HTTP status distribution: {'200': 135}
 - Transport error count: 0
 - Non-200 count: 0
@@ -36,8 +37,8 @@
 - 서울광역 only business IDs: 9
 
 ## Output Files
-- Summary JSON: `docs\api-quality-check-2026-03-04-summary.json`
-- Mismatch CSV: `docs\api-quality-check-2026-03-04-mismatch.csv`
-- Coverage CSV: `docs\api-quality-check-2026-03-04-coverage.csv`
-- Branch/Room overlap CSV: `docs\api-quality-check-2026-03-04-branch-room-overlap.csv`
-- Markdown report: `docs\api-quality-check-2026-03-04-report.md`
+- Summary JSON: `docs/api-quality-check-2026-03-04-summary.json`
+- Mismatch CSV: `docs/api-quality-check-2026-03-04-mismatch.csv`
+- Coverage CSV: `docs/api-quality-check-2026-03-04-coverage.csv`
+- Branch/Room overlap CSV: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv`
+- Markdown report: `docs/api-quality-check-2026-03-04-report.md`
