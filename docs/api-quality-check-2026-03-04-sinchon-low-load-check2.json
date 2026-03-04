@@ -29,8 +29,9 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": []
-    ,`n      "errors": []},
+      "sample_non_empty": [],
+      "errors": []
+    },
     "sinchon_expanded_small": {
       "bbox": {
         "swLat": 37.542,
@@ -44,8 +45,9 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": []
-    ,`n      "errors": []},
+      "sample_non_empty": [],
+      "errors": []
+    },
     "sinchon_expanded_wide": {
       "bbox": {
         "swLat": 37.535,
@@ -59,7 +61,8 @@
       "error_count": 0,
       "unique_business_id_count": 0,
       "unique_business_ids": [],
-      "sample_non_empty": []
-    ,`n      "errors": []}
+      "sample_non_empty": [],
+      "errors": []
+    }
   }
 }

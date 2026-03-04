@@ -113,6 +113,7 @@ class RoomCollectionService:
         self.room_fetcher = NaverRoomFetcher()
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
+        self._unsupported_branch_columns: set[str] = set()
         self._unsupported_room_columns: set[str] = set()
         self._source_item_hints: Dict[str, Dict[str, Any]] = {}
 
@@ -456,7 +457,18 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 3. DB 저장 (Branch -> Room(이미지 포함))
-        await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        saved = await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+        if not saved:
+            logger.warning(
+                "Skipped DB save for requested business_id=%s due to missing business_id in fetched payload",
+                business_id,
+            )
+            return {
+                "status": "skipped_missing_business_id",
+                "reason": "missing_business_id",
+                "is_rehearsal_candidate": domain_decision["is_candidate"],
+                "representative_keywords": domain_decision["representative_keywords"],
+            }
         logger.info(f"Successfully saved business {business_id} with {len(target_rooms)} rooms")
 
         # 4. 미해결 항목 내보내기 (수동 검증 큐)
@@ -647,6 +659,13 @@ class RoomCollectionService:
         token = normalize_name_token(candidate)
         return bool(token) and token in room_name_tokens
 
+    @staticmethod
+    def _is_missing_display_name_column_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return "display_name" in message and (
+            "42703" in message or "column" in message or "schema cache" in message
+        )
+
     def _fetch_existing_branch_name_candidates(self, business_id: str) -> List[str]:
         if not business_id:
             return []
@@ -658,12 +677,32 @@ class RoomCollectionService:
                 .execute()
             )
         except Exception as e:
-            logger.warning(
-                "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
-                business_id,
-                e,
-            )
-            return []
+            if self._is_missing_display_name_column_error(e):
+                logger.info(
+                    "branch.display_name column unavailable; falling back to name-only fetch: business_id=%s",
+                    business_id,
+                )
+                try:
+                    response = (
+                        self.supabase.table("branch")
+                        .select("name")
+                        .eq("business_id", business_id)
+                        .execute()
+                    )
+                except Exception as fallback_error:
+                    logger.warning(
+                        "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                        business_id,
+                        fallback_error,
+                    )
+                    return []
+            else:
+                logger.warning(
+                    "Failed to fetch existing branch name for collision guard: business_id=%s err=%s",
+                    business_id,
+                    e,
+                )
+                return []
 
         rows = getattr(response, "data", None)
         if not isinstance(rows, list) or not rows:
@@ -719,14 +758,14 @@ class RoomCollectionService:
         rooms: List[Dict],
         parsed_results: Dict,
         source_hint: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> bool:
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
         business_id = str(business.get("businessId") or business.get("id") or "").strip()
         if not business_id:
             logger.warning("Skipping DB save: Received empty business_id for business data=%s", business)
-            return
+            return False
 
         coords = business.get("coordinates")
         existing_name_candidates = self._fetch_existing_branch_name_candidates(business_id)
@@ -799,8 +838,8 @@ class RoomCollectionService:
         if branch_phone_number:
             branch_data["phone_number"] = branch_phone_number
         
-        # Upsert Branch
-        self.supabase.table("branch").upsert(branch_data).execute()
+        # Branch도 room과 동일하게 롤링 배포 중 스키마 차이를 허용한다.
+        self._upsert_branch_with_schema_fallback(branch_data)
 
         # [Data Preservation] Fetch existing rooms for this business to check for manual overrides
         try:
@@ -842,7 +881,7 @@ class RoomCollectionService:
                 
             new_price = self._extract_price(room)
             price_inferred = self._infer_capacity_from_price(
-                business_id=business.get("businessId"),
+                business_id=business_id,
                 room_name=room.get("name"),
                 price_per_hour=new_price,
             )
@@ -985,6 +1024,8 @@ class RoomCollectionService:
             # Upsert Room (with schema-compat fallback for rolling migrations)
             self._upsert_room_with_schema_fallback(room_data)
 
+        return True
+
     def _infer_capacity_from_price(
         self,
         business_id: Optional[str],
@@ -1099,6 +1140,35 @@ class RoomCollectionService:
 
         # Defensive fallback (should not be reached under normal circumstances)
         self.supabase.table("room").upsert(payload).execute()
+
+    # 왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라도 수집 파이프라인을 중단시키지 않기 위해 필요하다.
+    # 사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력 branch_data(dict)를 fallback 처리해 저장한다.
+    def _upsert_branch_with_schema_fallback(self, branch_data: Dict[str, Any]) -> None:
+        """
+        왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라질 수 있어 수집 파이프라인이 중단되지 않게 한다.
+        사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력은 branch_data(dict), 출력은 DB upsert 완료(예외 시 상위 전파)다.
+        """
+        payload = dict(branch_data)
+        for col in list(self._unsupported_branch_columns):
+            payload.pop(col, None)
+
+        for _ in range(6):
+            try:
+                self.supabase.table("branch").upsert(payload).execute()
+                return
+            except Exception as exc:
+                missing_col = self._extract_missing_column_from_error(exc)
+                if not missing_col or missing_col not in payload:
+                    raise
+                logger.warning(
+                    "Branch upsert fallback: removing missing column '%s' and retrying",
+                    missing_col,
+                )
+                self._unsupported_branch_columns.add(missing_col)
+                payload.pop(missing_col, None)
+
+        # 방어 코드: 정상적으로는 위 루프에서 return 된다.
+        self.supabase.table("branch").upsert(payload).execute()
 
     @staticmethod
     def _extract_missing_column_from_error(exc: Exception) -> Optional[str]:
