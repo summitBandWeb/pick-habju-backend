@@ -35,7 +35,7 @@
   "real_issue_requests": [
     {
       "area_key": "isoo",
-      "area_label": "?�수",
+      "area_label": "이수",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
@@ -49,7 +49,7 @@
     },
     {
       "area_key": "sadang",
-      "area_label": "?�당",
+      "area_label": "사당",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
@@ -63,7 +63,7 @@
     },
     {
       "area_key": "sadang",
-      "area_label": "?�당",
+      "area_label": "사당",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -81,7 +81,7 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "?�촌",
+      "area_label": "신촌",
       "date": "2026-03-05",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -95,7 +95,7 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "?�촌",
+      "area_label": "신촌",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -113,7 +113,7 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "?�촌",
+      "area_label": "신촌",
       "date": "2026-03-11",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -127,7 +127,7 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "?�촌",
+      "area_label": "신촌",
       "date": "2026-03-18",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -141,7 +141,7 @@
     },
     {
       "area_key": "sinchon",
-      "area_label": "?�촌",
+      "area_label": "신촌",
       "date": "2026-03-18",
       "start_hour": "19:00",
       "end_hour": "21:00",
@@ -155,7 +155,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
@@ -169,7 +169,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
@@ -183,7 +183,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "01:00",
       "end_hour": "03:00",
@@ -197,7 +197,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "10:00",
       "end_hour": "12:00",
@@ -211,7 +211,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "10:00",
       "end_hour": "12:00",
@@ -225,7 +225,7 @@
     },
     {
       "area_key": "seoul_all",
-      "area_label": "?�울광역",
+      "area_label": "서울광역",
       "date": "2026-03-05",
       "start_hour": "19:00",
       "end_hour": "21:00",

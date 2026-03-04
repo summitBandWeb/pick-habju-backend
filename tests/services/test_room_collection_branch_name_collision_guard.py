@@ -94,3 +94,48 @@ async def test_save_to_db_falls_back_to_business_id_when_no_safe_branch_name(ser
     branch_data = upsert_call[0][0]
     assert branch_data["name"] == "biz1"
     assert branch_data["display_name"] == "biz1"
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_uses_business_display_name_when_source_hint_is_missing(service, mock_supabase):
+    business = {"businessId": "biz1", "businessDisplayName": "A룸 합주실", "name": "A룸 합주실", "coordinates": None}
+    rooms = [{"bizItemId": "r1", "name": "B룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+    parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+    
+    await service._save_to_db(business, rooms, parsed_results, source_hint=None)
+
+    upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+    branch_data = upsert_call[0][0]
+    assert branch_data["name"] == "A룸 합주실"
+    assert branch_data["display_name"] == "A룸 합주실"
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_uses_business_name_when_prior_candidates_collide(service, mock_supabase):
+    business = {"businessId": "biz1", "businessDisplayName": "A룸", "name": "안전한 합주실", "coordinates": None}
+    rooms = [{"bizItemId": "r1", "name": "A룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+    parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+    source_hint = {"id": "biz1", "name": "A룸"}
+    
+    await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+    upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+    branch_data = upsert_call[0][0]
+    assert branch_data["name"] == "안전한 합주실"
+    assert branch_data["display_name"] == "안전한 합주실"
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_keeps_branch_name_when_partially_overlaps_room_name(service, mock_supabase):
+    business = {"businessId": "biz1", "businessDisplayName": "A룸 합주실", "name": "A룸 합주실", "coordinates": None}
+    rooms = [{"bizItemId": "r1", "name": "A룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
+    parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}
+    source_hint = {"id": "biz1", "name": "A룸 합주실"}
+
+    await service._save_to_db(business, rooms, parsed_results, source_hint=source_hint)
+
+    upsert_call = mock_supabase._branch_table.upsert.call_args_list[0]
+    branch_data = upsert_call[0][0]
+    assert branch_data["name"] == "A룸 합주실"
+    assert branch_data["display_name"] == "A룸 합주실"
+

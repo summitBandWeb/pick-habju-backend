@@ -173,31 +173,52 @@ def build_targets(business_ids: list[str]) -> list[Target]:
     return targets
 
 
-def apply_updates(targets: list[Target]) -> list[dict[str, Any]]:
+def apply_updates(targets: list[Target]) -> tuple[list[dict], list[dict]]:
     supabase = get_supabase_client()
-    applied: list[dict[str, Any]] = []
+    applied = []
+    failed = []
+    
     for target in targets:
-        if not target.candidate_name:
+        if not target.candidate_name or target.candidate_reason != "safe_business_name":
             continue
-        payload = {"name": target.candidate_name, "display_name": target.candidate_name}
-        supabase.table("branch").update(payload).eq("business_id", target.business_id).execute()
-        applied.append(
-            {
-                "business_id": target.business_id,
-                "before_name": target.before_name,
-                "before_display_name": target.before_display_name,
-                "after_name": target.candidate_name,
-                "after_display_name": target.candidate_name,
-                "source": target.candidate_source,
-            }
-        )
-    return applied
+            
+        try:
+            res = (
+                supabase.table("branch")
+                .update({"name": target.candidate_name, "display_name": target.candidate_name})
+                .eq("business_id", target.business_id)
+                .execute()
+            )
+            # Only append if update actually affected row(s)
+            if res.data:
+                applied.append(
+                    {
+                        "business_id": target.business_id,
+                        "new_name": target.candidate_name,
+                        "source": target.candidate_source,
+                    }
+                )
+        except Exception as e:
+            print(f"[apply] failed for {target.business_id}: {e}")
+            failed.append(
+                {
+                    "business_id": target.business_id,
+                    "candidate_name": target.candidate_name,
+                    "error": str(e),
+                }
+            )
+    return applied, failed
 
 
-def verify_updates(targets: list[Target]) -> list[dict[str, Any]]:
-    business_ids = [t.business_id for t in targets if t.candidate_name]
+def verify_updates(applied_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    business_ids = [t["business_id"] for t in applied_list]
     if not business_ids:
         return []
+
+    # Re-fetch targets to get room names for verification
+    all_business_ids = list(set(business_ids + [t["business_id"] for t in applied_list]))
+    all_targets = build_targets(all_business_ids)
+    target_by_id = {t.business_id: t for t in all_targets}
 
     branch_rows = fetch_rows_by_business_ids(
         table="branch",
@@ -207,24 +228,28 @@ def verify_updates(targets: list[Target]) -> list[dict[str, Any]]:
     row_by_id = {str(row["business_id"]): row for row in branch_rows}
 
     verified: list[dict[str, Any]] = []
-    for t in targets:
-        if not t.candidate_name:
-            continue
-        row = row_by_id.get(t.business_id, {})
+    for applied_item in applied_list:
+        bid = applied_item["business_id"]
+        expected_name = applied_item["new_name"]
+        
+        row = row_by_id.get(bid, {})
         after_name = row.get("name") if isinstance(row, dict) else None
         after_display = row.get("display_name") if isinstance(row, dict) else None
-        room_tokens = {normalize_name_token(x) for x in t.room_names if normalize_name_token(x)}
+        
+        target = target_by_id.get(bid)
+        room_tokens = {normalize_name_token(x) for x in target.room_names if normalize_name_token(x)} if target else set()
+
         name_collision = normalize_name_token(after_name) in room_tokens if isinstance(after_name, str) else False
         display_collision = (
             normalize_name_token(after_display) in room_tokens if isinstance(after_display, str) else False
         )
         verified.append(
             {
-                "business_id": t.business_id,
-                "expected_name": t.candidate_name,
+                "business_id": bid,
+                "expected_name": expected_name,
                 "after_name": after_name,
                 "after_display_name": after_display,
-                "matches_expected": after_name == t.candidate_name and after_display == t.candidate_name,
+                "matches_expected": after_name == expected_name and after_display == expected_name,
                 "name_collides_with_room": name_collision or display_collision,
             }
         )
@@ -236,7 +261,9 @@ def to_log_payload(
     mode: str,
     targets: list[Target],
     applied: list[dict[str, Any]],
-    verified: list[dict[str, Any]],
+    failed_updates: list[dict[str, Any]],
+    verification: list[dict[str, Any]],
+    changes_applied: bool,
 ) -> dict[str, Any]:
     unresolved = [
         {
@@ -246,21 +273,23 @@ def to_log_payload(
             "reason": t.candidate_reason,
         }
         for t in targets
-        if not t.candidate_name
+        if not t.candidate_name or t.candidate_reason != "safe_business_name"
     ]
-    mismatched = [row for row in verified if not row["matches_expected"]]
-    still_collided = [row for row in verified if row["name_collides_with_room"]]
+    mismatched = [row for row in verification if not row["matches_expected"]]
+    still_collided = [row for row in verification if row["name_collides_with_room"]]
 
     return {
         "summary": {
             "executed_at": datetime.now().isoformat(),
             "mode": mode,
             "target_count": len(targets),
-            "candidate_ready_count": sum(1 for t in targets if t.candidate_name),
+            "candidate_ready_count": sum(1 for t in targets if t.candidate_name and t.candidate_reason == "safe_business_name"),
             "unresolved_count": len(unresolved),
+            "changes_applied": changes_applied,
             "applied_count": len(applied),
-            "verified_count": len(verified),
-            "verified_match_count": sum(1 for row in verified if row["matches_expected"]),
+            "failed_update_count": len(failed_updates),
+            "verified_count": len(verification),
+            "verified_match_count": sum(1 for row in verification if row["matches_expected"]),
             "verified_still_collided_count": len(still_collided),
             "verified_mismatch_count": len(mismatched),
         },
@@ -274,10 +303,11 @@ def to_log_payload(
                 "candidate_reason": t.candidate_reason,
             }
             for t in targets
-            if t.candidate_name
+            if t.candidate_name and t.candidate_reason == "safe_business_name"
         ],
         "applied": applied,
-        "verified": verified,
+        "failed_updates": failed_updates,
+        "verification": verification,
         "unresolved": unresolved,
     }
 
@@ -294,14 +324,32 @@ def main() -> None:
     asyncio.run(collect_candidates(targets))
 
     mode = "branch_name_collision_fix_applied" if args.apply else "branch_name_collision_fix_dry_run"
-    applied: list[dict[str, Any]] = []
-    verified: list[dict[str, Any]] = []
+    
+    payload_data = {
+        "changes_applied": False,
+        "applied": [],
+        "failed_updates": [],
+        "verification": [],
+    }
 
     if args.apply:
-        applied = apply_updates(targets)
-        verified = verify_updates(targets)
+        applied_list, failed_list = apply_updates(targets)
+        payload_data["changes_applied"] = True
+        payload_data["applied"] = applied_list
+        payload_data["failed_updates"] = failed_list
+        
+        # Verify
+        verify_results = verify_updates(applied_list)
+        payload_data["verification"] = verify_results
 
-    payload = to_log_payload(mode=mode, targets=targets, applied=applied, verified=verified)
+    payload = to_log_payload(
+        mode=mode,
+        targets=targets,
+        applied=payload_data["applied"],
+        failed_updates=payload_data["failed_updates"],
+        verification=payload_data["verification"],
+        changes_applied=payload_data["changes_applied"],
+    )
 
     log_dir = Path(args.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)

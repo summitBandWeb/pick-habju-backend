@@ -251,3 +251,46 @@ def test_fetcher_storage_state_rejects_lookalike_domain(tmp_path: Path):
     assert "Cookie" in fetcher.headers
     assert "NID_SES=good" in fetcher.headers["Cookie"]
     assert "NID_FAKE=bad" not in fetcher.headers["Cookie"]
+
+
+@pytest.mark.parametrize("hint_name", ["A 룸", "A-룸", "(A룸)", "A_룸"])
+@pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_normalized_source_hint_room_name_collision(hint_name: str):
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info("522011", source_hint={"name": hint_name})
+
+    assert result is not None
+    assert result["business"]["name"] == "business-522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
+
+
+@pytest.mark.parametrize("hint_name", [None, ""])
+@pytest.mark.asyncio
+async def test_fetch_full_info_fallback_rejects_empty_source_hint_name(hint_name):
+    fetcher = NaverRoomFetcher()
+
+    with patch.object(fetcher, "_fetch_business", AsyncMock(return_value=None)), patch.object(
+        fetcher,
+        "_fetch_biz_items",
+        AsyncMock(return_value=[{"bizItemId": "3968885", "name": "A룸", "desc": "desc"}]),
+    ), patch.object(fetcher, "_fetch_near_subway", AsyncMock(return_value=None)):
+        result = await fetcher.fetch_full_info("522011", source_hint={"name": hint_name})
+
+    assert result is not None
+    assert result["business"]["name"] == "business-522011"
+    assert result["business"]["businessDisplayName"] == "business-522011"
+
+
+def test_build_business_fallback_accepts_source_hint_when_rooms_empty():
+    result = NaverRoomFetcher._build_business_fallback("522011", source_hint={"name": "A룸"}, rooms=[])
+
+    assert result is not None
+    assert result["name"] == "A룸"
+    assert result["businessDisplayName"] == "A룸"
+

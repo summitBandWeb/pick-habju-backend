@@ -684,7 +684,7 @@ class RoomCollectionService:
         business_id = str(business.get("businessId") or business.get("id") or "").strip()
         if not business_id:
             logger.warning("Skipping DB save: Received empty business_id for business data=%s", business)
-            return
+            return False
 
         coords = business.get("coordinates")
         existing_name_candidates = self._fetch_existing_branch_name_candidates(business_id)

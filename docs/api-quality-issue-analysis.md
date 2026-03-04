@@ -1,96 +1,95 @@
-# API Ç°Áú ÀÌ½´ ÀçºĞ¼® (2026-03-04)
+ï»¿# API í’ˆì§ˆ ì´ìŠˆ ì¬ë¶„ì„ (2026-03-04)
 
-¾Æ·¡ ³»¿ëÀº ±âÁ¸ ¸®Æ÷Æ®¸¦ Àç°ËÁõÇØ "ÁøÂ¥ ¿À·ù"¿Í "Ç¥Çö ±ÔÄ¢ Â÷ÀÌ"¸¦ ºĞ¸®ÇÑ °á°úÀÔ´Ï´Ù.
+ì•„ë˜ ë‚´ìš©ì€ ê¸°ì¡´ ë¦¬í¬íŠ¸ë¥¼ ì¬ê²€ì¦í•´ "ì§„ì§œ ì˜¤ë¥˜"ì™€ "í‘œí˜„ ê·œì¹™ ì°¨ì´"ë¥¼ ë¶„ë¦¬í•œ ê²°ê³¼ì…ë‹ˆë‹¤.
 
-## 1. ºÒÀÏÄ¡ 50°Ç ÀçºĞ·ù
+## 1. ë¶ˆì¼ì¹˜ 50ê±´ ì¬ë¶„ë¥˜
 
-### ±âÁØ
-- ¿øº» ÆÄÀÏ: `docs/api-quality-check-2026-03-04-mismatch.csv` (50°Ç)
-- ÀçºĞ·ù ¿øÄ¢:
-  - `partial Çã¿ë`: `available == false` ÀÌÁö¸¸ `available_slots`¿¡ `true`°¡ ÇÏ³ª¶óµµ ÀÖÀ¸¸é Á¤»ó Ç¥ÇöÀ¸·Î °£ÁÖ
-  - `½ÇÁú ¿À·ù`: `id_not_in_rooms` ¶Ç´Â partial·Î ¼³¸í ºÒ°¡ÇÑ ÄÉÀÌ½º
+### ê¸°ì¤€
+- ì›ë³¸ íŒŒì¼: `docs/api-quality-check-2026-03-04-mismatch.csv` (50ê±´)
+- ì¬ë¶„ë¥˜ ì›ì¹™:
+  - `partial í—ˆìš©`: `available == false` ì´ì§€ë§Œ `available_slots`ì— `true`ê°€ í•˜ë‚˜ë¼ë„ ìˆìœ¼ë©´ ì •ìƒ í‘œí˜„ìœ¼ë¡œ ê°„ì£¼
+  - `ì‹¤ì§ˆ ì˜¤ë¥˜`: `id_not_in_rooms` ë˜ëŠ” partialë¡œ ì„¤ëª… ë¶ˆê°€í•œ ì¼€ì´ìŠ¤
 
-### °á°ú
-- ÀüÃ¼ mismatch ¿äÃ»: 50°Ç
-- partial-only ¿äÃ»: 36°Ç
-- ½ÇÁú ¿À·ù ¿äÃ»: 14°Ç
-- ½ÇÁú ¿À·ù ID(Áßº¹ Æ÷ÇÔ): 34°Ç
-- ½ÇÁú ¿À·ù ID(À¯´ÏÅ©): 26°³
+### ê²°ê³¼
+- ì „ì²´ mismatch ìš”ì²­: 50ê±´
+- partial-only ìš”ì²­: 36ê±´
+- ì‹¤ì§ˆ ì˜¤ë¥˜ ìš”ì²­: 14ê±´
+- ì‹¤ì§ˆ ì˜¤ë¥˜ ID(ì¤‘ë³µ í¬í•¨): 34ê±´
+- ì‹¤ì§ˆ ì˜¤ë¥˜ ID(ìœ ë‹ˆí¬): 26ê°œ
 
-### »êÃâ¹°
-- ÀçºĞ·ù »ó¼¼(JSON): `docs/api-quality-check-2026-03-04-real-issues.json`
-- ½ÇÁú ¿À·ù Çà(CSV): `docs/api-quality-check-2026-03-04-real-issues.csv`
+### ì‚°ì¶œë¬¼
+- ì¬ë¶„ë¥˜ ìƒì„¸(JSON): `docs/api-quality-check-2026-03-04-real-issues.json`
+- ì‹¤ì§ˆ ì˜¤ë¥˜ í–‰(CSV): `docs/api-quality-check-2026-03-04-real-issues.csv`
 
-## 2. Ä¿¹ö¸®Áö °¸(¼­¿ï±¤¿ª ´ëºñ) + Èæ¼®/»óµµ Ãß°¡ °ËÁõ
+## 2. ì»¤ë²„ë¦¬ì§€ ê°­(ì„œìš¸ê´‘ì—­ ëŒ€ë¹„) + í‘ì„/ìƒë„ ì¶”ê°€ ê²€ì¦
 
-### ±âÁ¸ 4Áö¿ª ±âÁØ(ÀÌ¼ö/»ç´ç/È«´ëÀÔ±¸/½ÅÃÌ)
-- ±âÁØ ÆÄÀÏ: `docs/api-quality-check-2026-03-04-coverage.csv`
-- ¼­¿ï±¤¿ª¿¡¸¸ Á¸ÀçÇÏ´Â business_id: 9°³
+### ê¸°ì¡´ 4ì§€ì—­ ê¸°ì¤€(ì´ìˆ˜/ì‚¬ë‹¹/í™ëŒ€ì…êµ¬/ì‹ ì´Œ)
+- ê¸°ì¤€ íŒŒì¼: `docs/api-quality-check-2026-03-04-coverage.csv`
+- ì„œìš¸ê´‘ì—­ì—ë§Œ ì¡´ì¬í•˜ëŠ” business_id: 9ê°œ
   - `1314022, 1384809, 1415457, 1500479, 1593535, 247786, 570236, 706413, 759837`
 
-### Èæ¼®/»óµµ Ãß°¡ °ËÁõ(ÀÓ½Ã bbox °¡Á¤)
-- ÁÖÀÇ: ÇÁ·ĞÆ® bbox ¹ÌÁ¤ »óÅÂ¶ó °ËÁõ¿ë bbox¸¦ ÀÓ½Ã·Î °¡Á¤ÇÔ
-- Á¶°Ç: ³¯Â¥(+1,+7,+14), ½Ã°£(01-03,10-12,19-21), capacity=12
-- °á°ú:
-  - 4Áö¿ª ´ëºñ »õ·Î Ä¿¹öµÈ ID: `1384809, 570236` (2°³)
-  - ³²Àº °¸: `1415457, 1500479, 1593535, 759837` (4°³)
+### í‘ì„/ìƒë„ ì¶”ê°€ ê²€ì¦(ì„ì‹œ bbox ê°€ì •)
+- ì£¼ì˜: í”„ë¡ íŠ¸ bbox ë¯¸ì • ìƒíƒœë¼ ê²€ì¦ìš© bboxë¥¼ ì„ì‹œë¡œ ê°€ì •í•¨
+- ì¡°ê±´: ë‚ ì§œ(+1,+7,+14), ì‹œê°„(01-03,10-12,19-21), capacity=12
+- ê²°ê³¼:
+  - 4ì§€ì—­ ëŒ€ë¹„ ìƒˆë¡œ ì»¤ë²„ëœ ID: `1384809, 570236` (2ê°œ)
+  - ë‚¨ì€ ê°­: `1415457, 1500479, 1593535, 759837` (4ê°œ)
 
-### ÇØ¼®
-- Èæ¼®/»óµµ¸¦ Ãß°¡ÇÏ¸é °¸ÀÌ ÁÙ¾îµå´Â °ÍÀº ¸ÂÀ½
-- ÇÏÁö¸¸ "¼­¿ï±¤¿ª°ú ¿ÏÀü ÀÏÄ¡"´Â ¾ÆÁ÷ ¾Æ´Ô
-- µû¶ó¼­ 6Áö¿ª ¿ÏÀü Ä¿¹ö ¸ñÇ¥¶ó¸é Èæ¼®/»óµµ bbox Æ©´× ¿Ü¿¡ È«´ë±Ç °æ°è ÀçÁ¶Á¤(¶Ç´Â ÇÕÁ¤±Ç Ãß°¡)ÀÌ ÇÊ¿äÇÔ
+### í•´ì„
+- í‘ì„/ìƒë„ë¥¼ ì¶”ê°€í•˜ë©´ ê°­ì´ ì¤„ì–´ë“œëŠ” ê²ƒì€ ë§ìŒ
+- í•˜ì§€ë§Œ "ì„œìš¸ê´‘ì—­ê³¼ ì™„ì „ ì¼ì¹˜"ëŠ” ì•„ì§ ì•„ë‹˜
+- ë”°ë¼ì„œ 6ì§€ì—­ ì™„ì „ ì»¤ë²„ ëª©í‘œë¼ë©´ í‘ì„/ìƒë„ bbox íŠœë‹ ì™¸ì— í™ëŒ€ê¶Œ ê²½ê³„ ì¬ì¡°ì •(ë˜ëŠ” í•©ì •ê¶Œ ì¶”ê°€)ì´ í•„ìš”í•¨
 
-### »êÃâ¹°
+### ì‚°ì¶œë¬¼
 - `docs/api-quality-check-2026-03-04-coverage-heukseok-sangdo.json`
 - `docs/api-quality-check-2026-03-04-coverage-gap.csv`
 
-## 3. branch ÀÌ¸§ÀÌ room ÀÌ¸§À¸·Î ¿À¿°µÇ´Â ¹®Á¦
+## 3. branch ì´ë¦„ì´ room ì´ë¦„ìœ¼ë¡œ ì˜¤ì—¼ë˜ëŠ” ë¬¸ì œ
 
-### °üÃø
-- ¿À¹ö·¦ CSV: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv` (82Çà)
-- ÇØ´ç business_id: 41°³
-- DB Á÷Á¢ ´ëÁ¶ °á°ú:
-  - `branch.name == room.name` (Á¤È®È÷ µ¿ÀÏ) business_id: 29°³
-  - `branch.name`ÀÌ ¾î¶² `room.name`À» ºÎºĞ Æ÷ÇÔ business_id: 41°³
-  - À§ 29°³ Áß multi-room ÁöÁ¡(·ë 2°³ ÀÌ»ó º¸À¯) business_id: 25°³
+### ê´€ì¸¡
+- ì˜¤ë²„ë© CSV: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv` (82í–‰)
+- í•´ë‹¹ business_id: 41ê°œ
+- DB ì§ì ‘ ëŒ€ì¡° ê²°ê³¼:
+  - `branch.name == room.name` (ì •í™•íˆ ë™ì¼) business_id: 29ê°œ
+  - `branch.name`ì´ ì–´ë–¤ `room.name`ì„ ë¶€ë¶„ í¬í•¨ business_id: 41ê°œ
+  - ìœ„ 29ê°œ ì¤‘ multi-room ì§€ì (ë£¸ 2ê°œ ì´ìƒ ë³´ìœ ) business_id: 25ê°œ
 
-### ¿øÀÎ(ÄÚµå ±âÁØ)
-- branch ÀúÀå ½Ã ÀÌ¸§ °áÁ¤ ·ÎÁ÷:
+### ì›ì¸(ì½”ë“œ ê¸°ì¤€)
+- branch ì €ì¥ ì‹œ ì´ë¦„ ê²°ì • ë¡œì§:
   - `display_name = business.businessDisplayName or business.name or businessId`
-  - À§Ä¡: `app/services/room_collection_service.py` (`_save_to_db`)
-- Áï, Naver BookingÀÇ business ´Ü ÀÌ¸§ÀÌ ·ë ´ÜÀ§ »óÇ°¸í(`A·ë`, `S·ë`, `ROOM 1`)À¸·Î ³»·Á¿À¸é,
-  branch¿¡µµ ±×´ë·Î ÀúÀåµÊ
-- API ÀÀ´äÀº `room_detail.branch`(branch tableÀÇ `name`)¸¦ ±×´ë·Î »ç¿ë
-  - À§Ä¡: `app/services/availability_service.py`
+  - ìœ„ì¹˜: `app/services/room_collection_service.py` (`_save_to_db`)
+- ì¦‰, Naver Bookingì˜ business ë‹¨ ì´ë¦„ì´ ë£¸ ë‹¨ìœ„ ìƒí’ˆëª…(`Aë£¸`, `Së£¸`, `ROOM 1`)ìœ¼ë¡œ ë‚´ë ¤ì˜¤ë©´,
+  branchì—ë„ ê·¸ëŒ€ë¡œ ì €ì¥ë¨
+- API ì‘ë‹µì€ `room_detail.branch`(branch tableì˜ `name`)ë¥¼ ê·¸ëŒ€ë¡œ ì‚¬ìš©
+  - ìœ„ì¹˜: `app/services/availability_service.py`
 
-### ¼öÁ¤ ¹æÇâ(±ÇÀå)
-1. branch canonical name °áÁ¤ ±ÔÄ¢ Ãß°¡
-   - ·ë¸í ÆĞÅÏ(`A·ë`, `S·ë`, `N¹ø¹æ`, `X ROOM`)ÀÌ branch ÈÄº¸¿Í µ¿ÀÏÇÏ°í roomÀÌ 2°³ ÀÌ»óÀÌ¸é Àú½Å·Ú·Î ºĞ·ù
-2. Àú½Å·Ú branch ÈÄº¸ÀÏ ¶§ ´ëÃ¼ ¿ì¼±¼øÀ§
-   - `source_hint.name`(Áöµµ PlaceSummary) -> ±âÁ¸ DB `branch.name` À¯Áö -> ¸¶Áö¸· fallback
-3. º¸Á¤ ¹èÄ¡
-   - ÀÌ¹Ì ¿À¿°µÈ 41°³ business_id ´ë»ó ¾÷µ¥ÀÌÆ® ½ºÅ©¸³Æ® ½ÇÇà
-4. È¸±Í ¹æÁö
-   - ¼öÁı ÆÄÀÌÇÁ¶óÀÎ Å×½ºÆ®¿¡ "branch°¡ ´ÜÀÏ room »óÇ°¸íÀ¸·Î¸¸ ÀúÀåµÇÁö ¾Ê´ÂÁö" Ãß°¡
+### ìˆ˜ì • ë°©í–¥(ê¶Œì¥)
+1. branch canonical name ê²°ì • ê·œì¹™ ì¶”ê°€
+   - ë£¸ëª… íŒ¨í„´(`Aë£¸`, `Së£¸`, `Në²ˆë°©`, `X ROOM`)ì´ branch í›„ë³´ì™€ ë™ì¼í•˜ê³  roomì´ 2ê°œ ì´ìƒì´ë©´ ì €ì‹ ë¢°ë¡œ ë¶„ë¥˜
+2. ì €ì‹ ë¢° branch í›„ë³´ì¼ ë•Œ ëŒ€ì²´ ìš°ì„ ìˆœìœ„
+   - `source_hint.name`(ì§€ë„ PlaceSummary) -> ê¸°ì¡´ DB `branch.name` ìœ ì§€ -> ë§ˆì§€ë§‰ fallback
+3. ë³´ì • ë°°ì¹˜
+   - ì´ë¯¸ ì˜¤ì—¼ëœ 41ê°œ business_id ëŒ€ìƒ ì—…ë°ì´íŠ¸ ìŠ¤í¬ë¦½íŠ¸ ì‹¤í–‰
+4. íšŒê·€ ë°©ì§€
+   - ìˆ˜ì§‘ íŒŒì´í”„ë¼ì¸ í…ŒìŠ¤íŠ¸ì— "branchê°€ ë‹¨ì¼ room ìƒí’ˆëª…ìœ¼ë¡œë§Œ ì €ì¥ë˜ì§€ ì•ŠëŠ”ì§€" ì¶”ê°€
 
-### 3-1. 41°Ç º°µµ Á¤Á¤ ½ÇÇà °á°ú (2026-03-04)
-- ½ÇÇà ½ºÅ©¸³Æ®: `scripts/fix_branch_name_room_collision.py`
-- ´ë»ó: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv` ±âÁØ business_id 41°³
-- Ã³¸® ¼ø¼­: `dry-run -> apply -> verify`
-- Àû¿ë °á°ú:
+### 3-1. 41ê±´ ë³„ë„ ì •ì • ì‹¤í–‰ ê²°ê³¼ (2026-03-04)
+- ì‹¤í–‰ ìŠ¤í¬ë¦½íŠ¸: `scripts/fix_branch_name_room_collision.py`
+- ëŒ€ìƒ: `docs/api-quality-check-2026-03-04-branch-room-overlap.csv` ê¸°ì¤€ business_id 41ê°œ
+- ì²˜ë¦¬ ìˆœì„œ: `dry-run -> apply -> verify`
+- ì ìš© ê²°ê³¼:
   - target_count: 41
   - candidate_ready_count: 41
   - applied_count: 41
   - verified_match_count: 41
-  - verified_still_collided_count: 0 (½ºÅ©¸³Æ®ÀÇ exact-collision ±âÁØ)
+  - verified_still_collided_count: 0 (ìŠ¤í¬ë¦½íŠ¸ì˜ exact-collision ê¸°ì¤€)
   - unresolved_count: 0
-- ·Î±×/ÁõÀû:
+- ë¡œê·¸/ì¦ì :
   - `logs/branch_name_collision_fix_dry_run_2026-03-04.json`
   - `logs/branch_name_collision_fix_applied_2026-03-04.json`
   - `docs/branch-name-collision-fix-applied-2026-03-04.csv`
   - `docs/branch-name-collision-fix-applied-2026-03-04.md`
 
-## 4. ±âÅ¸ »óÅÂ
-- `GET /health`´Â ¿©ÀüÈ÷ `503` (`database: down`)
-- `phone_number`, `display_name`Àº ÇöÀç ÀÀ´ä¿¡¼­ ´ë´Ù¼ö nullÀÌ¸ç, º°µµ ¼öÁı º¸°­ °úÁ¦·Î ºĞ¸® ÇÊ¿ä
-
+## 4. ê¸°íƒ€ ìƒíƒœ
+- `GET /health`ëŠ” ì—¬ì „íˆ `503` (`database: down`)
+- `phone_number`, `display_name`ì€ í˜„ì¬ ì‘ë‹µì—ì„œ ëŒ€ë‹¤ìˆ˜ nullì´ë©°, ë³„ë„ ìˆ˜ì§‘ ë³´ê°• ê³¼ì œë¡œ ë¶„ë¦¬ í•„ìš”
