@@ -68,9 +68,15 @@ async def main():
         result = await service.collect_priority_areas()
         result_path = Path("logs") / f"crawl_expanded_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.json"
         result_path.parent.mkdir(parents=True, exist_ok=True)
-        # set → list 변환
-        serializable = json.loads(json.dumps(result, default=str))
-        result_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
+        result_path.write_text(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2,
+                default=lambda obj: sorted(obj) if isinstance(obj, set) else str(obj),
+            ),
+            encoding="utf-8",
+        )
         logger.info(f"크롤링 결과 저장: {result_path}")
         logger.info(f"성공: {result.get('success')}, 실패: {result.get('failed')}, 건너뜀: {result.get('skipped')}")
 

@@ -36,7 +36,7 @@ class Target:
 
 def is_placeholder_name(candidate: str, business_id: str) -> bool:
     lowered = candidate.strip().lower()
-    return lowered in {business_id.lower(), f"business-{business_id.lower()}"}
+    return lowered in {str(business_id).lower(), f"business-{str(business_id).lower()}"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,13 +86,16 @@ def fetch_rows_by_business_ids(
     start = 0
     while True:
         end = start + page_size - 1
-        result = (
+        query = (
             supabase.table(table)
             .select(columns)
             .in_("business_id", business_ids)
-            .range(start, end)
-            .execute()
+            .order("business_id")
         )
+        # room 테이블은 business_id가 중복될 수 있어 2차 정렬 키를 추가해 페이지 경계를 안정화한다.
+        if table == "room":
+            query = query.order("biz_item_id")
+        result = query.range(start, end).execute()
         chunk = result.data or []
         rows.extend(chunk)
         if len(chunk) < page_size:
@@ -224,8 +227,7 @@ def verify_updates(applied_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return []
 
     # Re-fetch targets to get room names for verification
-    all_business_ids = list(set(business_ids + [t["business_id"] for t in applied_list]))
-    all_targets = build_targets(all_business_ids)
+    all_targets = build_targets(sorted(set(business_ids)))
     target_by_id = {t.business_id: t for t in all_targets}
 
     branch_rows = fetch_rows_by_business_ids(
@@ -327,6 +329,16 @@ def main() -> None:
         raise FileNotFoundError(f"overlap csv not found: {overlap_csv}")
 
     business_ids = load_target_business_ids(overlap_csv)
+    if not business_ids:
+        print(
+            json.dumps(
+                {"mode": "branch_name_collision_fix_no_targets", "target_count": 0},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
     targets = build_targets(business_ids)
 
     asyncio.run(collect_candidates(targets))

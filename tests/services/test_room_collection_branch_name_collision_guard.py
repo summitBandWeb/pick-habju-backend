@@ -82,7 +82,9 @@ async def test_save_to_db_keeps_existing_branch_name_when_all_candidates_collide
 
 
 @pytest.mark.asyncio
-async def test_save_to_db_falls_back_to_business_id_when_no_safe_branch_name(service, mock_supabase):
+async def test_save_to_db_uses_business_id_as_default_name_when_no_safe_branch_name(service, mock_supabase):
+    # 왜: 모든 후보가 충돌하면 마지막 안전 fallback인 business_id를 강제해 오염된 branch명을 막아야 한다.
+    # 사용처: _save_to_db(입력: business/rooms/parsed_results/source_hint) 호출 후 branch upsert payload 기본값을 검증한다.
     business = {"businessId": "biz1", "businessDisplayName": "A룸", "name": "A룸", "coordinates": None}
     rooms = [{"bizItemId": "r1", "name": "A룸", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
     parsed_results = {"r1": {"max_capacity": 4, "recommend_capacity": 2}}

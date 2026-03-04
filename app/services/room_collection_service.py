@@ -113,6 +113,7 @@ class RoomCollectionService:
         self.room_fetcher = NaverRoomFetcher()
         self.parser_service = RoomParserService()
         self.supabase = get_supabase_client()
+        self._unsupported_branch_columns: set[str] = set()
         self._unsupported_room_columns: set[str] = set()
         self._source_item_hints: Dict[str, Dict[str, Any]] = {}
 
@@ -715,7 +716,7 @@ class RoomCollectionService:
         rooms: List[Dict],
         parsed_results: Dict,
         source_hint: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> bool:
         """Save collected/parsed data to Supabase."""
         
         # 1. Save Branch
@@ -795,19 +796,8 @@ class RoomCollectionService:
         if branch_phone_number:
             branch_data["phone_number"] = branch_phone_number
         
-        # Upsert Branch
-        try:
-            self.supabase.table("branch").upsert(branch_data).execute()
-        except Exception as e:
-            if not self._is_missing_display_name_column_error(e):
-                raise
-            logger.warning(
-                "branch.display_name column unavailable; retrying branch upsert without display_name: business_id=%s",
-                business_id,
-            )
-            branch_data_without_display_name = dict(branch_data)
-            branch_data_without_display_name.pop("display_name", None)
-            self.supabase.table("branch").upsert(branch_data_without_display_name).execute()
+        # Branch도 room과 동일하게 롤링 배포 중 스키마 차이를 허용한다.
+        self._upsert_branch_with_schema_fallback(branch_data)
 
         # [Data Preservation] Fetch existing rooms for this business to check for manual overrides
         try:
@@ -849,7 +839,7 @@ class RoomCollectionService:
                 
             new_price = self._extract_price(room)
             price_inferred = self._infer_capacity_from_price(
-                business_id=business.get("businessId"),
+                business_id=business_id,
                 room_name=room.get("name"),
                 price_per_hour=new_price,
             )
@@ -992,6 +982,8 @@ class RoomCollectionService:
             # Upsert Room (with schema-compat fallback for rolling migrations)
             self._upsert_room_with_schema_fallback(room_data)
 
+        return True
+
     def _infer_capacity_from_price(
         self,
         business_id: Optional[str],
@@ -1106,6 +1098,35 @@ class RoomCollectionService:
 
         # Defensive fallback (should not be reached under normal circumstances)
         self.supabase.table("room").upsert(payload).execute()
+
+    # 왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라도 수집 파이프라인을 중단시키지 않기 위해 필요하다.
+    # 사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력 branch_data(dict)를 fallback 처리해 저장한다.
+    def _upsert_branch_with_schema_fallback(self, branch_data: Dict[str, Any]) -> None:
+        """
+        왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라질 수 있어 수집 파이프라인이 중단되지 않게 한다.
+        사용처: _save_to_db에서 branch upsert 직전에 호출되며, 입력은 branch_data(dict), 출력은 DB upsert 완료(예외 시 상위 전파)다.
+        """
+        payload = dict(branch_data)
+        for col in list(self._unsupported_branch_columns):
+            payload.pop(col, None)
+
+        for _ in range(6):
+            try:
+                self.supabase.table("branch").upsert(payload).execute()
+                return
+            except Exception as exc:
+                missing_col = self._extract_missing_column_from_error(exc)
+                if not missing_col or missing_col not in payload:
+                    raise
+                logger.warning(
+                    "Branch upsert fallback: removing missing column '%s' and retrying",
+                    missing_col,
+                )
+                self._unsupported_branch_columns.add(missing_col)
+                payload.pop(missing_col, None)
+
+        # 방어 코드: 정상적으로는 위 루프에서 return 된다.
+        self.supabase.table("branch").upsert(payload).execute()
 
     @staticmethod
     def _extract_missing_column_from_error(exc: Exception) -> Optional[str]:

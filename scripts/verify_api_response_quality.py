@@ -491,14 +491,15 @@ def main() -> None:
     first_favorite_sample: dict[str, str] | None = None
 
     def fetch_task(task: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        result = request_json(
-            session=session,
-            method="GET",
-            url=f"{base}/api/rooms/availability/",
-            timeout=args.timeout,
-            retries=args.retries,
-            params=task,
-        )
+        with requests.Session() as local_session:
+            result = request_json(
+                session=local_session,
+                method="GET",
+                url=f"{base}/api/rooms/availability/",
+                timeout=args.timeout,
+                retries=args.retries,
+                params=task,
+            )
         return task, result
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
