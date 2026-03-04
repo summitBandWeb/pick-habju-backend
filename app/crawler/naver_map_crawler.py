@@ -390,7 +390,7 @@ class NaverMapCrawler:
                     return []
 
                 self._open_info_tab(target_frame)
-                page.wait_for_timeout(self._wait_with_jitter(1200))
+                page.wait_for_timeout(self._wait_with_jitter(2000))
 
                 apollo_keywords: List[str] = []
                 try:
