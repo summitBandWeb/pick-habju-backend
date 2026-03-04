@@ -198,6 +198,14 @@ def apply_updates(targets: list[Target]) -> tuple[list[dict], list[dict]]:
                         "source": target.candidate_source,
                     }
                 )
+            else:
+                failed.append(
+                    {
+                        "business_id": target.business_id,
+                        "candidate_name": target.candidate_name,
+                        "error": "no rows updated",
+                    }
+                )
         except Exception as e:
             print(f"[apply] failed for {target.business_id}: {e}")
             failed.append(

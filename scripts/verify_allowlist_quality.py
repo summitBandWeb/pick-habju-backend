@@ -91,6 +91,8 @@ def fetch_all_by_business_ids(
     business_ids: list[str],
     page_size: int = 1000,
 ) -> list[dict[str, Any]]:
+    if not business_ids:
+        return []
     rows: list[dict[str, Any]] = []
     start = 0
     while True:

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -76,6 +77,7 @@ DEFAULT_AREAS: tuple[AreaBox, ...] = (
 )
 
 PHONE_PATTERN = re.compile(r"^\d{2,4}-\d{3,4}-\d{4}$")
+PRODUCTION_HOSTS = {"api.pickhabju.com", "pickhabju.com", "www.pickhabju.com"}
 
 
 def parse_offsets(raw: str) -> list[int]:
@@ -109,6 +111,12 @@ def parse_capacities(raw: str) -> list[int]:
     return [int(x) for x in parts]
 
 
+def is_production_like_url(base_url: str) -> bool:
+    parsed = urlparse(base_url if "://" in base_url else f"https://{base_url}")
+    host = (parsed.hostname or "").lower()
+    return host in PRODUCTION_HOSTS or "prod" in host
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -134,7 +142,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device-id",
         default="550e8400-e29b-41d4-a716-446655440000",
-        help="X-Device-Id for favorites endpoint checks",
+        help=(
+            "X-Device-Id for favorites endpoint checks "
+            "(default is test UUID: 550e8400-e29b-41d4-a716-446655440000)"
+        ),
     )
     parser.add_argument(
         "--date-offsets",
@@ -168,6 +179,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="Parallel workers for availability matrix (default: 1)",
+    )
+    parser.add_argument(
+        "--skip-favorites-roundtrip",
+        action="store_true",
+        help="Skip the favorites put/delete roundtrip checks",
     )
     return parser.parse_args()
 
@@ -605,7 +621,29 @@ def main() -> None:
                 )
 
     favorites_roundtrip: dict[str, Any] = {"executed": False}
-    if first_favorite_sample:
+    should_run_favorites_roundtrip = bool(first_favorite_sample) and not args.skip_favorites_roundtrip
+
+    if args.skip_favorites_roundtrip:
+        favorites_roundtrip["skipped_reason"] = "flag_enabled"
+    elif not first_favorite_sample:
+        favorites_roundtrip["skipped_reason"] = "no_sample_available"
+
+    if should_run_favorites_roundtrip and is_production_like_url(base):
+        print(
+            "[confirm] favorites roundtrip performs PUT/DELETE against live data. "
+            f"base_url={base}. Continue? [y/N]: ",
+            end="",
+        )
+        try:
+            confirm = input().strip().lower()
+        except EOFError:
+            confirm = ""
+        if confirm not in {"y", "yes"}:
+            should_run_favorites_roundtrip = False
+            favorites_roundtrip["skipped_reason"] = "production_confirmation_declined"
+            print("Skipped favorites roundtrip: production confirmation was not granted.")
+
+    if should_run_favorites_roundtrip:
         biz_item_id = first_favorite_sample["biz_item_id"]
         business_id = first_favorite_sample["business_id"]
 
@@ -830,6 +868,8 @@ def main() -> None:
     print(f"Wrote {coverage_csv_path}")
     print(f"Wrote {branch_room_overlap_csv_path}")
     print(f"Wrote {report_md_path}")
+
+    session.close()
 
 
 if __name__ == "__main__":

@@ -37,7 +37,11 @@ async def main():
         all_items = {}
         for query in PRIORITY_AREA_QUERIES:
             logger.info(f"Searching: {query}")
-            results = await service.map_crawler.search_rehearsal_rooms(query)
+            try:
+                results = await service.map_crawler.search_rehearsal_rooms(query)
+            except Exception:
+                logger.exception("Search failed for query=%s; continuing dry-run", query)
+                results = []
             for item in results:
                 bid = item.get("id")
                 if bid:
