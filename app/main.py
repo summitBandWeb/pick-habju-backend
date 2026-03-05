@@ -33,23 +33,17 @@ from pydantic import ValidationError
 import httpx
 from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
 from app.models.dto import HealthResponse
-from app.core.scheduler import start_scheduler, shutdown_scheduler
+from app.api.monitoring import router as monitoring_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 시작 시 클라이언트 및 스케줄러 설정
     await set_global_client()
-    start_scheduler()
     try:
         yield
     finally:
         # 종료 시 정리
-        try:
-            shutdown_scheduler()
-        except Exception as e:
-            logger.error(f"Error shutting down scheduler: {e}", exc_info=True)
-        finally:
-            await close_global_client()
+        await close_global_client()
 
 
 app = FastAPI(
@@ -198,6 +192,7 @@ async def health_check(response: Response) -> HealthResponse:
 # API 라우터 포함
 app.include_router(available_router)
 app.include_router(favorites_router)
+app.include_router(monitoring_router)
 
 if os.getenv("ENV") != "prod":
     app.include_router(demo_router)
