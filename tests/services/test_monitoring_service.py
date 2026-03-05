@@ -34,11 +34,11 @@ async def test_send_discord_report_success(mock_registry, mock_async_client_cls,
     
     mock_sample1 = MagicMock()
     mock_sample1.labels = {"path": "/health", "status_code": "200"}
-    mock_sample1.value = 150  # 델타 = 150 - 100 = 50 호출 추가
+    mock_sample1.value = 150  # 델타 = 150 - 100 = 50 성공 호출 추가
     mock_sample1.name = "http_requests_total"
     
     mock_sample2 = MagicMock()
-    mock_sample2.labels = {"path": "/ping", "status_code": "503"}
+    mock_sample2.labels = {"path": "/health", "status_code": "503"}
     mock_sample2.value = 7    # 델타 = 7 - 5 = 2 발생 에러 추가
     mock_sample2.name = "http_requests_total"
     
