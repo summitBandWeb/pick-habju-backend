@@ -37,7 +37,7 @@ from app.api.monitoring import router as monitoring_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 시작 시 클라이언트 및 스케줄러 설정
+    # 시작 시 전역 HTTP 클라이언트 초기화
     await set_global_client()
     try:
         yield

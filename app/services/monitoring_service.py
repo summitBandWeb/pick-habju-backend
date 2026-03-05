@@ -178,7 +178,9 @@ async def send_discord_report() -> bool:
             ]
         }
         
-        # 6. 웹훅 발송 (타임아웃은 길게 설정하지 않음)
+        # 6. 웹훅 발송
+        # NOTE: Discord API의 통상적인 응답 SLA를 고려하여 5.0초 타임아웃 설정. 
+        # API 레이어에서 동기적으로 대기하므로 너무 길지 않게 유지합니다.
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(DISCORD_WEBHOOK_URL, json=message)
             resp.raise_for_status()
