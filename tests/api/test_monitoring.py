@@ -5,7 +5,8 @@ from app.main import app
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 @patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
 @patch("app.api.monitoring.send_discord_report", new_callable=AsyncMock)
@@ -13,7 +14,7 @@ def test_trigger_daily_report_success(mock_send_report, client):
     """
     유효한 토큰을 사용하여 요청 시 200 OK를 반환하는지 검증합니다.
     """
-    mock_send_report.return_value = None
+    mock_send_report.return_value = True
     response = client.post(
         "/api/v1/monitoring/daily-report",
         headers={"X-Monitoring-Token": "test-secret-token"}
@@ -22,6 +23,24 @@ def test_trigger_daily_report_success(mock_send_report, client):
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
+    mock_send_report.assert_called_once()
+
+@patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
+@patch("app.api.monitoring.send_discord_report", new_callable=AsyncMock)
+def test_trigger_daily_report_skipped(mock_send_report, client):
+    """
+    락 획득 실패 등으로 리포트가 스킵되었을 때 202 Accepted를 반환하는지 검증합니다.
+    """
+    mock_send_report.return_value = False
+    response = client.post(
+        "/api/v1/monitoring/daily-report",
+        headers={"X-Monitoring-Token": "test-secret-token"}
+    )
+    
+    assert response.status_code == 202
+    data = response.json()
+    assert data["ok"] is True
+    assert "skipped" in data["message"].lower()
     mock_send_report.assert_called_once()
 
 @patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
