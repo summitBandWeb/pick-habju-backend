@@ -56,7 +56,8 @@ async def test_send_discord_report_success(mock_registry, mock_async_client_cls,
     mock_async_client_cls.return_value = mock_client
     
     # 3. 비즈니스 로직 실행
-    await send_discord_report()
+    result = await send_discord_report()
+    assert result is True
     
     # 4. 검증: 분산락 로직 실행 여부
     mock_snapshot_store["acquire"].assert_called_once_with("daily_discord_report_lock")
@@ -76,7 +77,7 @@ async def test_send_discord_report_success(mock_registry, mock_async_client_cls,
     payload = kwargs["json"]
     assert "embeds" in payload
     embed = payload["embeds"][0]
-    assert embed["title"].startswith("📊 픽합주 데일리 헬스체크 리포트")
+    assert embed["title"].startswith("📊 픽합주 헬스체크 모니터링 리포트")
     
     fields = embed["fields"]
     # Total requests delta = 57, Total errors delta = 2
@@ -89,7 +90,8 @@ async def test_send_discord_report_skip_no_webhook(mock_snapshot_store):
     """
     DISCORD_WEBHOOK_URL이 정의되지 않은 경우 스킵하는지 검증합니다.
     """
-    await send_discord_report()
+    result = await send_discord_report()
+    assert result is False
     # 락 획득 시도를 안해야합니다
     mock_snapshot_store["acquire"].assert_not_called()
 
@@ -102,7 +104,8 @@ async def test_send_discord_report_locked(mock_snapshot_store):
     # 락 획득 실패 모의
     mock_snapshot_store["acquire"].return_value = False
     
-    await send_discord_report()
+    result = await send_discord_report()
+    assert result is False
     
     # 락 획득 시도는 수행했지만
     mock_snapshot_store["acquire"].assert_called_once()
