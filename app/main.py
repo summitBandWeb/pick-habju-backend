@@ -157,14 +157,24 @@ async def health_check(response: Response) -> HealthResponse:
             timeout=HEALTH_CHECK_TIMEOUT
         )
         supabase_resp.raise_for_status()
+    except httpx.PoolTimeout:
+        logger.error("Health check failed: Connection pool exhausted. Consider increasing pool size.", exc_info=True)
+        health_status["status"] = "degraded"
+        health_status["dependencies"]["database"] = "down"
+        response.status_code = 503
     except httpx.TimeoutException:
-        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase DB query took too long. Check connection pool or DB load.", exc_info=True)
+        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase DB query took too long.", exc_info=True)
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
     except httpx.HTTPStatusError as e:
         status_code = getattr(e.response, 'status_code', None)
-        logger.error(f"Health check failed with HTTP {status_code}: Authorization or Configuration error with Supabase. Check SUPABASE_URL and SUPABASE_KEY.", exc_info=True)
+        if status_code == 401:
+            logger.error(f"Health check failed with HTTP 401: Invalid API key. Check SUPABASE_KEY.", exc_info=True)
+        elif status_code == 404:
+            logger.error(f"Health check failed with HTTP 404: Table not found. Check SUPABASE_URL and SUPABASE_TABLE.", exc_info=True)
+        else:
+            logger.error(f"Health check failed with HTTP {status_code}: Configuration error with Supabase.", exc_info=True)
         health_status["status"] = "unhealthy"
         health_status["dependencies"]["database"] = "unauthorized_or_not_found"
         response.status_code = 503
