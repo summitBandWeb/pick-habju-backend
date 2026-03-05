@@ -80,20 +80,21 @@ class LocalSnapshotStore(SnapshotStore):
 
 snapshot_store: SnapshotStore = LocalSnapshotStore()
 
-async def send_discord_report():
+async def send_discord_report() -> bool:
     """
     Prometheus in-memory REGISTRY를 분석하여 지난 24시간 리포트(이전 실행 스냅샷과의 Delta)
     통계를 계산하고, Discord 웹훅으로 전송합니다.
+    분산 락을 획득하여 발송에 성공하면 True, 스킵되면 False를 반환합니다.
     """
     if not DISCORD_WEBHOOK_URL:
         logger.warning("Discord webhook URL is not set. Skipping daily report.")
-        return
+        return False
         
     lock_key = "daily_discord_report_lock"
     # 다중 인스턴스 중복 실행 방지 (분산 락 획득)
     if not await snapshot_store.acquire_lock(lock_key):
         logger.info("Another instance is running the daily report. Skipping...")
-        return
+        return False
 
     try:
         # 1. 지표 초기화 (수집)
@@ -145,7 +146,7 @@ async def send_discord_report():
             "content": None,
             "embeds": [
                 {
-                    "title": f"📊 픽합주 데일리 헬스체크 리포트 [{env_label}]",
+                    "title": f"📊 픽합주 헬스체크 모니터링 리포트 [{env_label}]",
                     "description": "최근 24시간 수집된 모니터링 메트릭 요약 결과입니다.",
                     "color": 65280 if uptime_percent >= 99.0 else 16711680,
                     "fields": [
@@ -182,6 +183,7 @@ async def send_discord_report():
             resp = await client.post(DISCORD_WEBHOOK_URL, json=message)
             resp.raise_for_status()
             logger.info("Successfully sent daily report to Discord.")
+            return True
             
     except Exception as e:
         logger.error(f"Failed to generate or send daily report: {e}", exc_info=True)
