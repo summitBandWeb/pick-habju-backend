@@ -89,6 +89,9 @@ HEALTH_CHECK_TIMEOUT = float(os.getenv("HEALTH_CHECK_TIMEOUT", "2.0"))
 if HEALTH_CHECK_TIMEOUT <= 0:
     raise ValueError("HEALTH_CHECK_TIMEOUT must be strictly greater than 0")
 
+# 모니터링 API 보안을 위한 시크릿 토큰
+MONITORING_SECRET_TOKEN = os.getenv("MONITORING_SECRET_TOKEN")
+
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:
