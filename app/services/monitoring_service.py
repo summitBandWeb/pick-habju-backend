@@ -3,9 +3,12 @@ import json
 import time
 import tempfile
 import logging
+import datetime
+from enum import Enum
 from prometheus_client import REGISTRY
 import httpx
-from app.core.config import DISCORD_WEBHOOK_URL, APP_ENV
+from app.core.config import DISCORD_WEBHOOK_URL, APP_ENV, SUPABASE_URL, SUPABASE_KEY
+from app.core.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,12 @@ class SnapshotStore:
         raise NotImplementedError
     async def save_snapshot(self, data: dict):
         raise NotImplementedError
+
+class MonitoringReportStatus(Enum):
+    SUCCESS = "success"
+    SKIPPED_LOCK = "skipped_lock"
+    MISSING_CONFIG = "missing_config"
+    FAILED = "failed"
 
 class LocalSnapshotStore(SnapshotStore):
     """
@@ -78,23 +87,89 @@ class LocalSnapshotStore(SnapshotStore):
         except Exception as e:
             logger.warning(f"Failed to save metrics snapshot: {e}", exc_info=True)
 
-snapshot_store: SnapshotStore = LocalSnapshotStore()
+class SupabaseSnapshotStore(SnapshotStore):
+    """
+    Supabase (PostgreSQL) based shared locking and snapshot storage.
+    Suitable for multi-instance deployments.
+    Requires a 'monitoring_metadata' table with columns: key (PK), data (JSONB), updated_at (TIMESTAMPTZ).
+    """
+    def __init__(self):
+        self.supabase = get_supabase_client()
+        self.table_name = "monitoring_metadata"
 
-async def send_discord_report() -> bool:
+    async def acquire_lock(self, lock_key: str, ttl_seconds: int = 60) -> bool:
+        """
+        Advisory lock counterpart using a table. 
+        Attempts to update/insert a row only if it's expired or doesn't exist.
+        """
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            # 1. Check if lock exists and is valid
+            res = self.supabase.table(self.table_name).select("*").eq("key", lock_key).execute()
+            if res.data:
+                lock_data = res.data[0]
+                expires_at = datetime.datetime.fromisoformat(lock_data.get("expires_at"))
+                if datetime.datetime.now(datetime.timezone.utc) < expires_at:
+                    return False
+
+            # 2. Upsert lock (simple implementation for demonstration)
+            expires_at_iso = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=ttl_seconds)).isoformat()
+            self.supabase.table(self.table_name).upsert({
+                "key": lock_key,
+                "expires_at": expires_at_iso,
+                "owner_pid": os.getpid()
+            }).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Supabase lock acquisition error: {e}")
+            return False
+
+    async def release_lock(self, lock_key: str):
+        try:
+            self.supabase.table(self.table_name).delete().eq("key", lock_key).eq("owner_pid", os.getpid()).execute()
+        except Exception as e:
+            logger.warning(f"Supabase lock release error: {e}")
+
+    async def load_snapshot(self) -> dict:
+        try:
+            res = self.supabase.table(self.table_name).select("data").eq("key", "metrics_snapshot").execute()
+            if res.data:
+                return res.data[0].get("data", {})
+        except Exception as e:
+            logger.warning(f"Failed to load Supabase snapshot: {e}")
+        return {"total_requests": 0, "total_errors": 0, "total_duration": 0.0}
+
+    async def save_snapshot(self, data: dict):
+        try:
+            self.supabase.table(self.table_name).upsert({
+                "key": "metrics_snapshot",
+                "data": data,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }).execute()
+        except Exception as e:
+            logger.warning(f"Failed to save Supabase snapshot: {e}")
+
+# Use Supabase-based store if configured, otherwise fallback to Local
+if SUPABASE_URL and SUPABASE_KEY:
+    snapshot_store: SnapshotStore = SupabaseSnapshotStore()
+else:
+    snapshot_store: SnapshotStore = LocalSnapshotStore()
+
+async def send_discord_report() -> MonitoringReportStatus:
     """
     Prometheus in-memory REGISTRY를 분석하여 지난 24시간 리포트(이전 실행 스냅샷과의 Delta)
     통계를 계산하고, Discord 웹훅으로 전송합니다.
-    분산 락을 획득하여 발송에 성공하면 True, 스킵되면 False를 반환합니다.
+    분산 락을 획득하여 발송에 성공하면 SUCCESS, 스킵되면 관련 상태 코드를 반환합니다.
     """
     if not DISCORD_WEBHOOK_URL:
         logger.warning("Discord webhook URL is not set. Skipping daily report.")
-        return False
+        return MonitoringReportStatus.MISSING_CONFIG
         
     lock_key = "daily_discord_report_lock"
     # 다중 인스턴스 중복 실행 방지 (분산 락 획득)
     if not await snapshot_store.acquire_lock(lock_key):
         logger.info("Another instance is running the daily report. Skipping...")
-        return False
+        return MonitoringReportStatus.SKIPPED_LOCK
 
     try:
         # 1. 지표 초기화 (수집)
@@ -185,7 +260,7 @@ async def send_discord_report() -> bool:
             resp = await client.post(DISCORD_WEBHOOK_URL, json=message)
             resp.raise_for_status()
             logger.info("Successfully sent daily report to Discord.")
-            return True
+            return MonitoringReportStatus.SUCCESS
             
     except Exception as e:
         logger.error(f"Failed to generate or send daily report: {e}", exc_info=True)

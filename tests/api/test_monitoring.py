@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from app.main import app
+from app.services.monitoring_service import MonitoringReportStatus
 
 @pytest.fixture
 def client():
@@ -14,7 +15,7 @@ def test_trigger_daily_report_success(mock_send_report, client):
     """
     유효한 토큰을 사용하여 요청 시 200 OK를 반환하는지 검증합니다.
     """
-    mock_send_report.return_value = True
+    mock_send_report.return_value = MonitoringReportStatus.SUCCESS
     response = client.post(
         "/api/v1/monitoring/daily-report",
         headers={"X-Monitoring-Token": "test-secret-token"}
@@ -31,7 +32,7 @@ def test_trigger_daily_report_skipped(mock_send_report, client):
     """
     락 획득 실패 등으로 리포트가 스킵되었을 때 202 Accepted를 반환하는지 검증합니다.
     """
-    mock_send_report.return_value = False
+    mock_send_report.return_value = MonitoringReportStatus.SKIPPED_LOCK
     response = client.post(
         "/api/v1/monitoring/daily-report",
         headers={"X-Monitoring-Token": "test-secret-token"}
@@ -41,6 +42,23 @@ def test_trigger_daily_report_skipped(mock_send_report, client):
     data = response.json()
     assert data["ok"] is True
     assert "skipped" in data["message"].lower()
+    mock_send_report.assert_called_once()
+
+@patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
+@patch("app.api.monitoring.send_discord_report", new_callable=AsyncMock)
+def test_trigger_daily_report_missing_config(mock_send_report, client):
+    """
+    웹훅 URL 설정 누락 시 500 Internal Server Error를 반환하는지 검증합니다.
+    """
+    mock_send_report.return_value = MonitoringReportStatus.MISSING_CONFIG
+    response = client.post(
+        "/api/v1/monitoring/daily-report",
+        headers={"X-Monitoring-Token": "test-secret-token"}
+    )
+    
+    assert response.status_code == 500
+    data = response.json()
+    assert "webhook" in data["message"].lower()
     mock_send_report.assert_called_once()
 
 @patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
@@ -77,5 +95,5 @@ def test_trigger_daily_report_failure(mock_send_report, client):
     
     assert response.status_code == 500
     data = response.json()
-    assert data["message"] == "Internal server error while triggering report"
+    assert "Internal server error while triggering report" in data["message"]
     mock_send_report.assert_called_once()

@@ -1,0 +1,108 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.3, pytest-8.4.2, pluggy-1.6.0 -- D:\Anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\하정훈\Desktop\픽합주\pick-habju-backend
+configfile: pytest.ini
+plugins: anyio-4.2.0, asyncio-0.26.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/api/test_monitoring.py::test_trigger_daily_report_success PASSED   [ 20%]
+tests/api/test_monitoring.py::test_trigger_daily_report_skipped PASSED   [ 40%]
+tests/api/test_monitoring.py::test_trigger_daily_report_missing_config FAILED [ 60%]
+tests/api/test_monitoring.py::test_trigger_daily_report_forbidden PASSED [ 80%]
+tests/api/test_monitoring.py::test_trigger_daily_report_failure PASSED   [100%]
+
+================================== FAILURES ===================================
+__________________ test_trigger_daily_report_missing_config ___________________
+
+mock_send_report = <AsyncMock name='send_discord_report' id='1360125008384'>
+client = <starlette.testclient.TestClient object at 0x0000013CACAC5B50>
+
+    @patch("app.api.monitoring.MONITORING_SECRET_TOKEN", "test-secret-token")
+    @patch("app.api.monitoring.send_discord_report", new_callable=AsyncMock)
+    def test_trigger_daily_report_missing_config(mock_send_report, client):
+        """
+        웹훅 URL 설정 누락 시 500 Internal Server Error를 반환하는지 검증합니다.
+        """
+        mock_send_report.return_value = MonitoringReportStatus.MISSING_CONFIG
+        response = client.post(
+            "/api/v1/monitoring/daily-report",
+            headers={"X-Monitoring-Token": "test-secret-token"}
+        )
+    
+        assert response.status_code == 500
+        data = response.json()
+>       assert "webhook" in data["message"].lower()
+E       AssertionError: assert 'webhook' in 'internal server error while triggering report'
+E        +  where 'internal server error while triggering report' = <built-in method lower of str object at 0x0000013CADC00FF0>()
+E        +    where <built-in method lower of str object at 0x0000013CADC00FF0> = 'Internal server error while triggering report'.lower
+
+tests\api\test_monitoring.py:61: AssertionError
+---------------------------- Captured stderr call -----------------------------
+{"timestamp": "2026-03-05T13:33:19", "level": "ERROR", "logger": "app.api.monitoring", "trace_id": "3abd754f-5452-4f98-b5cb-6233228c18b3", "message": "Failed to trigger daily report: 500: Daily report failed: Discord webhook URL is not configured", "taskName": "starlette.middleware.base.BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro"}
+{"timestamp": "2026-03-05T13:33:19", "level": "ERROR", "logger": "app.core.middleware", "trace_id": "3abd754f-5452-4f98-b5cb-6233228c18b3", "message": "[testclient] POST /api/v1/monitoring/daily-report 500", "taskName": "starlette.middleware.base.BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro", "real_ip": "testclient", "method": "POST", "path": "/api/v1/monitoring/daily-report", "status_code": 500, "latency_sec": 0.0009, "user_agent": "testclient", "referer": "", "request_id": ""}
+{"timestamp": "2026-03-05T13:33:19", "level": "INFO", "logger": "httpx", "trace_id": null, "message": "HTTP Request: POST http://testserver/api/v1/monitoring/daily-report \"HTTP/1.1 500 Internal Server Error\"", "taskName": null}
+------------------------------ Captured log call ------------------------------
+ERROR    app.api.monitoring:monitoring.py:47 Failed to trigger daily report: 500: Daily report failed: Discord webhook URL is not configured
+Traceback (most recent call last):
+  File "C:\Users\하정훈\Desktop\픽합주\pick-habju-backend\app\api\monitoring.py", line 40, in trigger_daily_report
+    raise HTTPException(
+fastapi.exceptions.HTTPException: 500: Daily report failed: Discord webhook URL is not configured
+ERROR    app.core.middleware:middleware.py:160 [testclient] POST /api/v1/monitoring/daily-report 500
+INFO     httpx:_client.py:1025 HTTP Request: POST http://testserver/api/v1/monitoring/daily-report "HTTP/1.1 500 Internal Server Error"
+============================== warnings summary ===============================
+D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:72
+  D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:72: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:85
+  D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:85: PyparsingDeprecationWarning: 'escChar' argument is deprecated, use 'esc_char'
+    quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:85
+  D:\Anaconda3\Lib\site-packages\pyiceberg\expressions\parser.py:85: PyparsingDeprecationWarning: 'unquoteResults' argument is deprecated, use 'unquote_results'
+    quoted_identifier = QuotedString('"', escChar="\\", unquoteResults=True)
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:365
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:365: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:494
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:494: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:498
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:498: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:502
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:502: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:506
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:506: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:538
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:538: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:542
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:542: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:546
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:546: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:550
+  D:\Anaconda3\Lib\site-packages\pyiceberg\table\metadata.py:550: PydanticDeprecatedSince212: Using `@model_validator` with mode='after' on a classmethod is deprecated. Instead, use an instance method. See the documentation at https://docs.pydantic.dev/2.12/concepts/validators/#model-after-validator. Deprecated in Pydantic V2.12 to be removed in V3.0.
+    @model_validator(mode="after")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/api/test_monitoring.py::test_trigger_daily_report_missing_config - AssertionError: assert 'webhook' in 'internal server error while triggering report'
+ +  where 'internal server error while triggering report' = <built-in method lower of str object at 0x0000013CADC00FF0>()
+ +    where <built-in method lower of str object at 0x0000013CADC00FF0> = 'Internal server error while triggering report'.lower
+================== 1 failed, 4 passed, 12 warnings in 0.23s ===================
