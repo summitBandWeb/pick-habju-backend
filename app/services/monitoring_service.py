@@ -185,5 +185,6 @@ async def send_discord_report():
             
     except Exception as e:
         logger.error(f"Failed to generate or send daily report: {e}", exc_info=True)
+        raise
     finally:
         await snapshot_store.release_lock(lock_key)
