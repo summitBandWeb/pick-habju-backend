@@ -53,12 +53,13 @@ def test_health_check_success(mock_get_global_client, client):
     )
 
 @patch("app.main.get_global_client")
-def test_health_check_failure_network(mock_get_global_client, client):
+def test_health_check_failure_network(mock_get_global_client, client, caplog):
     """네트워크 오류 시 헬스체크 동작을 검증합니다.
     
     Args:
         mock_get_global_client (MagicMock): 전역 클라이언트 인스턴스를 반환하는 mock 객체
         client (TestClient): FastAPI 테스트 클라이언트
+        caplog: 로그 출력을 캡처하는 pytest fixture
         
     Rationale:
         단순 타임아웃이 아닌, DNS 실패나 연결 거부 등 네트워크 레벨의 `httpx.RequestError` 
@@ -76,19 +77,20 @@ def test_health_check_failure_network(mock_get_global_client, client):
     data = response.json()
     assert data["status"] == "degraded"
     assert data["dependencies"]["database"] == "down"
+    assert "Network/Request error" in caplog.text
 
 @patch("app.main.get_global_client")
-def test_health_check_failure_auth(mock_get_global_client, client):
-    """권한 인증오류에 대한 헬스체크 동작을 검증합니다.
+def test_health_check_failure_auth_401(mock_get_global_client, client, caplog):
+    """권한 인증오류(401)에 대한 헬스체크 동작을 검증합니다.
     
     Args:
         mock_get_global_client (MagicMock): 전역 클라이언트 인스턴스를 반환하는 mock 객체
         client (TestClient): FastAPI 테스트 클라이언트
+        caplog: 로그 출력을 캡처하는 pytest fixture
         
     Rationale:
-        잘못된 인증 정보(예: `SUPABASE_KEY` 설정 오류)로 인해 DB에서 401(Unauthorized)이나 
-        다른 에러 응답 코드가 떨어질 때, 이를 `httpx.HTTPStatusError`로 구분하여 잡아내는지 검증합니다.
-        순수하게 네트워크는 통신되었으나 권한이 없는 경우(Unhealthy)의 디버깅 지표 제공 목적입니다.
+        잘못된 인증 정보(예: `SUPABASE_KEY` 설정 오류)로 인해 DB에서 401(Unauthorized)이 
+        발생할 때, "Invalid API key"라는 명확한 로그가 남는지 확인합니다.
     """
     mock_client = AsyncMock()
     mock_get_global_client.return_value = mock_client
@@ -103,18 +105,47 @@ def test_health_check_failure_auth(mock_get_global_client, client):
     data = response.json()
     assert data["status"] == "unhealthy"
     assert data["dependencies"]["database"] == "unauthorized_or_not_found"
+    assert "Invalid API key" in caplog.text
 
+@patch("app.main.get_global_client")
+def test_health_check_failure_auth_404(mock_get_global_client, client, caplog):
+    """테이블 미존재 오류(404)에 대한 헬스체크 동작을 검증합니다.
+    
+    Args:
+        mock_get_global_client (MagicMock): 전역 클라이언트 인스턴스를 반환하는 mock 객체
+        client (TestClient): FastAPI 테스트 클라이언트
+        caplog: 로그 출력을 캡처하는 pytest fixture
+        
+    Rationale:
+        잘못된 테이블 설정(예: `SUPABASE_TABLE` 설정 오류)으로 인해 DB에서 404(Not Found)가 
+        발생할 때, "Table not found"라는 명확한 로그가 남는지 확인합니다.
+    """
+    mock_client = AsyncMock()
+    mock_get_global_client.return_value = mock_client
+    
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_client.get.side_effect = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=mock_response)
+
+    response = client.get("/health")
+    
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "unhealthy"
+    assert data["dependencies"]["database"] == "unauthorized_or_not_found"
+    assert "Table not found" in caplog.text
     
 @patch("app.main.get_global_client")
-def test_health_check_timeout(mock_get_global_client, client):
+def test_health_check_timeout(mock_get_global_client, client, caplog):
     """타임아웃 발생 시 헬스체크 동작여부를 검증합니다.
     
     Args:
         mock_get_global_client (MagicMock): 전역 클라이언트 인스턴스를 반환하는 mock 객체
         client (TestClient): FastAPI 테스트 클라이언트
+        caplog: 로그 출력을 캡처하는 pytest fixture
         
     Rationale:
-        커넥션 풀이나 물리적인 응답 지연이 서버의 임계치(timeout)를 초과하는 상황이 
+        물리적인 응답 지연이 서버의 임계치(timeout)를 초과하는 상황이 
         발생해도, 전체 어플리케이션이 크래시되지 않고 상태코드 503과 함께 'degraded'를 
         안전하게 반환하는지 보장하기 위함입니다.
     """
@@ -129,6 +160,34 @@ def test_health_check_timeout(mock_get_global_client, client):
     data = response.json()
     assert data["status"] == "degraded"
     assert data["dependencies"]["database"] == "down"
+    assert "Supabase DB query took too long" in caplog.text
+
+@patch("app.main.get_global_client")
+def test_health_check_pool_timeout(mock_get_global_client, client, caplog):
+    """커넥션 풀 고갈(PoolTimeout) 발생 시 헬스체크 동작여부를 검증합니다.
+    
+    Args:
+        mock_get_global_client (MagicMock): 전역 클라이언트 인스턴스를 반환하는 mock 객체
+        client (TestClient): FastAPI 테스트 클라이언트
+        caplog: 로그 출력을 캡처하는 pytest fixture
+        
+    Rationale:
+        커넥션 풀이 고갈되어 대기 시간 초과(PoolTimeout)가 발생하는 상황에서 
+        이를 네트워크 지연(ReadTimeout)과 구분하여 "Connection pool exhausted" 오류 메시지를 
+        로그로 남기는지 검증합니다.
+    """
+    mock_client = AsyncMock()
+    mock_get_global_client.return_value = mock_client
+    
+    mock_client.get.side_effect = httpx.PoolTimeout("Pool timeout", request=MagicMock())
+
+    response = client.get("/health")
+    
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "degraded"
+    assert data["dependencies"]["database"] == "down"
+    assert "Connection pool exhausted" in caplog.text
 
 @patch("app.main.httpx.AsyncClient", autospec=True)
 @patch("app.main.get_global_client", return_value=None)
