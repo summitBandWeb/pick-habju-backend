@@ -16,10 +16,14 @@ async def trigger_daily_report(
     GCP Cloud Scheduler 등 외부 인프라에서 매일 정해진 시간에 호출할 엔드포인트입니다.
     이 엔드포인트는 Prometheus 지표를 정리하여 Discord로 데일리 리포트를 전송합니다.
     """
-    # 보안: 시크릿 토큰이 설정된 경우 헤더 검증 수행
-    if MONITORING_SECRET_TOKEN and x_monitoring_token != MONITORING_SECRET_TOKEN:
-        logger.warning(f"Unauthorized monitoring trigger attempt from IP. Token mismatch.")
-        raise HTTPException(status_code=403, detail="Forbidden: Invalid monitoring token")
+    # 보안: 시크릿 토큰이 설정되지 않았거나 헤더와 일치하지 않는 경우 접근 차단 (Fail-closed)
+    if not MONITORING_SECRET_TOKEN:
+        logger.warning("MONITORING_SECRET_TOKEN is not set in environment. Denying access by default.")
+        raise HTTPException(status_code=403, detail="Forbidden: Monitoring auth is not configured")
+        
+    if x_monitoring_token != MONITORING_SECRET_TOKEN:
+        logger.warning(f"Unauthorized monitoring trigger attempt. Token mismatch or missing.")
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid or missing monitoring token")
 
     try:
         # Serverless(Cloud Run 등) 구동 환경에서는 응답 반환 후 CPU 할당이 제한되므로,
@@ -34,4 +38,4 @@ async def trigger_daily_report(
         return {"ok": True, "message": "Daily report triggered successfully"}
     except Exception as e:
         logger.error(f"Failed to trigger daily report: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error while triggering report")
+        raise HTTPException(status_code=500, detail="Internal server error while triggering report") from e

@@ -2,6 +2,7 @@ import pytest
 import datetime
 from unittest.mock import patch, MagicMock, AsyncMock
 from app.services.monitoring_service import send_discord_report, snapshot_store
+from httpx import HTTPStatusError, Request, Response
 
 @pytest.fixture
 def mock_snapshot_store():
@@ -50,9 +51,15 @@ async def test_send_discord_report_success(mock_registry, mock_async_client_cls,
     mock_metric.samples = [mock_sample1, mock_sample2, mock_sample3]
     mock_registry.collect.return_value = [mock_metric]
     
-    # 2. AsyncClient Mocking
+    # 2. AsyncClient 및 Response Mocking
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
+    
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.raise_for_status = MagicMock() # no-op for success
+    mock_client.post.return_value = mock_response
+    
     mock_async_client_cls.return_value = mock_client
     
     # 3. 비즈니스 로직 실행
@@ -112,3 +119,38 @@ async def test_send_discord_report_locked(mock_snapshot_store):
     # 그 후의 로직(로드, 저장 등)은 진행되지 않아야 합니다
     mock_snapshot_store["load"].assert_not_called()
     mock_snapshot_store["save"].assert_not_called()
+
+@pytest.mark.asyncio
+@patch("app.services.monitoring_service.DISCORD_WEBHOOK_URL", "http://test")
+@patch("app.services.monitoring_service.httpx.AsyncClient")
+@patch("app.services.monitoring_service.REGISTRY")
+async def test_send_discord_report_error_propagation(mock_registry, mock_async_client_cls, mock_snapshot_store):
+    """
+    HTTP 에러 발생 시 예외를 다시 던지고(re-raise), 락이 정상적으로 해제되는지 검증합니다.
+    """
+    # 1. Prometheus Registry Mocking (최소 데이터)
+    mock_metric = MagicMock()
+    mock_metric.samples = []
+    mock_registry.collect.return_value = [mock_metric]
+    
+    # 2. AsyncClient Mocking - HTTPStatusError 유도
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    # raise_for_status 호출 시 httpx.HTTPStatusError 시뮬레이션
+    
+    request = Request("POST", "http://test")
+    response = Response(500, request=request)
+    mock_response.raise_for_status.side_effect = HTTPStatusError("Internal Server Error", request=request, response=response)
+    
+    mock_client.post.return_value = mock_response
+    mock_async_client_cls.return_value = mock_client
+    
+    # 3. 실행 및 검증
+    with pytest.raises(HTTPStatusError):
+        await send_discord_report()
+        
+    # 4. 락이 반드시 해제되었는지 확인 (finally 블록 검증)
+    mock_snapshot_store["release"].assert_called_once_with("daily_discord_report_lock")
