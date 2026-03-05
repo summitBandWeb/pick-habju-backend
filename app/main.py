@@ -43,7 +43,10 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         # 종료 시 정리
-        await close_global_client()
+        try:
+            await close_global_client()
+        except Exception as e:
+            logger.error(f"Error closing global client: {e}", exc_info=True)
 
 
 app = FastAPI(
