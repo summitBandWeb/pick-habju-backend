@@ -170,9 +170,9 @@ async def health_check(response: Response) -> HealthResponse:
     except httpx.HTTPStatusError as e:
         status_code = getattr(e.response, 'status_code', None)
         if status_code == 401:
-            logger.error(f"Health check failed with HTTP 401: Invalid API key. Check SUPABASE_KEY.", exc_info=True)
+            logger.error("Health check failed with HTTP 401: Invalid API key. Check SUPABASE_KEY.", exc_info=True)
         elif status_code == 404:
-            logger.error(f"Health check failed with HTTP 404: Table not found. Check SUPABASE_URL and SUPABASE_TABLE.", exc_info=True)
+            logger.error("Health check failed with HTTP 404: Table not found. Check SUPABASE_URL and SUPABASE_TABLE.", exc_info=True)
         else:
             logger.error(f"Health check failed with HTTP {status_code}: Configuration error with Supabase.", exc_info=True)
         health_status["status"] = "unhealthy"
