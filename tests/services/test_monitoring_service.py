@@ -1,7 +1,7 @@
 import pytest
 import datetime
 from unittest.mock import patch, MagicMock, AsyncMock
-from app.services.monitoring_service import send_discord_report, snapshot_store
+from app.services.monitoring_service import send_discord_report, snapshot_store, MonitoringReportStatus
 from httpx import HTTPStatusError, Request, Response
 
 @pytest.fixture
@@ -64,7 +64,7 @@ async def test_send_discord_report_success(mock_registry, mock_async_client_cls,
     
     # 3. 비즈니스 로직 실행
     result = await send_discord_report()
-    assert result is True
+    assert result == MonitoringReportStatus.SUCCESS
     
     # 4. 검증: 분산락 로직 실행 여부
     mock_snapshot_store["acquire"].assert_called_once_with("daily_discord_report_lock")
@@ -98,7 +98,7 @@ async def test_send_discord_report_skip_no_webhook(mock_snapshot_store):
     DISCORD_WEBHOOK_URL이 정의되지 않은 경우 스킵하는지 검증합니다.
     """
     result = await send_discord_report()
-    assert result is False
+    assert result == MonitoringReportStatus.MISSING_CONFIG
     # 락 획득 시도를 안해야합니다
     mock_snapshot_store["acquire"].assert_not_called()
 
@@ -112,7 +112,7 @@ async def test_send_discord_report_locked(mock_snapshot_store):
     mock_snapshot_store["acquire"].return_value = False
     
     result = await send_discord_report()
-    assert result is False
+    assert result == MonitoringReportStatus.SKIPPED_LOCK
     
     # 락 획득 시도는 수행했지만
     mock_snapshot_store["acquire"].assert_called_once()
