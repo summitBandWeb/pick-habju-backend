@@ -72,6 +72,7 @@ jobs:
             --no-allow-unauthenticated \
             --timeout=120s \
             --memory=256Mi \
+            --service-account=${{ secrets.WIF_SERVICE_ACCOUNT }} \
             --set-env-vars="GCP_PROJECT_ID=${{ env.PROJECT_ID }},CLOUD_RUN_SERVICE_NAME=${{ env.CLOUD_RUN_SERVICE }},APP_ENV=${{ env.APP_ENV }}" \
             --set-secrets="DISCORD_WEBHOOK_URL=DISCORD_HEALTH_REPORT_WEBHOOK_URL:latest"
 

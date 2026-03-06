@@ -108,13 +108,27 @@ def _build_discord_embed(stats: dict) -> dict:
 
     env_label = APP_ENV.upper()
 
+    # 로그 0건 → 모니터링 파이프라인 자체가 동작하지 않을 가능성 경고
+    if total_requests == 0:
+        color = 16776960  # 노란색 (경고)
+        description = (
+            "⚠️ 최근 24시간 동안 헬스체크 로그가 수집되지 않았습니다.\n"
+            "프로브가 정상 작동 중인지, 미들웨어 로깅이 활성화되어 있는지 확인하세요."
+        )
+    elif uptime_percent >= 99.0:
+        color = 65280  # 초록색
+        description = "최근 24시간 Cloud Logging 기반 모니터링 메트릭 요약 결과입니다."
+    else:
+        color = 16711680  # 빨간색
+        description = "최근 24시간 Cloud Logging 기반 모니터링 메트릭 요약 결과입니다."
+
     return {
         "content": None,
         "embeds": [
             {
                 "title": f"📊 픽합주 헬스체크 모니터링 리포트 [{env_label}]",
-                "description": "최근 24시간 Cloud Logging 기반 모니터링 메트릭 요약 결과입니다.",
-                "color": 65280 if uptime_percent >= 99.0 else 16711680,
+                "description": description,
+                "color": color,
                 "fields": [
                     {
                         "name": "성공/총 요청 수",
@@ -181,9 +195,13 @@ def health_check_reporter(request):
         )
 
     except Exception as e:
-        logger.error(f"Health check report failed: {e}", exc_info=True)
+        # NOTE: str(e)에 Discord 웹훅 URL이 포함될 수 있으므로
+        # 내부 로그에만 상세 기록하고, HTTP 응답에는 제네릭 메시지만 반환
+        logger.error("Health check report failed", exc_info=True)
         return (
-            json.dumps({"ok": False, "error": str(e)}),
+            json.dumps(
+                {"ok": False, "error": "Internal error during report generation"}
+            ),
             500,
             {"Content-Type": "application/json"},
         )
