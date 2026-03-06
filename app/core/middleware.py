@@ -142,7 +142,7 @@ class RealIPMiddleware(BaseHTTPMiddleware):
 
         # 로깅 정책:
         # - 일반 API: INFO(2xx~4xx) / ERROR(5xx)
-        # - 헬스체크(/health, /ping): DEBUG(2xx) / ERROR(5xx)
+        # - 헬스체크(/health, /ping): INFO(2xx) / ERROR(5xx)
         #   → Cloud Logging 기반 모니터링 리포트에서 성공/실패 집계를 위해 항상 로깅
         log_msg = f"[{real_ip}] {request.method} {request.url.path} {status_code}"
         extra_data = {
