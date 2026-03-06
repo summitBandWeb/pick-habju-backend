@@ -3,7 +3,7 @@
 
 Rationale:
     코드리뷰에서 지적된 "미들웨어 통합 테스트 부재" 문제를 해결합니다.
-    httpx.AsyncClient + ASGITransport를 사용하여 실제 FastAPI 앱에 
+    httpx.AsyncClient + ASGITransport를 사용하여 실제 FastAPI 앱에
     요청을 보내고, 미들웨어 체인 전체의 동작을 E2E로 검증합니다.
 """
 
@@ -22,6 +22,7 @@ from app.main import app
 # Fixtures
 # =============================================================================
 
+
 @pytest_asyncio.fixture
 async def client():
     """미들웨어 통합 테스트용 AsyncClient Fixture"""
@@ -34,6 +35,7 @@ async def client():
 # =============================================================================
 # TraceIDMiddleware 테스트
 # =============================================================================
+
 
 class TestTraceIDMiddleware:
     """
@@ -54,9 +56,9 @@ class TestTraceIDMiddleware:
 
         # NOTE: UUIDv4 형식인지 검증 (하이픈 포함 36자)
         # 사용자 요청에 따른 정규식 검증 추가
-        uuid_pattern = r'^[0-9a-f-]{36}$'
+        uuid_pattern = r"^[0-9a-f-]{36}$"
         assert re.match(uuid_pattern, trace_id, re.IGNORECASE)
-        
+
         parsed = uuid.UUID(trace_id, version=4)
         assert str(parsed) == trace_id
 
@@ -65,9 +67,7 @@ class TestTraceIDMiddleware:
         """클라이언트가 보낸 유효한 X-Trace-ID가 그대로 응답에 반환되는지 검증"""
         # 유효한 UUID v4 형식 사용
         valid_trace_id = str(uuid.uuid4())
-        response = await client.get(
-            "/ping", headers={"X-Trace-ID": valid_trace_id}
-        )
+        response = await client.get("/ping", headers={"X-Trace-ID": valid_trace_id})
 
         assert response.headers.get("X-Trace-ID") == valid_trace_id
 
@@ -81,14 +81,12 @@ class TestTraceIDMiddleware:
             "<script>alert(1)</script>",
             "not-a-uuid-format",
             "12345",
-            "../etc/passwd"
+            "../etc/passwd",
         ]
 
         for invalid_id in invalid_ids:
-            response = await client.get(
-                "/ping", headers={"X-Trace-ID": invalid_id}
-            )
-            
+            response = await client.get("/ping", headers={"X-Trace-ID": invalid_id})
+
             trace_id = response.headers.get("X-Trace-ID")
             assert trace_id is not None
             assert trace_id != invalid_id
@@ -99,6 +97,7 @@ class TestTraceIDMiddleware:
 # =============================================================================
 # CacheControlMiddleware 테스트
 # =============================================================================
+
 
 class TestCacheControlMiddleware:
     """
@@ -136,6 +135,7 @@ class TestCacheControlMiddleware:
 # =============================================================================
 # RealIPMiddleware 테스트
 # =============================================================================
+
 
 class TestRealIPMiddleware:
     """
@@ -184,8 +184,10 @@ class TestRealIPMiddleware:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/ping", "/health"])
     @patch("app.main.get_global_client")
-    async def test_real_ip_healthcheck_no_log(self, mock_get_global_client, client, caplog, path):
-        """/ping, /health 요청 시 RealIPMiddleware의 IP 로깅이 스킵되는지 검증"""
+    async def test_real_ip_healthcheck_no_log(
+        self, mock_get_global_client, client, caplog, path
+    ):
+        """/ping, /health 정상(2xx) 요청 시 Cloud Logging 집계를 위해 INFO 로깅되는지 검증"""
         # /health 검증을 위해 정상 응답 셋업
         mock_client = AsyncMock()
         mock_get_global_client.return_value = mock_client
@@ -197,17 +199,21 @@ class TestRealIPMiddleware:
             response = await client.get(path)
 
         assert response.status_code == 200
-        # NOTE: 헬스체크 경로는 로깅 제외 대상이므로 middleware 로그가 없어야 함
+        # NOTE: Cloud Logging 기반 모니터링 리포트 집계를 위해 헬스체크 2xx도 INFO로 로깅
         health_logs = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.name == "app.core.middleware" and path in r.getMessage()
         ]
-        assert len(health_logs) == 0, f"{path} 경로에 대한 로그가 기록되었습니다"
+        assert len(health_logs) == 1, f"{path} 경로에 대한 로그가 기록되지 않았습니다"
+        assert health_logs[0].levelno == logging.INFO
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/health"])
     @patch("app.main.get_global_client")
-    async def test_real_ip_healthcheck_503_log(self, mock_get_global_client, client, caplog, path):
+    async def test_real_ip_healthcheck_503_log(
+        self, mock_get_global_client, client, caplog, path
+    ):
         """/health 요청이 503 실패일 경우 RealIPMiddleware에서 에러 로깅이 수행되는지 검증"""
         # 503 발생을 위해 예외 모의
         mock_client = AsyncMock()
@@ -218,13 +224,18 @@ class TestRealIPMiddleware:
             response = await client.get(path)
 
         assert response.status_code == 503
-        
+
         # 500번대 에러이므로 로그가 남아있어야 함
         error_logs = [
-            r for r in caplog.records
-            if r.name == "app.core.middleware" and path in r.getMessage() and r.levelno == logging.ERROR
+            r
+            for r in caplog.records
+            if r.name == "app.core.middleware"
+            and path in r.getMessage()
+            and r.levelno == logging.ERROR
         ]
-        assert len(error_logs) > 0, f"{path} 503 응답에 대한 에러 로그가 기록되지 않았습니다"
+        assert (
+            len(error_logs) > 0
+        ), f"{path} 503 응답에 대한 에러 로그가 기록되지 않았습니다"
         # 컨텍스트(trace id 등은 다른 미들웨어나 포매터에서 붙지만 적어도 path와 상태 코드는 포함되어야 함)
         assert "503" in error_logs[0].getMessage()
 
@@ -232,6 +243,7 @@ class TestRealIPMiddleware:
 # =============================================================================
 # 미들웨어 체인 E2E 테스트
 # =============================================================================
+
 
 class TestMiddlewareChain:
     """
