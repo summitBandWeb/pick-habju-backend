@@ -187,3 +187,5 @@ logs/
 *.db
 # ignore Windows NUL device
 nul
+
+cloud-functions/health-check-reporter/.env.yaml
