@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, timedelta
 from app.services.availability_service import AvailabilityService
 from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail
+from datetime import datetime, date, timedelta
+import unittest.mock as mock
 
 
 # 미래 날짜를 사용하여 DTO 날짜 검증을 통과시킴
@@ -317,6 +319,55 @@ class TestAvailabilityServiceFlow:
         mock_db.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_full_flow_partial_availability(self, service, mock_crawler, mock_pricing_service):
+        """is_partial 상태일 때 check_availability의 응답에 estimated_price가 정상적으로 포함되는지 검증"""
+        # Given
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        
+        # Room setup
+        mock_room = RoomDetail(
+            name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10,
+            can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
+        )
+
+        # Partial availability = available is False, but available_slots has some True
+        mock_crawler_result = RoomAvailability(
+            room_detail=mock_room,
+            available=False,
+            available_slots={"14:00": True, "15:00": False}
+        )
+        mock_crawler.check_availability.return_value = [mock_crawler_result]
+        
+        # Mock actual price calculation inside `calculate_total_price` if needed, 
+        # but check_availability calls calculate_total_price if estimated_price is not provided by crawler.
+        with mock.patch.object(service, "calculate_total_price", return_value=15000) as mock_calc:
+            # When
+            with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+                 patch("app.services.availability_service.filter_rooms_by_type", return_value=[mock_room]), \
+                 patch("app.services.availability_service.validate_availability_request"):
+                mock_db.return_value = [mock_room]
+                response = await service.check_availability(req)
+
+            # Then
+            # Should have handled it properly
+            mock_calc.assert_called_once()
+            
+            assert len(response.branches) == 1
+            branch = response.branches[0]
+            assert len(branch.rooms) == 1
+            res = branch.rooms[0]
+
+            assert res.name == "MockRoom"
+            assert res.available is False
+            assert res.estimated_price == 15000
+
+
+    @pytest.mark.asyncio
     async def test_aggregate_min_price_by_available_status(self, service, mock_crawler):
         """branch(지점)별 min_price_available 및 min_price_partial 집계 검증"""
         # Given
@@ -474,7 +525,6 @@ class TestAvailabilityServiceFlow:
     @patch("app.services.availability_service.datetime")
     async def test_standby_days_filter(self, mock_datetime, service, mock_crawler):
         """standby_days 기준 예약 불가능한 방 사전 필터링 검증"""
-        from datetime import datetime, date, timedelta
         
         # mock datetime to today
         today_date = date.today()
