@@ -428,12 +428,16 @@ class AvailabilityService:
                 if isinstance(res.estimated_price, int) and res.estimated_price > 0:
                     total_price = res.estimated_price
                 else:
-                    total_price = self.calculate_total_price(
-                        room_detail=room_detail,
-                        date_str=request.date,
-                        hour_slots=hour_slots,
-                        available_slots=res.available_slots if is_partial else None,
-                    )
+                    try:
+                        total_price = self.calculate_total_price(
+                            room_detail=room_detail,
+                            date_str=request.date,
+                            hour_slots=hour_slots,
+                            available_slots=res.available_slots if is_partial else None,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Price calculation failed for {room_detail.name}: {e}")
+                        total_price = None
 
                 room_resp = RoomResponse(
                     biz_item_id=room_detail.biz_item_id,
