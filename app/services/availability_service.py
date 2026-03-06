@@ -441,7 +441,7 @@ class AvailabilityService:
                     price_per_hour=room_detail.pricePerHour,
                     available=res.available,
                     available_slots=res.available_slots,
-                    estimated_price=total_price if res.available is not False else None,
+                    estimated_price=total_price if res.available is not False or is_partial else None,
                     image_urls=room_detail.imageUrls,
                     max_capacity=room_detail.maxCapacity,
                     # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)

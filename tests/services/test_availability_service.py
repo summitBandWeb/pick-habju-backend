@@ -159,6 +159,29 @@ class TestApplyPolicies:
 
         assert results[0].estimated_price is None
 
+    def test_price_calculation_partial_availability(self, service, mock_pricing_service):
+        """부분 예약 가능(is_partial)인 경우 estimated_price가 None이 아니라 올바르게 계산되는지 검증"""
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=4, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        slots = ["14:00", "15:00"]
+
+        room = RoomDetail(
+            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, recommend_capacity_range=[3, 5],
+            price_config=[{"price": 10000}],
+            can_reserve_one_hour=True, requiresContactOnSameDay=False
+        )
+        # available은 False지만, available_slots 중 True가 있으므로 is_partial 상태임
+        avail = RoomAvailability(room_detail=room, available=False, available_slots={"14:00": True, "15:00": False})
+
+        mock_pricing_service.calculate_total_price.return_value = 10000
+
+        results = service._apply_policies([avail], req, slots)
+
+        assert results[0].estimated_price == 10000
+
     def test_price_calculation_list_config_supports_24h_end(self, service, mock_pricing_service):
         """list price_config 경로에서 00:00 종료 시각을 다음날 00:00으로 변환"""
         req = AvailabilityRequest(
