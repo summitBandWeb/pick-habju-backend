@@ -13,21 +13,24 @@ from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from app.core.context import set_trace_id
-from app.core.metrics import http_requests_total, http_request_duration_seconds, ENABLE_METRICS
+from app.core.metrics import (
+    http_requests_total,
+    http_request_duration_seconds,
+    ENABLE_METRICS,
+)
 
 logger = logging.getLogger(__name__)
 
 # UUID 형식 검증 정규식 (8-4-4-4-12)
 UUID_PATTERN = re.compile(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    re.IGNORECASE
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
 )
 
 
 class TraceIDMiddleware(BaseHTTPMiddleware):
     """
     HTTP 요청 추적을 위한 Trace ID 관리 미들웨어
-    
+
     모든 요청에 대해 고유 식별자(Trace ID)를 부여하고 관리합니다.
     - 요청 헤더(X-Trace-ID)가 존재하면 해당 값을 사용 (분산 추적 연동)
     - 없으면 새로운 UUIDv4를 생성하여 할당 (Fallback)
@@ -40,7 +43,7 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         # 1. 클라이언트가 보낸 Trace ID 확인
         trace_id = request.headers.get("X-Trace-ID")
-        
+
         # 2. UUID 형식 검증 (보안 강화)
         # 형식이 올바르지 않으면(악성 스크립트 등) 무시하고 새로 발급
         if trace_id and not UUID_PATTERN.match(trace_id):
@@ -50,21 +53,21 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
                 extra={
                     "client_ip": request.client.host if request.client else "unknown",
                     "invalid_format": True,
-                    "trace_id_length": len(trace_id)
-                }
+                    "trace_id_length": len(trace_id),
+                },
             )
             trace_id = None
 
         # 3. 없으면 신규 생성 (Fallback)
         if not trace_id:
             trace_id = str(uuid.uuid4())
-        
+
         # 4. 컨텍스트 변수에 설정 (로거에서 참조 가능)
         set_trace_id(trace_id)
         request.state.trace_id = trace_id
-        
+
         response = await call_next(request)
-        
+
         # 4. 응답 헤더에 Trace ID 포함
         response.headers["X-Trace-ID"] = trace_id
         return response
@@ -107,7 +110,7 @@ class RealIPMiddleware(BaseHTTPMiddleware):
 
         # request.state에 저장하여 다른 곳에서 사용 가능
         request.state.real_ip = real_ip
-        
+
         start_time = time.perf_counter()
         try:
             response = await call_next(request)
@@ -126,37 +129,44 @@ class RealIPMiddleware(BaseHTTPMiddleware):
             if request.url.path in ("/ping", "/health"):
                 extra_data["trace_id"] = getattr(request.state, "trace_id", "unknown")
                 extra_data["health_check_failed"] = True
-            
-            logger.exception("Unhandled exception in RealIPMiddleware", extra=extra_data)
+
+            logger.exception(
+                "Unhandled exception in RealIPMiddleware", extra=extra_data
+            )
             raise
 
         process_time = time.perf_counter() - start_time
         status_code = response.status_code if response else 500
-        
+
         is_health_endpoint = request.url.path in ("/ping", "/health")
-        
-        # 로깅 (정상 헬스체크는 스킵하되, 500번대 에러 발생 시 상태 코드 포함시켜 상세 로깅)
-        if not is_health_endpoint or status_code >= 500:
-            log_level = logging.ERROR if status_code >= 500 else logging.INFO
-            
-            log_msg = f"[{real_ip}] {request.method} {request.url.path} {status_code}"
-            extra_data = {
-                "real_ip": real_ip,
-                "method": request.method,
-                "path": request.url.path,
-                "status_code": status_code,
-                "latency_sec": round(process_time, 4),
-                "user_agent": request.headers.get("User-Agent", ""),
-                "referer": request.headers.get("Referer", ""),
-                "request_id": request.headers.get("X-Request-ID", ""),
-            }
-            
-            # /health 경로의 500 에러는 더욱 상세하게 기록 (Trace ID 포함)
-            if is_health_endpoint and status_code >= 500:
+
+        # 로깅 정책:
+        # - 일반 API: INFO(2xx~4xx) / ERROR(5xx)
+        # - 헬스체크(/health, /ping): DEBUG(2xx) / ERROR(5xx)
+        #   → Cloud Logging 기반 모니터링 리포트에서 성공/실패 집계를 위해 항상 로깅
+        log_msg = f"[{real_ip}] {request.method} {request.url.path} {status_code}"
+        extra_data = {
+            "real_ip": real_ip,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": status_code,
+            "latency_sec": round(process_time, 4),
+            "user_agent": request.headers.get("User-Agent", ""),
+            "referer": request.headers.get("Referer", ""),
+            "request_id": request.headers.get("X-Request-ID", ""),
+        }
+
+        if is_health_endpoint:
+            # 헬스체크: 500+ 에러는 상세 로깅, 정상은 최소 로깅
+            if status_code >= 500:
                 extra_data["trace_id"] = getattr(request.state, "trace_id", "unknown")
                 extra_data["health_check_failed"] = True
-                
-            if log_level == logging.ERROR:
+                logger.error(log_msg, extra=extra_data)
+            else:
+                logger.info(log_msg, extra=extra_data)
+        else:
+            # 일반 API
+            if status_code >= 500:
                 logger.error(log_msg, extra=extra_data)
             else:
                 logger.info(log_msg, extra=extra_data)
@@ -196,17 +206,19 @@ def get_real_ip(request: Request) -> str:
     """
     return getattr(request.state, "real_ip", "unknown")
 
+
 class MetricsMiddleware(BaseHTTPMiddleware):
     """
     HTTP 요청의 상태 코드와 소요 시간을 실시간으로 수집하여 Prometheus 메트릭으로 기록합니다.
     """
+
     async def dispatch(self, request: Request, call_next) -> Response:
         if not ENABLE_METRICS or request.url.path.startswith("/metrics"):
             return await call_next(request)
-            
+
         start_time = time.perf_counter()
         status_code = 500
-        
+
         try:
             response = await call_next(request)
             status_code = response.status_code
@@ -218,17 +230,13 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             # 라우팅 매개변수 처리를 위해 FastAPI 라우트 템플릿 기반 정규화 적용
             route = request.scope.get("route")
             path = route.path if route else "unknown_route"
-            
+
             http_requests_total.labels(
-                method=request.method,
-                path=path,
-                status_code=status_code
+                method=request.method, path=path, status_code=status_code
             ).inc()
-            
+
             http_request_duration_seconds.labels(
-                method=request.method,
-                path=path,
-                status_code=status_code
+                method=request.method, path=path, status_code=status_code
             ).observe(process_time)
-            
+
         return response

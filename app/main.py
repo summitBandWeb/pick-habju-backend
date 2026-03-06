@@ -17,7 +17,12 @@ from app.api._dev.debug_envelope import router as demo_router
 from app.core.config import ALLOWED_ORIGINS, CORS_ORIGIN_REGEX
 from app.core.limiter import limiter
 from app.core.logging_config import setup_logging
-from app.core.middleware import CacheControlMiddleware, RealIPMiddleware, TraceIDMiddleware, MetricsMiddleware
+from app.core.middleware import (
+    CacheControlMiddleware,
+    RealIPMiddleware,
+    TraceIDMiddleware,
+    MetricsMiddleware,
+)
 from prometheus_client import make_asgi_app
 from app.core.metrics import ENABLE_METRICS
 from app.exception.base_exception import BaseCustomException
@@ -28,12 +33,22 @@ from app.exception.envelope_handlers import (
     rate_limit_exception_handler,
     validation_exception_handler,
 )
-from app.utils.client_loader import close_global_client, set_global_client, get_global_client
+from app.utils.client_loader import (
+    close_global_client,
+    set_global_client,
+    get_global_client,
+)
 from pydantic import ValidationError
 import httpx
-from app.core.config import SUPABASE_URL, SUPABASE_KEY, HEALTH_CHECK_TIMEOUT, SUPABASE_TABLE, emit_startup_warnings
+from app.core.config import (
+    SUPABASE_URL,
+    SUPABASE_KEY,
+    HEALTH_CHECK_TIMEOUT,
+    SUPABASE_TABLE,
+    emit_startup_warnings,
+)
 from app.models.dto import HealthResponse
-from app.api.monitoring import router as monitoring_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -97,14 +112,20 @@ app.add_middleware(TraceIDMiddleware)
 import sys
 
 if ENABLE_METRICS:
-    is_internal_only = os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower() == "true"
-    allow_external = os.getenv("METRICS_ALLOW_EXTERNAL", "false").strip().lower() == "true"
+    is_internal_only = (
+        os.getenv("METRICS_INTERNAL_ONLY", "true").strip().lower() == "true"
+    )
+    allow_external = (
+        os.getenv("METRICS_ALLOW_EXTERNAL", "false").strip().lower() == "true"
+    )
     auth_proxy = os.getenv("METRICS_AUTH_PROXY", "false").strip().lower() == "true"
-    
+
     if not is_internal_only and not (allow_external or auth_proxy):
-        logger.error("METRICS_INTERNAL_ONLY is false but no secondary guard (METRICS_ALLOW_EXTERNAL or METRICS_AUTH_PROXY) is provided. Refusing to expose /metrics unauthenticated.")
+        logger.error(
+            "METRICS_INTERNAL_ONLY is false but no secondary guard (METRICS_ALLOW_EXTERNAL or METRICS_AUTH_PROXY) is provided. Refusing to expose /metrics unauthenticated."
+        )
         sys.exit(1)
-        
+
     if is_internal_only or allow_external or auth_proxy:
         metrics_app = make_asgi_app()
         app.mount("/metrics", metrics_app)
@@ -114,69 +135,85 @@ if ENABLE_METRICS:
 def ping():
     return {"ok": True}
 
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check(response: Response) -> HealthResponse:
     """
     인프라 기반 readiness 체크 엔드포인트
-    DB 등 핵심 의존성의 상태를 점검합니다. 
+    DB 등 핵심 의존성의 상태를 점검합니다.
     장애 시 503 상태 코드를 반환하여 로드밸런서가 트래픽을 차단(비정상 상태 식별)할 수 있도록 합니다.
-    
-    NOTE: 
-    DB 일시 장애 시 앱 컨테이너까지 연쇄 재시작되는 현상(Restart loop) 및 Cold start 비용을 
-    방지하기 위해, 컨테이너의 생존 여부(Liveness)는 /ping 엔드포인트를 사용하도록 분리되었습니다. 
+
+    NOTE:
+    DB 일시 장애 시 앱 컨테이너까지 연쇄 재시작되는 현상(Restart loop) 및 Cold start 비용을
+    방지하기 위해, 컨테이너의 생존 여부(Liveness)는 /ping 엔드포인트를 사용하도록 분리되었습니다.
     해당 /health 엔드포인트는 트래픽 수신 가능 여부(Readiness) 판단에만 사용해야 합니다.
     """
     health_status = {"status": "healthy", "dependencies": {"database": "ok"}}
-    
+
     # 전역 클라이언트 가져오기 (Connection Pool 재사용)
     client = get_global_client()
     should_close = False
-    
+
     # 안전장치: 전역 클라이언트가 없는 경우(예: 일부 테스트 환경 등) 임시 생성
     if client is None:
         client = httpx.AsyncClient(
             timeout=httpx.Timeout(HEALTH_CHECK_TIMEOUT, connect=2.0),
-            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0)
+            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
         )
         should_close = True
-        
-    try:        
-        # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을 
+
+    try:
+        # PostgREST 루트 조회(/rest/v1/)는 DB가 다운되어도 캐시를 통해 200을
         # 반환할 수 있으므로, 실제 테이블의 레코드 조회를 통해 연결성을 검증
         # timeout 파라미터를 개별 요청에 부여하여, 전역 클라이언트 설정을 오버라이드합니다.
         supabase_resp = await client.get(
             f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
-            headers={
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}"
-            },
+            headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"},
             params={"select": "id", "limit": "1"},
-            timeout=HEALTH_CHECK_TIMEOUT
+            timeout=HEALTH_CHECK_TIMEOUT,
         )
         supabase_resp.raise_for_status()
     except httpx.PoolTimeout:
-        logger.error("Health check failed: Connection pool exhausted. Consider increasing pool size.", exc_info=True)
+        logger.error(
+            "Health check failed: Connection pool exhausted. Consider increasing pool size.",
+            exc_info=True,
+        )
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
     except httpx.TimeoutException:
-        logger.error(f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase DB query took too long.", exc_info=True)
+        logger.error(
+            f"Health check timeout (>{HEALTH_CHECK_TIMEOUT}s): Supabase DB query took too long.",
+            exc_info=True,
+        )
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
     except httpx.HTTPStatusError as e:
-        status_code = getattr(e.response, 'status_code', None)
+        status_code = getattr(e.response, "status_code", None)
         if status_code == 401:
-            logger.error("Health check failed with HTTP 401: Invalid API key. Check SUPABASE_KEY.", exc_info=True)
+            logger.error(
+                "Health check failed with HTTP 401: Invalid API key. Check SUPABASE_KEY.",
+                exc_info=True,
+            )
         elif status_code == 404:
-            logger.error("Health check failed with HTTP 404: Table not found. Check SUPABASE_URL and SUPABASE_TABLE.", exc_info=True)
+            logger.error(
+                "Health check failed with HTTP 404: Table not found. Check SUPABASE_URL and SUPABASE_TABLE.",
+                exc_info=True,
+            )
         else:
-            logger.error(f"Health check failed with HTTP {status_code}: Configuration error with Supabase.", exc_info=True)
+            logger.error(
+                f"Health check failed with HTTP {status_code}: Configuration error with Supabase.",
+                exc_info=True,
+            )
         health_status["status"] = "unhealthy"
         health_status["dependencies"]["database"] = "unauthorized_or_not_found"
         response.status_code = 503
     except httpx.RequestError as e:
-        logger.error(f"Health check failed due to Network/Request error: {e}. Cannot reach Supabase.", exc_info=True)
+        logger.error(
+            f"Health check failed due to Network/Request error: {e}. Cannot reach Supabase.",
+            exc_info=True,
+        )
         health_status["status"] = "degraded"
         health_status["dependencies"]["database"] = "down"
         response.status_code = 503
@@ -188,14 +225,14 @@ async def health_check(response: Response) -> HealthResponse:
     finally:
         if should_close:
             await client.aclose()
-            
+
     return HealthResponse(**health_status)
 
 
 # API 라우터 포함
 app.include_router(available_router)
 app.include_router(favorites_router)
-app.include_router(monitoring_router)
+
 
 if os.getenv("ENV") != "prod":
     app.include_router(demo_router)

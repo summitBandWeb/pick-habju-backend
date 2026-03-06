@@ -39,6 +39,7 @@ if not LOGIN_PW:
 
 _WARNINGS_EMITTED = False
 
+
 def emit_startup_warnings() -> None:
     """setup_logging() 이후에 호출하여 정규 로그 포맷으로 환경변수 누락 경고를 출력합니다.
 
@@ -57,18 +58,27 @@ def emit_startup_warnings() -> None:
         logger.warning(
             "필수 크롤러 환경변수가 누락되었습니다: %s. "
             "환경변수 누락 시 크롤링 기능이 비정상적으로 빈 결과를 반환할 수 있습니다.",
-            ", ".join(_MISSING_CRAWLER_VARS)
+            ", ".join(_MISSING_CRAWLER_VARS),
         )
+
 
 # --- URL 파생 변수 (None 안전 처리) ---
 # NOTE: BASE_URL이 None이면 깨진 URL("None/...")이 생성되는 것을 방지하기 위해
 # 조건부로 생성하며, None인 경우 크롤러 호출 시점에서 별도 예외 처리됨.
 
-GROOVE_LOGIN_URL = f"{GROOVE_BASE_URL}/member/login_exec.asp" if GROOVE_BASE_URL else None
-GROOVE_RESERVE_URL = f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp" if GROOVE_BASE_URL else None
-GROOVE_RESERVE_URL1 = f"{GROOVE_BASE_URL}/reservation/reserve.asp" if GROOVE_BASE_URL else None
+GROOVE_LOGIN_URL = (
+    f"{GROOVE_BASE_URL}/member/login_exec.asp" if GROOVE_BASE_URL else None
+)
+GROOVE_RESERVE_URL = (
+    f"{GROOVE_BASE_URL}/reservation/reserve_table_view.asp" if GROOVE_BASE_URL else None
+)
+GROOVE_RESERVE_URL1 = (
+    f"{GROOVE_BASE_URL}/reservation/reserve.asp" if GROOVE_BASE_URL else None
+)
 
-DREAM_LOGIN_URL = f"{DREAM_BASE_URL}/bbs/login_check.php" if DREAM_BASE_URL else None  # 드림 합주실 실제 로그인 URL
+DREAM_LOGIN_URL = (
+    f"{DREAM_BASE_URL}/bbs/login_check.php" if DREAM_BASE_URL else None
+)  # 드림 합주실 실제 로그인 URL
 DREAM_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Content-Type": "application/x-www-form-urlencoded",
@@ -78,19 +88,16 @@ CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX")
 
 
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "v_full_info")
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_HEALTH_REPORT_WEBHOOK_URL", "")
+
 
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "5"))
 # NOTE: Supabase 연결을 위한 헬스체크 타임아웃 기본값은 2.0초입니다.
-# Cloud Run 등 외부 인프라에서 Supabase로의 레이턴시(P99)가 1.5초 이상 지연될 경우 
-# 간헐적인 503 에러가 발생하여 불필요한 인스턴스 재시작으로 이어질 수 있습니다. 
+# Cloud Run 등 외부 인프라에서 Supabase로의 레이턴시(P99)가 1.5초 이상 지연될 경우
+# 간헐적인 503 에러가 발생하여 불필요한 인스턴스 재시작으로 이어질 수 있습니다.
 # 운영 환경 배포 전에 실제 RTT를 측정하고 필요 시 환경변수를 통해 이 값을 조정해야 합니다.
 HEALTH_CHECK_TIMEOUT = float(os.getenv("HEALTH_CHECK_TIMEOUT", "2.0"))
 if HEALTH_CHECK_TIMEOUT <= 0:
     raise ValueError("HEALTH_CHECK_TIMEOUT must be strictly greater than 0")
-
-# 모니터링 API 보안을 위한 시크릿 토큰
-MONITORING_SECRET_TOKEN = os.getenv("MONITORING_SECRET_TOKEN")
 
 
 # CORS 허용 오리진 (환경변수 기반)
