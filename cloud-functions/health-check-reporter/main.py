@@ -47,8 +47,8 @@ def _query_health_logs(hours: int = 24) -> dict:
     # NOTE: severity는 JSON 구조 로그에서 None일 수 있으므로 제한하지 않습니다.
     # resource.type + service_name + jsonPayload.path 필터만으로 충분합니다.
     #
-    # RealIPMiddleware는 정상 헬스체크(2xx)를 스킵하고 500+ 에러만 로깅하므로,
-    # 여기서 집계되는 요청은 에러가 발생한 경우에 해당됩니다.
+    # RealIPMiddleware는 헬스체크 요청을 성공/실패 모두 로깅합니다.
+    # (2xx → INFO, 5xx → ERROR)
     log_filter = f"""
         resource.type="cloud_run_revision"
         resource.labels.service_name="{CLOUD_RUN_SERVICE_NAME}"
@@ -94,7 +94,7 @@ def _query_health_logs(hours: int = 24) -> dict:
 
 
 def _build_discord_embed(stats: dict) -> dict:
-    """기존 monitoring_service.py의 Discord 메시지 형식을 그대로 유지합니다."""
+    """Discord 웹훅용 Embed 메시지를 생성합니다."""
     total_requests = stats["total_requests"]
     total_errors = stats["total_errors"]
     total_latency = stats["total_latency"]
