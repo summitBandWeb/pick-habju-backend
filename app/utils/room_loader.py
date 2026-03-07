@@ -96,7 +96,15 @@ def get_rooms_by_criteria(
             if row.get("image_urls") is None:
                 row["image_urls"] = []
 
-            room = RoomDetail.model_validate(row)
+            try:
+                room = RoomDetail.model_validate(row)
+            except ValidationError as e:
+                logger.warning(
+                    "room_loader.row_validation_failed: biz_item_id=%s error=%s",
+                    row.get("biz_item_id", "unknown"), str(e)
+                )
+                continue  # 단일 row 실패는 skip, 나머지 계속 처리
+
 
             # 시간당 가격이 임계치 이하인 룸은 조회 결과에서 제외
             # NOTE: 크롤러 LLM 파싱 단에서 드럼스틱·기타 대여 등 악세사리 예약 페이지 또는 예약 탭을 활용한 공지사항(0원 또는 999,999 등 설정)이 합주실로 잘못 수집될 수 있음.
