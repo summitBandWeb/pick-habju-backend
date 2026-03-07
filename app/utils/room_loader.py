@@ -114,8 +114,8 @@ def get_rooms_by_criteria(
                 # NOTE: 쿼리 레이어에서 걸러내기 어려운 악세사리 예약 데이터를 방어적으로 필터링함.
                 #       재발 시 크롤러 파싱 로직 점검 필요.
                 logger.warning(
-                    f"[metrics] room_filter.excluded: reason=price_too_low "
-                    f"biz_item_id={room.biz_item_id} price_per_hour={room.pricePerHour}"
+                    "[metrics] room_filter.excluded: reason=price_too_low biz_item_id=%s business_id=%s price_per_hour=%s",
+                    room.biz_item_id, room.business_id, room.pricePerHour
                 )
                 continue
 
