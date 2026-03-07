@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.core.constants import MIN_VALID_PRICE_PER_HOUR
+from app.core.constants import MAX_EXCLUDED_PRICE_PER_HOUR
 from app.utils import room_loader
 
 
@@ -101,12 +101,12 @@ def test_get_rooms_by_criteria_can_disable_priority_filter(mock_supabase_query, 
     mock_supabase_query.in_.assert_not_called()
 
 
-# ────────── price_per_hour 필터 (MIN_VALID_PRICE_PER_HOUR) 테스트 ──────────
+# ────────── price_per_hour 필터 (MAX_EXCLUDED_PRICE_PER_HOUR) 테스트 ──────────
 
 class TestPriceFilter:
-    """price_per_hour <= MIN_VALID_PRICE_PER_HOUR 룸 필터링 검증."""
+    """price_per_hour <= MAX_EXCLUDED_PRICE_PER_HOUR 룸 필터링 검증."""
 
-    def test_excludes_room_below_threshold(self, mock_supabase_query):
+    def test_price_1000_is_excluded(self, mock_supabase_query):
         """임계치 미만(1,000원) 룸은 결과에서 제외되어야 함."""
         rows = [
             _room_row(biz_item_id="item-ok",   price_per_hour=15000,
@@ -123,12 +123,12 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_excludes_room_at_boundary(self, mock_supabase_query):
-        """임계치와 정확히 같은 값(MIN_VALID_PRICE_PER_HOUR)도 제외되어야 함 (이하 조건)."""
+    def test_price_2000_is_excluded(self, mock_supabase_query):
+        """임계치와 정확히 같은 값(MAX_EXCLUDED_PRICE_PER_HOUR)도 제외되어야 함 (이하 조건)."""
         rows = [
-            _room_row(biz_item_id="item-ok",       price_per_hour=MIN_VALID_PRICE_PER_HOUR + 1,
+            _room_row(biz_item_id="item-ok",       price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR + 1,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
-            _room_row(biz_item_id="item-boundary", price_per_hour=MIN_VALID_PRICE_PER_HOUR,
+            _room_row(biz_item_id="item-boundary", price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
         ]
         mock_supabase_query.execute.return_value = SimpleNamespace(data=rows)
@@ -140,7 +140,7 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_excludes_room_with_zero_price(self, mock_supabase_query):
+    def test_price_0_is_excluded(self, mock_supabase_query):
         """price_per_hour=0 (공지 전용 탭 오수집 케이스)도 제외되어야 함."""
         rows = [
             _room_row(biz_item_id="item-ok",   price_per_hour=15000,
@@ -157,10 +157,27 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_includes_room_just_above_threshold(self, mock_supabase_query):
-        """임계치보다 1원 높은 룸(MIN_VALID_PRICE_PER_HOUR+1)은 반드시 포함되어야 함."""
+    def test_price_minus_1_is_excluded(self, mock_supabase_query):
+        """price_per_hour=-1 (파싱 오류 케이스)도 제외되어야 함."""
         rows = [
-            _room_row(biz_item_id="item-pass", price_per_hour=MIN_VALID_PRICE_PER_HOUR + 1,
+            _room_row(biz_item_id="item-ok",   price_per_hour=15000,
+                      branch={"name": "B", "lat": 37.5, "lng": 127.1}),
+            _room_row(biz_item_id="item-neg", price_per_hour=-1,
+                      branch={"name": "B", "lat": 37.5, "lng": 127.1}),
+        ]
+        mock_supabase_query.execute.return_value = SimpleNamespace(data=rows)
+
+        rooms = room_loader.get_rooms_by_criteria(
+            capacity=1, swLat=37.0, swLng=127.0, neLat=38.0, neLng=128.0
+        )
+
+        assert len(rooms) == 1
+        assert rooms[0].biz_item_id == "item-ok"
+
+    def test_price_2001_is_included(self, mock_supabase_query):
+        """임계치보다 1원 높은 룸(MAX_EXCLUDED_PRICE_PER_HOUR+1)은 반드시 포함되어야 함."""
+        rows = [
+            _room_row(biz_item_id="item-pass", price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR + 1,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
         ]
         mock_supabase_query.execute.return_value = SimpleNamespace(data=rows)
@@ -173,7 +190,7 @@ class TestPriceFilter:
         assert rooms[0].biz_item_id == "item-pass"
 
     def test_logs_warning_when_excluded(self, mock_supabase_query, caplog):
-        """필터 제거 시 warning 로그가 남아야 함 (운영 가시성 보장)."""
+        """필터 제거 시 warning 로그 및 상세 메시지가 남아야 함 (운영 가시성 보장)."""
         import logging
         rows = [
             _room_row(biz_item_id="item-low", price_per_hour=500,
@@ -186,5 +203,9 @@ class TestPriceFilter:
                 capacity=1, swLat=37.0, swLng=127.0, neLat=38.0, neLng=128.0
             )
 
-        assert any("price_too_low" in r.message for r in caplog.records)
-        assert any("item-low" in r.message for r in caplog.records)
+        assert any(
+            r.levelno == logging.WARNING and 
+            "price_too_low" in r.message and 
+            "500" in r.message
+            for r in caplog.records
+        )
