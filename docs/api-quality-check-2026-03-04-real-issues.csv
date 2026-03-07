@@ -1,4 +1,4 @@
-﻿area_key,area_label,date,start_hour,end_hour,capacity,biz_item_id,reason,available
+area_key,area_label,date,start_hour,end_hour,capacity,biz_item_id,reason,available
 isoo,이수,2026-03-05,01:00,03:00,8,25,id_not_in_rooms,
 sadang,사당,2026-03-05,01:00,03:00,8,25,id_not_in_rooms,
 sadang,사당,2026-03-11,19:00,21:00,8,25,id_not_in_rooms,

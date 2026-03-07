@@ -1,4 +1,4 @@
-﻿# Metadata V2 Migration Guide
+# Metadata V2 Migration Guide
 
 ## 목적
 metadata v2 컬럼(`recommend_capacity_range`, `price_config`, `base_capacity`, `extra_charge`)을 안전하게 적용하고 legacy 데이터를 백필하기 위한 운영 가이드임.

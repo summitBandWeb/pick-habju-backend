@@ -1,4 +1,4 @@
-﻿-- metadata v2 migration (idempotent)
+-- metadata v2 migration (idempotent)
 -- Issue: #155
 
 BEGIN;

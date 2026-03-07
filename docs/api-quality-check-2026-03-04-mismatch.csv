@@ -1,4 +1,4 @@
-﻿area_key,area_label,date,start_hour,end_hour,capacity,extra_ids_count,extra_ids
+area_key,area_label,date,start_hour,end_hour,capacity,extra_ids_count,extra_ids
 isoo,이수,2026-03-05,01:00,03:00,2,1,25
 isoo,이수,2026-03-05,01:00,03:00,8,1,25
 isoo,이수,2026-03-05,19:00,21:00,2,7,"14,27,3968896,5836982,5910577,5910581,6190915"
