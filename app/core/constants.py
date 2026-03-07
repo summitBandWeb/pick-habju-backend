@@ -8,7 +8,7 @@
 #   개별 합주실로 오수집되어 price_per_hour가 비정상적으로 낮게 파싱되는 케이스가 발생.
 #   합주실 시장 실현 최저가 기준(~10,000원)보다 충분히 낮은 2,000원을 임계치로 설정하여
 #   서버 레벨 방어 필터링을 수행함. 향후 정책 변경 시 이 상수 하나만 수정하면 됨.
-MIN_VALID_PRICE_PER_HOUR: int = 2000
+MAX_EXCLUDED_PRICE_PER_HOUR: int = 2000
 
 # 우선 수집 대상 6개 역세권 (전역 기본 검색 범위)
 PRIORITY_AREA_QUERIES = [
