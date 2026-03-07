@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from app.services.availability_service import AvailabilityService
 from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail
-from datetime import datetime, date, timedelta
 import unittest.mock as mock
 
 
