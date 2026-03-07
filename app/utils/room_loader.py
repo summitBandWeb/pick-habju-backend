@@ -1,13 +1,16 @@
+import logging
 import os
 from typing import List, Optional
 
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
-from app.core.constants import PRIORITY_AREA_BUSINESS_IDS
+from app.core.constants import PRIORITY_AREA_BUSINESS_IDS, MIN_VALID_PRICE_PER_HOUR
 from app.core.supabase_client import supabase
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
 from app.models.dto import RoomDetail
+
+logger = logging.getLogger(__name__)
 
 
 def _is_priority_area_filter_enabled() -> bool:
@@ -93,7 +96,21 @@ def get_rooms_by_criteria(
             if row.get("image_urls") is None:
                 row["image_urls"] = []
 
-            target_rooms.append(RoomDetail.model_validate(row))
+            room = RoomDetail.model_validate(row)
+
+            # 시간당 가격이 임계치 이하인 룸은 조회 결과에서 제외
+            # NOTE: 크롤러 LLM 파싱 단에서 드럼스틱·기타 대여 등 악세사리 예약 페이지 또는 예약 탭을 활용한 공지사항(0원 또는 999,999 등 설정)이 합주실로 잘못 수집될 수 있음.
+            #       price_per_hour <= MIN_VALID_PRICE_PER_HOUR 인 경우는 신뢰할 수 없는 데이터로 간주하여 필터링함.
+            if room.pricePerHour <= MIN_VALID_PRICE_PER_HOUR:
+                # NOTE: 쿼리 레이어에서 걸러내기 어려운 악세사리 예약 데이터를 방어적으로 필터링함.
+                #       재발 시 크롤러 파싱 로직 점검 필요.
+                logger.warning(
+                    f"[metrics] room_filter.excluded: reason=price_too_low "
+                    f"biz_item_id={room.biz_item_id} price_per_hour={room.pricePerHour}"
+                )
+                continue
+
+            target_rooms.append(room)
 
         return target_rooms
 
