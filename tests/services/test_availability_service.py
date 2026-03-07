@@ -367,6 +367,57 @@ class TestAvailabilityServiceFlow:
 
 
     @pytest.mark.asyncio
+    async def test_full_flow_partial_availability_with_error(self, service, mock_crawler, mock_pricing_service):
+        """is_partial 상태일 때 요금 계산(calculate_total_price)에서 예외 발생 시, 
+        estimated_price가 None이 되고 min_price_partial 갱신에서 예외가 발생하지 않는지 검증"""
+        # Given
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        
+        # Room setup
+        mock_room = RoomDetail(
+            name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10,
+            can_reserve_one_hour=True, requiresContactOnSameDay=False,
+            recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
+        )
+
+        mock_crawler_result = RoomAvailability(
+            room_detail=mock_room,
+            available=False,
+            available_slots={"14:00": True, "15:00": False}
+        )
+        mock_crawler.check_availability.return_value = [mock_crawler_result]
+        
+        with mock.patch.object(service, "calculate_total_price", side_effect=Exception("Calc Error")) as mock_calc:
+            # When
+            with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+                 patch("app.services.availability_service.filter_rooms_by_type", return_value=[mock_room]), \
+                 patch("app.services.availability_service.validate_availability_request"):
+                mock_db.return_value = [mock_room]
+                
+                # Exception should be caught and not thrown
+                response = await service.check_availability(req)
+
+            # Then
+            mock_calc.assert_called_once()
+            
+            assert len(response.branches) == 1
+            branch = response.branches[0]
+            assert len(branch.rooms) == 1
+            res = branch.rooms[0]
+
+            assert res.name == "MockRoom"
+            assert res.available is False
+            assert res.estimated_price is None
+            
+            # min_price_partial should be left as None without error
+            assert branch.min_price_partial is None
+
+
+    @pytest.mark.asyncio
     async def test_aggregate_min_price_by_available_status(self, service, mock_crawler):
         """branch(지점)별 min_price_available 및 min_price_partial 집계 검증"""
         # Given
