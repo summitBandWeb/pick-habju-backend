@@ -166,7 +166,7 @@ class TestApplyPolicies:
             date=FUTURE_DATE, capacity=4, start_hour="14:00", end_hour="16:00",
             swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
         )
-        slots = ["14:00", "15:00"]
+        slots = ["14:00", "15:00", "16:00"]
 
         room = RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
@@ -175,7 +175,8 @@ class TestApplyPolicies:
             can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
         # available은 False지만, available_slots 중 True가 있으므로 is_partial 상태임
-        avail = RoomAvailability(room_detail=room, available=False, available_slots={"14:00": True, "15:00": False})
+        # NOTE: 16:00은 end-inclusive 슬롯이므로, available_slots에도 포함해야 실제 multi-hour 흐름을 반영함
+        avail = RoomAvailability(room_detail=room, available=False, available_slots={"14:00": True, "15:00": False, "16:00": False})
 
         mock_pricing_service.calculate_total_price.return_value = 10000
 

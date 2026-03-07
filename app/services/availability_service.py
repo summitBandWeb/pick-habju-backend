@@ -428,7 +428,9 @@ class AvailabilityService:
 
             # 예약 가능한 룸, 부분 예약 룸, 결제 불가능한 오픈대기 룸만 포함
             if res.available is True or res.available == "unknown" or is_partial:
-                if isinstance(res.estimated_price, int) and res.estimated_price > 0:
+                # _apply_policies에서 이미 계산된 estimated_price가 있으면 그대로 사용
+                # NOTE: 0원도 유효한 가격이므로 None 여부만 확인함
+                if res.estimated_price is not None:
                     total_price = res.estimated_price
                 else:
                     try:
