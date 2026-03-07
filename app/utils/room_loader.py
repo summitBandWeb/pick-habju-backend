@@ -51,7 +51,12 @@ def get_rooms_by_criteria(
         use_priority_filter = _is_priority_area_filter_enabled() and bool(allowed_business_ids)
         for select_expr in select_candidates:
             try:
-                query = supabase.table("room").select(select_expr).gte("max_capacity", capacity)
+                query = (
+                    supabase.table("room")
+                    .select(select_expr)
+                    .gte("max_capacity", capacity)
+                    .gt("price_per_hour", MIN_VALID_PRICE_PER_HOUR)  # DB 레벨 1차 필터
+                )
                 if use_priority_filter:
                     query = query.in_("business_id", allowed_business_ids)
                 response = query.execute()
