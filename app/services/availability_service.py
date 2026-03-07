@@ -518,6 +518,9 @@ class AvailabilityService:
             total_price: 계산된 총 가격
             is_partial: 해당 방이 예약 상태는 False지만 부분적으로 이용 가능한 슬롯이 있는지 여부
         """
+        if total_price is None:
+            return
+            
         if available is True:
             if branch_obj.min_price_available is None or total_price < branch_obj.min_price_available:
                 branch_obj.min_price_available = total_price
