@@ -440,6 +440,8 @@ class AvailabilityService:
                                 available_slots=res.available_slots if is_partial else None,
                             )
                         else:
+                            # NOTE: list-backed config 방의 가격은 _apply_policies에서 이미 산정됨.
+                            #       여기까지 도달했다면 _apply_policies 계산이 실패한 것이므로 None을 그대로 보존함.   
                             total_price = res.estimated_price
                     except Exception as e:
                         logger.warning(f"Price calculation failed for {room_detail.name}: {e}")
