@@ -214,3 +214,39 @@ class TestRepresentativeKeywordHelpers:
         assert crawler._normalize_representative_keywords(
             [" 합주실 ", "음악연습실", "합주실", "음악연습실", "  "]
         ) == ["합주실", "음악연습실"]
+
+class TestCrawlerLifecycle:
+    @pytest.fixture
+    def crawler(self):
+        return NaverMapCrawler(headless=True)
+
+    def test_close_shuts_down_executor_once(self, crawler):
+        fake_executor = MagicMock()
+        crawler._executor = fake_executor
+
+        crawler.close()
+
+        fake_executor.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+        assert crawler._executor is None
+
+    def test_close_is_idempotent(self, crawler):
+        fake_executor = MagicMock()
+        crawler._executor = fake_executor
+
+        crawler.close()
+        crawler.close()
+
+        fake_executor.shutdown.assert_called_once()
+        assert crawler._executor is None
+
+    def test_get_executor_recreates_after_close(self, crawler):
+        first_executor = crawler._get_executor()
+        crawler.close()
+
+        recreated_executor = crawler._get_executor()
+        try:
+            assert recreated_executor is not None
+            assert recreated_executor is not first_executor
+        finally:
+            recreated_executor.shutdown(wait=False, cancel_futures=True)
+            crawler._executor = None

@@ -1,4 +1,4 @@
-﻿import os
+import os
 import asyncio
 import logging
 import random
@@ -46,6 +46,34 @@ class NaverMapCrawler:
         self.storage_state_path = os.getenv(self.STORAGE_STATE_PATH_ENV)
         self._executor = ThreadPoolExecutor(max_workers=1)
 
+    def _get_executor(self) -> ThreadPoolExecutor:
+        """왜: close() 이후 재사용 호출에서도 안정적으로 단일 executor를 보장하기 위함.
+        사용처: search_rehearsal_rooms/reveal_phone_number/reveal_representative_keywords에서
+        run_in_executor 호출 직전에 가져와 thread 실행 컨텍스트를 일관되게 유지한다.
+        """
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(max_workers=1)
+        return self._executor
+
+    def close(self) -> None:
+        """왜: crawler 수명 종료 시 executor thread를 명시적으로 정리해 누수를 방지하기 위함.
+        사용처: 스크립트 종료 finally 블록 또는 서비스 종료 훅에서 호출한다.
+        """
+        executor = self._executor
+        if executor is None:
+            return
+        self._executor = None
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            executor.shutdown(wait=False)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            return
+
     async def search_rehearsal_rooms(self, query: str = "합주실") -> List[Dict[str, str]]:
         """Search rehearsal rooms by keyword and return parsed item summaries.
 
@@ -56,14 +84,14 @@ class NaverMapCrawler:
             List of dictionaries containing id, name, and address fields.
         """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, self._search_sync, query)
+        return await loop.run_in_executor(self._get_executor(), self._search_sync, query)
 
     async def reveal_phone_number(self, place_id: str) -> Optional[str]:
         """Reveal phone number from place page (visible text or click-to-reveal flow)."""
         if not place_id:
             return None
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._executor, self._reveal_phone_sync, str(place_id))
+        return await loop.run_in_executor(self._get_executor(), self._reveal_phone_sync, str(place_id))
 
     async def reveal_representative_keywords(self, place_id: str) -> List[str]:
         """장소 상세 페이지(정보 탭)에서 대표 키워드를 추출한다."""
@@ -71,7 +99,7 @@ class NaverMapCrawler:
             return []
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            self._executor,
+            self._get_executor(),
             self._reveal_representative_keywords_sync,
             str(place_id),
         )

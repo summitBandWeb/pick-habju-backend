@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import asyncio
 import json
 import os
@@ -1875,6 +1875,11 @@ class RoomCollectionService:
         export the original crawled text to a JSON file for later manual verification.
         """
         unresolved_items = []
+        business_id = str(business.get("businessId") or business.get("id") or "").strip() or "unknown_business"
+        business_name = (
+            str(business.get("businessDisplayName") or business.get("name") or "").strip()
+            or business_id
+        )
 
         for room in rooms:
             rid = room["bizItemId"]
@@ -1892,10 +1897,10 @@ class RoomCollectionService:
             # Only export if there's a failure reason
             if failure_reason:
                 unresolved_item = {
-                    "business_id": business["businessId"],
-                    "business_name": business["businessDisplayName"],
+                    "business_id": business_id,
+                    "business_name": business_name,
                     "biz_item_id": rid,
-                    "raw_name": room["name"],
+                    "raw_name": room.get("name", ""),
                     "raw_desc": room.get("desc"),
                     "parsed_result": parsed,
                     "failure_reason": failure_reason,
