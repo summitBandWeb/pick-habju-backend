@@ -55,7 +55,7 @@ def get_rooms_by_criteria(
                     supabase.table("room")
                     .select(select_expr)
                     .gte("max_capacity", capacity)
-                    .gt("price_per_hour", MIN_VALID_PRICE_PER_HOUR)  # DB 레벨 1차 필터
+                    .gte("price_per_hour", MAX_EXCLUDED_PRICE_PER_HOUR)  # DB 레벨 1차 필터
                 )
                 if use_priority_filter:
                     query = query.in_("business_id", allowed_business_ids)
