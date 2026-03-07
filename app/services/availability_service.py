@@ -504,7 +504,11 @@ class AvailabilityService:
         )
 
     @staticmethod
-    def _update_min_prices(branch_obj: BranchResponse, available: bool | str, total_price: int, is_partial: bool = False) -> None:
+    def _update_min_prices(
+        branch_obj: BranchResponse, 
+        available: bool | str, 
+        total_price: Optional[int], 
+        is_partial: bool = False) -> None:
         """
         지점(Branch) 단위의 최소 예약 가능 가격을 갱신합니다.
         
