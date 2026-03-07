@@ -432,12 +432,15 @@ class AvailabilityService:
                     total_price = res.estimated_price
                 else:
                     try:
-                        total_price = self.calculate_total_price(
-                            room_detail=room_detail,
-                            date_str=request.date,
-                            hour_slots=hour_slots,
-                            available_slots=res.available_slots if is_partial else None,
-                        )
+                        if isinstance(room_detail.priceConfig, dict):
+                            total_price = self.calculate_total_price(
+                                room_detail=room_detail,
+                                date_str=request.date,
+                                hour_slots=hour_slots,
+                                available_slots=res.available_slots if is_partial else None,
+                            )
+                        else:
+                            total_price = res.estimated_price
                     except Exception as e:
                         logger.warning(f"Price calculation failed for {room_detail.name}: {e}")
                         total_price = None

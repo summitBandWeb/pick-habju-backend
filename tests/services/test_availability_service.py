@@ -331,7 +331,7 @@ class TestAvailabilityServiceFlow:
             name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10,
             can_reserve_one_hour=True, requiresContactOnSameDay=False,
-            recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
+            recommend_capacity_range=[4, 8], price_config={"default": 10000}
         )
 
         # Partial availability = available is False, but available_slots has some True
@@ -381,7 +381,7 @@ class TestAvailabilityServiceFlow:
             name="MockRoom", branch="MockBranch", business_id="b1", biz_item_id="r1",
             pricePerHour=10000, max_capacity=10,
             can_reserve_one_hour=True, requiresContactOnSameDay=False,
-            recommend_capacity_range=[4, 8], price_config=[{"price": 10000}]
+            recommend_capacity_range=[4, 8], price_config={"default": 10000}
         )
 
         mock_crawler_result = RoomAvailability(
@@ -391,7 +391,7 @@ class TestAvailabilityServiceFlow:
         )
         mock_crawler.check_availability.return_value = [mock_crawler_result]
         
-        with mock.patch.object(service, "calculate_total_price", side_effect=Exception("Calc Error")) as mock_calc:
+        with mock.patch.object(service, "calculate_total_price", side_effect=ValueError("Calc Error")) as mock_calc:
             # When
             with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
                  patch("app.services.availability_service.filter_rooms_by_type", return_value=[mock_room]), \
@@ -402,7 +402,7 @@ class TestAvailabilityServiceFlow:
                 response = await service.check_availability(req)
 
             # Then
-            mock_calc.assert_called_once()
+            assert mock_calc.call_count == 2
             
             assert len(response.branches) == 1
             branch = response.branches[0]
