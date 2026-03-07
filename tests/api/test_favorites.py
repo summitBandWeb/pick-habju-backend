@@ -4,15 +4,16 @@ from app.main import app
 from app.api.dependencies import get_favorite_repository
 from app.repositories.memory import MockFavoriteRepository
 from app.api.favorites import MAX_FAVORITES_PER_DEVICE
+from app.exception.api.favorite_exception import FavoriteRepositoryUnavailableError
 
 @pytest.fixture
 def mock_repo():
-    """각 테스트마다 독립적인 Mock Repository 인스턴스 생성"""
+    """媛??뚯뒪?몃쭏???낅┰?곸씤 Mock Repository ?몄뒪?댁뒪 ?앹꽦"""
     return MockFavoriteRepository()
 
 @pytest.fixture
 def client(mock_repo):
-    """Dependency override가 적용된 TestClient 제공 및 자동 정리"""
+    """Dependency override媛 ?곸슜??TestClient ?쒓났 諛??먮룞 ?뺣━"""
     app.dependency_overrides[get_favorite_repository] = lambda: mock_repo
     with TestClient(app) as test_client:
         yield test_client
@@ -24,7 +25,7 @@ def valid_uuid():
 
 @pytest.fixture
 def headers(valid_uuid):
-    """공통으로 사용되는 유효한 헤더 정보"""
+    """怨듯넻?쇰줈 ?ъ슜?섎뒗 ?좏슚???ㅻ뜑 ?뺣낫"""
     return {"X-Device-Id": valid_uuid}
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def api_endpoint(target_biz_id):
 
 
 def test_add_favorite_success(client, api_endpoint, headers, target_business_id):
-    """즐겨찾기 추가 성공 시 200 OK와 성공 응답을 반환해야 한다."""
+    """利먭꺼李얘린 異붽? ?깃났 ??200 OK? ?깃났 ?묐떟??諛섑솚?댁빞 ?쒕떎."""
     # Act
     response = client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
@@ -52,11 +53,11 @@ def test_add_favorite_success(client, api_endpoint, headers, target_business_id)
     assert data["result"] == {"added": True}
 
 def test_add_favorite_idempotency(client, api_endpoint, headers, target_business_id):
-    """이미 존재하는 즐겨찾기를 다시 추가해도 에러 없이 200 OK를 반환해야 한다 (멱등성)."""
-    # Arrange: 이미 추가된 상태
+    """?대? 議댁옱?섎뒗 利먭꺼李얘린瑜??ㅼ떆 異붽??대룄 ?먮윭 ?놁씠 200 OK瑜?諛섑솚?댁빞 ?쒕떎 (硫깅벑??."""
+    # Arrange: ?대? 異붽????곹깭
     client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
-    # Act: 중복 추가 시도
+    # Act: 以묐났 異붽? ?쒕룄
     response = client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Assert
@@ -66,24 +67,24 @@ def test_add_favorite_idempotency(client, api_endpoint, headers, target_business
     assert data["result"] == {"added": True}
 
 def test_add_favorite_limit_exceeded(client, headers, target_business_id, mock_repo):
-    """최대 즐겨찾기 개수를 초과하면 400 에러를 반환해야 한다."""
+    """理쒕? 利먭꺼李얘린 媛쒖닔瑜?珥덇낵?섎㈃ 400 ?먮윭瑜?諛섑솚?댁빞 ?쒕떎."""
     
-    # Arrange: 한도를 가득 채움
+    # Arrange: ?쒕룄瑜?媛??梨꾩?
     for i in range(MAX_FAVORITES_PER_DEVICE):
         mock_repo.add(device_id=headers["X-Device-Id"], business_id=target_business_id, biz_item_id=f"item-{i}")
         
-    # Act: 21번째 추가
+    # Act: 21踰덉㎏ 異붽?
     response = client.put("/api/favorites/new-item-over-limit", headers=headers, params={"business_id": target_business_id})
     
     # Assert
     assert response.status_code == 400
     data = response.json()
     assert data["isSuccess"] is False
-    assert "상한" in data["message"] or "limit" in data["message"].lower()
+    assert data["code"] == "COMMON-002"
 
 def test_delete_favorite_success(client, api_endpoint, headers, target_business_id):
-    """즐겨찾기 삭제 성공 시 200 OK를 반환해야 한다."""
-    # Arrange: 데이터 준비
+    """利먭꺼李얘린 ??젣 ?깃났 ??200 OK瑜?諛섑솚?댁빞 ?쒕떎."""
+    # Arrange: ?곗씠??以鍮?
     client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Act
@@ -98,22 +99,22 @@ def test_delete_favorite_success(client, api_endpoint, headers, target_business_
     # Verify actual deletion in Mock Repository
 
 def test_delete_actually_removes_data(client, headers, api_endpoint, target_biz_id, target_business_id):
-    """삭제 후 데이터가 실제로 조회되지 않는지 확인"""
-    # 1. 추가
+    """??젣 ???곗씠?곌? ?ㅼ젣濡?議고쉶?섏? ?딅뒗吏 ?뺤씤"""
+    # 1. 異붽?
     client.put(api_endpoint, headers=headers, params={"business_id": target_business_id})
     
-    # 2. 삭제
+    # 2. ??젣
     client.delete(api_endpoint, headers=headers, params={"business_id": target_business_id})
     
-    # 3. 조회 (GET) 하여 리스트에 없는지 확인
+    # 3. 議고쉶 (GET) ?섏뿬 由ъ뒪?몄뿉 ?녿뒗吏 ?뺤씤
     response = client.get("/api/favorites", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert target_biz_id not in data["result"]["biz_item_ids"]
 
 def test_delete_favorite_idempotency(client, api_endpoint, headers, target_business_id):
-    """존재하지 않는 즐겨찾기를 삭제해도 에러 없이 200 OK를 반환해야 한다."""
-    # Act: 없는 데이터 삭제 시도
+    """議댁옱?섏? ?딅뒗 利먭꺼李얘린瑜???젣?대룄 ?먮윭 ?놁씠 200 OK瑜?諛섑솚?댁빞 ?쒕떎."""
+    # Act: ?녿뒗 ?곗씠????젣 ?쒕룄
     response = client.delete(api_endpoint, headers=headers, params={"business_id": target_business_id})
 
     # Assert
@@ -123,13 +124,13 @@ def test_delete_favorite_idempotency(client, api_endpoint, headers, target_busin
     assert data["result"] == {"deleted": True}
 
 @pytest.mark.parametrize("invalid_headers, expected_status, expected_detail", [
-    ({}, 422, None),                                                                  # 헤더 누락 → FastAPI 422
-    ({"X-Device-Id": ""}, 400, "X-Device-Id header is required and cannot be empty"),  # 빈 헤더
-    ({"X-Device-Id": "   "}, 400, "X-Device-Id header is required and cannot be empty"),  # 공백 헤더
-    ({"X-Device-Id": "not-a-uuid"}, 400, "Invalid X-Device-Id format"),                # 잘못된 형식
+    ({}, 422, None),                                                                  # ?ㅻ뜑 ?꾨씫 ??FastAPI 422
+    ({"X-Device-Id": ""}, 400, "X-Device-Id header is required and cannot be empty"),  # 鍮??ㅻ뜑
+    ({"X-Device-Id": "   "}, 400, "X-Device-Id header is required and cannot be empty"),  # 怨듬갚 ?ㅻ뜑
+    ({"X-Device-Id": "not-a-uuid"}, 400, "Invalid X-Device-Id format"),                # ?섎せ???뺤떇
 ])
 def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_status, expected_detail, target_business_id):
-    """잘못된 헤더 요청에 대해 적절한 에러를 반환해야 한다."""
+    """?섎せ???ㅻ뜑 ?붿껌??????곸젅???먮윭瑜?諛섑솚?댁빞 ?쒕떎."""
     # Act
     response = client.put(api_endpoint, headers=invalid_headers, params={"business_id": target_business_id})
 
@@ -144,7 +145,7 @@ def test_favorite_error_cases(client, api_endpoint, invalid_headers, expected_st
 # --------------------------------------------------------------------------
 
 def test_get_favorites_empty(client, headers):
-    """즐겨찾기 목록이 없을 때 빈 리스트를 반환해야 한다."""
+    """利먭꺼李얘린 紐⑸줉???놁쓣 ??鍮?由ъ뒪?몃? 諛섑솚?댁빞 ?쒕떎."""
     response = client.get("/api/favorites", headers=headers)
     assert response.status_code == 200
     data = response.json()
@@ -152,8 +153,8 @@ def test_get_favorites_empty(client, headers):
     assert data["result"] == {"biz_item_ids": []}
 
 def test_get_favorites_success(client, headers, target_business_id):
-    """추가된 즐겨찾기 목록을 정확히 반환해야 한다."""
-    # Arrange: 2개 추가
+    """異붽???利먭꺼李얘린 紐⑸줉???뺥솗??諛섑솚?댁빞 ?쒕떎."""
+    # Arrange: 2媛?異붽?
     items = ["biz-101", "biz-102"]
     for item in items:
         client.put(f"/api/favorites/{item}", headers=headers, params={"business_id": target_business_id})
@@ -169,13 +170,13 @@ def test_get_favorites_success(client, headers, target_business_id):
     assert sorted(data["result"]["biz_item_ids"]) == sorted(items)
 
 def test_get_favorites_isolation(client, headers, target_business_id):
-    """다른 사용자의 즐겨찾기는 조회되지 않아야 한다."""
-    # Arrange: Target User (headers)에 data adding
+    """?ㅻⅨ ?ъ슜?먯쓽 利먭꺼李얘린??議고쉶?섏? ?딆븘???쒕떎."""
+    # Arrange: Target User (headers)??data adding
     my_item = "my-biz-001"
     client.put(f"/api/favorites/{my_item}", headers=headers, params={"business_id": target_business_id})
 
     # Arrange: Other User adding data
-    # 다른 사용자용 유효한 UUID
+    # ?ㅻⅨ ?ъ슜?먯슜 ?좏슚??UUID
     other_uuid = "99999999-9999-9999-9999-999999999999"
     other_headers = {"X-Device-Id": other_uuid}
     other_item = "other-biz-999"
@@ -193,7 +194,55 @@ def test_get_favorites_isolation(client, headers, target_business_id):
     assert len(result["biz_item_ids"]) == 1
 
 def test_get_favorites_error_cases(client):
-    """GET 요청 시에도 잘못된 헤더에 대해 에러를 반환해야 한다."""
-    # 헤더 누락 → Header(...)이므로 FastAPI가 422 반환
+    """GET ?붿껌 ?쒖뿉???섎せ???ㅻ뜑??????먮윭瑜?諛섑솚?댁빞 ?쒕떎."""
+    # ?ㅻ뜑 ?꾨씫 ??Header(...)?대?濡?FastAPI媛 422 諛섑솚
     response = client.get("/api/favorites", headers={})
     assert response.status_code == 422
+
+
+def test_add_favorite_returns_503_when_repository_exists_check_fails(target_business_id):
+    class FailingExistsRepository(MockFavoriteRepository):
+        def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:  # noqa: ARG002
+            raise FavoriteRepositoryUnavailableError("以묐났 ?뺤씤 ?ㅽ뙣")
+
+    app.dependency_overrides[get_favorite_repository] = lambda: FailingExistsRepository()
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.put(
+                "/api/favorites/biz-503",
+                headers={"X-Device-Id": "550e8400-e29b-41d4-a716-446655440000"},
+                params={"business_id": target_business_id},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["isSuccess"] is False
+    assert data["code"] == "COMMON-001"
+    assert data["result"] is None
+
+
+def test_get_favorites_returns_503_when_repository_read_fails():
+    class FailingGetAllRepository(MockFavoriteRepository):
+        def get_all(self, device_id: str):  # noqa: ARG002
+            raise FavoriteRepositoryUnavailableError("紐⑸줉 議고쉶 ?ㅽ뙣")
+
+    app.dependency_overrides[get_favorite_repository] = lambda: FailingGetAllRepository()
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get(
+                "/api/favorites",
+                headers={"X-Device-Id": "550e8400-e29b-41d4-a716-446655440000"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["isSuccess"] is False
+    assert data["code"] == "COMMON-001"
+    assert data["result"] is None
+
+
+

@@ -1,9 +1,12 @@
-from typing import List, Optional
-from app.repositories.base import IFavoriteRepository
-from app.core.supabase_client import get_supabase_client
+from typing import List
 import logging
 
+from app.repositories.base import IFavoriteRepository
+from app.core.supabase_client import get_supabase_client
+from app.exception.api.favorite_exception import FavoriteRepositoryUnavailableError
+
 logger = logging.getLogger(__name__)
+
 
 class SupabaseFavoriteRepository(IFavoriteRepository):
     """
@@ -24,17 +27,12 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             data = {
                 "device_id": device_id,
                 "business_id": business_id,
-                "biz_item_id": biz_item_id
+                "biz_item_id": biz_item_id,
             }
-            # upsert=True is default for .upsert(), preventing duplicates on PK
-            # returning='minimal' or 'representation'
-            response = self.supabase.table(self.table_name).upsert(data).execute()
-            
-            # response.data would be non-empty if successful and returning data
-            # Typically Supabase Python client returns an object with .data
+            self.supabase.table(self.table_name).upsert(data).execute()
             return True
         except Exception as e:
-            logger.error(f"Error adding favorite: {e}")
+            logger.error("Error adding favorite: %s", e)
             raise
 
     def delete(self, device_id: str, business_id: str, biz_item_id: str) -> None:
@@ -50,7 +48,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
                 "biz_item_id", biz_item_id
             ).execute()
         except Exception as e:
-            logger.error(f"Error deleting favorite: {e}")
+            logger.error("Error deleting favorite: %s", e)
             raise
 
     def exists(self, device_id: str, business_id: str, biz_item_id: str) -> bool:
@@ -67,11 +65,12 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             ).eq(
                 "biz_item_id", biz_item_id
             ).execute()
-            
             return response.count > 0
         except Exception as e:
-            logger.error(f"Error checking existence: {e}")
-            return False
+            logger.error("Error checking existence: %s", e, exc_info=True)
+            raise FavoriteRepositoryUnavailableError(
+                "Favorite repository is temporarily unavailable while checking duplicates."
+            ) from e
 
     def count_by_device(self, device_id: str) -> int:
         """
@@ -81,10 +80,9 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             response = self.supabase.table(self.table_name).select(
                 "*", count="exact", head=True
             ).eq("device_id", device_id).execute()
-            
             return response.count or 0
         except Exception as e:
-            logger.error(f"Error fetching favorite count: {e}")
+            logger.error("Error fetching favorite count: %s", e)
             raise
 
     def get_all(self, device_id: str) -> List[str]:
@@ -95,8 +93,9 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
             response = self.supabase.table(self.table_name).select(
                 "biz_item_id"
             ).eq("device_id", device_id).execute()
-            
             return [item["biz_item_id"] for item in response.data]
         except Exception as e:
-            logger.error(f"Error fetching favorites: {e}")
-            return []
+            logger.error("Error fetching favorites: %s", e, exc_info=True)
+            raise FavoriteRepositoryUnavailableError(
+                "Favorite repository is temporarily unavailable while fetching favorites."
+            ) from e
