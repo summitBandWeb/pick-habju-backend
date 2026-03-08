@@ -55,7 +55,9 @@ def get_rooms_by_criteria(
                     supabase.table("room")
                     .select(select_expr)
                     .gte("max_capacity", capacity)
-                    .gte("price_per_hour", MAX_EXCLUDED_PRICE_PER_HOUR)  # DB 레벨 1차 필터
+                    # NOTE: price_per_hour 필터링은 DB 레이어가 아닌 Python 레이어에서 수행함.
+                    #       DB에서 미리 걸러내면 크롤러 오수집 아티팩트가 은폐되어
+                    #       아래의 logger.warning 진단 로직이 동작하지 않음.
                 )
                 if use_priority_filter:
                     query = query.in_("business_id", allowed_business_ids)
@@ -111,13 +113,12 @@ def get_rooms_by_criteria(
                 continue  # 단일 row 실패는 skip, 나머지 계속 처리
 
 
-            # 시간당 가격이 임계치 이하인 룸은 조회 결과에서 제외
-            # NOTE: 크롤러 LLM 파싱 단에서 드럼스틱·기타 대여 등 악세사리 예약 페이지 또는 예약 탭을 활용한 공지사항(0원 또는 999,999 등 설정)이 합주실로 잘못 수집될 수 있음.
-            #       price_per_hour <= MIN_VALID_PRICE_PER_HOUR 인 경우는 신뢰할 수 없는 데이터로 간주하여 필터링함.
-            
+            # 시간당 가격 단일 게이트: 임계치 이하 룸 제외 + 크롤러 오수집 진단 로그
+            # NOTE: DB 필터보다 이 Python 간수가 필터링의 주(Primary) 게이트여야 함.
+            #       DB에서 선행 필터링하면 크롤러 LLM 파싱 오류로 유입된
+            #       소균 데이터(0원, 음수, 복수 변종 가격 등)가 보이지 않게 되어
+            #       모니터링이 불가능해지며 재발 방지가 어려워짐.
             if room.pricePerHour <= MAX_EXCLUDED_PRICE_PER_HOUR:
-                # NOTE: 쿼리 레이어에서 걸러내기 어려운 악세사리 예약 데이터를 방어적으로 필터링함.
-                #       재발 시 크롤러 파싱 로직 점검 필요.
                 logger.warning(
                     "[metrics] room_filter.excluded: reason=price_too_low biz_item_id=%s business_id=%s price_per_hour=%s",
                     room.biz_item_id, room.business_id, room.pricePerHour
