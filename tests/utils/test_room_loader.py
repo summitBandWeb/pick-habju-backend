@@ -104,14 +104,19 @@ def test_get_rooms_by_criteria_can_disable_priority_filter(mock_supabase_query, 
 # ────────── price_per_hour 필터 (MAX_EXCLUDED_PRICE_PER_HOUR) 테스트 ──────────
 
 class TestPriceFilter:
-    """price_per_hour <= MAX_EXCLUDED_PRICE_PER_HOUR 룸 필터링 검증."""
+    """price_per_hour <= MAX_EXCLUDED_PRICE_PER_HOUR 룸 필터링 검증.
 
-    def test_price_1000_is_excluded(self, mock_supabase_query):
-        """임계치 미만(1,000원) 룸은 결과에서 제외되어야 함."""
+    Rationale:
+        테스트값을 MAX_EXCLUDED_PRICE_PER_HOUR 기준 상대값(예: -1000, -1, +1)으로
+        표현하여 상수 변경 시 테스트 코드 수정 없이 자동으로 반영되도록 설계함.
+    """
+
+    def test_price_well_below_threshold_is_excluded(self, mock_supabase_query):
+        """임계치보다 한참 낮은 값(MAX - 1000)도 제외되어야 함."""
         rows = [
-            _room_row(biz_item_id="item-ok",   price_per_hour=15000,
+            _room_row(biz_item_id="item-ok",  price_per_hour=15000,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
-            _room_row(biz_item_id="item-low",  price_per_hour=1000,
+            _room_row(biz_item_id="item-low", price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR - 1000,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
         ]
         mock_supabase_query.execute.return_value = SimpleNamespace(data=rows)
@@ -123,7 +128,7 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_price_2000_is_excluded(self, mock_supabase_query):
+    def test_price_at_threshold_is_excluded(self, mock_supabase_query):
         """임계치와 정확히 같은 값(MAX_EXCLUDED_PRICE_PER_HOUR)도 제외되어야 함 (이하 조건)."""
         rows = [
             _room_row(biz_item_id="item-ok",       price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR + 1,
@@ -140,7 +145,7 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_price_0_is_excluded(self, mock_supabase_query):
+    def test_price_zero_is_excluded(self, mock_supabase_query):
         """price_per_hour=0 (공지 전용 탭 오수집 케이스)도 제외되어야 함."""
         rows = [
             _room_row(biz_item_id="item-ok",   price_per_hour=15000,
@@ -157,10 +162,10 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_price_minus_1_is_excluded(self, mock_supabase_query):
+    def test_price_negative_is_excluded(self, mock_supabase_query):
         """price_per_hour=-1 (파싱 오류 케이스)도 제외되어야 함."""
         rows = [
-            _room_row(biz_item_id="item-ok",   price_per_hour=15000,
+            _room_row(biz_item_id="item-ok",  price_per_hour=15000,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
             _room_row(biz_item_id="item-neg", price_per_hour=-1,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
@@ -174,8 +179,8 @@ class TestPriceFilter:
         assert len(rooms) == 1
         assert rooms[0].biz_item_id == "item-ok"
 
-    def test_price_2001_is_included(self, mock_supabase_query):
-        """임계치보다 1원 높은 룸(MAX_EXCLUDED_PRICE_PER_HOUR+1)은 반드시 포함되어야 함."""
+    def test_price_just_above_threshold_is_included(self, mock_supabase_query):
+        """임계치보다 1원 높은 룸(MAX + 1)은 반드시 포함되어야 함."""
         rows = [
             _room_row(biz_item_id="item-pass", price_per_hour=MAX_EXCLUDED_PRICE_PER_HOUR + 1,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
@@ -192,8 +197,9 @@ class TestPriceFilter:
     def test_logs_warning_when_excluded(self, mock_supabase_query, caplog):
         """필터 제거 시 warning 로그 및 상세 메시지가 남아야 함 (운영 가시성 보장)."""
         import logging
+        excluded_price = MAX_EXCLUDED_PRICE_PER_HOUR - 1000
         rows = [
-            _room_row(biz_item_id="item-low", price_per_hour=500,
+            _room_row(biz_item_id="item-low", price_per_hour=excluded_price,
                       branch={"name": "B", "lat": 37.5, "lng": 127.1}),
         ]
         mock_supabase_query.execute.return_value = SimpleNamespace(data=rows)
@@ -204,8 +210,8 @@ class TestPriceFilter:
             )
 
         assert any(
-            r.levelno == logging.WARNING and 
-            "price_too_low" in r.message and 
-            "500" in r.message
+            r.levelno == logging.WARNING and
+            "price_too_low" in r.message and
+            str(excluded_price) in r.message
             for r in caplog.records
         )
