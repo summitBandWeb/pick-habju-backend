@@ -332,6 +332,7 @@ class RoomCollectionService:
 
         # 대표 키워드 수집: place 페이지에서 직접 가져오는 것이 기본 경로.
         # GraphQL API는 키워드를 내려주지 않으므로 source_hint 유무와 관계없이 실행한다.
+        has_source_hint = source_hint is not None
         place_id = (
             (source_hint or {}).get("placeId")
             or business.get("placeId")
@@ -351,11 +352,10 @@ class RoomCollectionService:
                     else:
                         normalized = []
                     if normalized:
-                        if source_hint is None:
-                            source_hint = {}
-                        source_hint = dict(source_hint)
-                        source_hint["representativeKeywords"] = normalized
-                        self._source_item_hints[str(business_id)] = source_hint
+                        enriched = dict(source_hint or {})
+                        enriched["representativeKeywords"] = normalized
+                        source_hint = enriched
+                        self._source_item_hints[str(business_id)] = enriched
                         logger.info(
                             "Fetched representative keywords from place page: business_id=%s place_id=%s",
                             business_id,
@@ -377,7 +377,7 @@ class RoomCollectionService:
 
         # 도메인 필터는 지도 검색으로 유입된 항목(source_hint 존재)에만 강제 적용한다.
         # 수동 점검 목적의 direct collect_by_id 호출은 최대한 허용적으로 유지한다.
-        if source_hint and not domain_decision["is_candidate"]:
+        if has_source_hint and not domain_decision["is_candidate"]:
             logger.warning(
                 "Skipping non-rehearsal business %s (pos=%s, neg=%s)",
                 business_id,
@@ -767,17 +767,20 @@ class RoomCollectionService:
             candidate = re.sub(r"\s+", " ", raw_candidate).strip()
             if not candidate:
                 continue
-            if cls._is_placeholder_branch_name(candidate, business_id):
+            cleaned = cls._clean_branch_name(candidate)
+            if not cleaned:
                 continue
-            if cls._is_room_name_collision(candidate, room_name_tokens):
+            if cls._is_placeholder_branch_name(cleaned, business_id):
+                continue
+            if cls._is_room_name_collision(cleaned, room_name_tokens):
                 logger.warning(
                     "Rejected branch name candidate due to room-name collision: business_id=%s source=%s candidate=%s",
                     business_id,
                     source,
-                    candidate,
+                    cleaned,
                 )
                 continue
-            return cls._clean_branch_name(candidate)
+            return cleaned
 
         return business_id
 

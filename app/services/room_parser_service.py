@@ -193,7 +193,7 @@ class RoomParserService:
     def _extract_time_slot_label(cls, tag_text: str) -> Optional[str]:
         """태그 텍스트에서 시간대 레이블을 추출한다. 긴 키워드부터 매칭."""
         lowered = tag_text.lower()
-        for keyword, label in cls._TIME_SLOT_KEYWORDS.items():
+        for keyword, label in sorted(cls._TIME_SLOT_KEYWORDS.items(), key=lambda x: -len(x[0])):
             if keyword in lowered:
                 return label
         return None
