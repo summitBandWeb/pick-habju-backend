@@ -594,11 +594,15 @@ class RoomCollectionService:
             or business.get("name")
             or ""
         )
-        # 이름 + 소개(desc) + 예약안내(bookingGuideJson)에서 키워드 검색
+        # 이름 + 소개(desc/description) + 예약안내(bookingGuideJson)에서 키워드 검색
         text_sources = [str(raw_name)]
-        desc = business.get("desc")
-        if isinstance(desc, str) and desc.strip():
-            text_sources.append(desc)
+        for payload in (source_hint, business):
+            if not isinstance(payload, dict):
+                continue
+            for field in ("description", "desc"):
+                value = payload.get(field)
+                if isinstance(value, str) and value.strip():
+                    text_sources.append(value)
         guide = business.get("bookingGuideJson")
         if isinstance(guide, list):
             for entry in guide:
@@ -611,6 +615,16 @@ class RoomCollectionService:
         name_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in combined_text})
 
         positive_hits = sorted(set(representative_hits + name_hits))
+
+        # 룸 이름에서도 키워드 탐색 (위 단계에서 미발견 시)
+        if not positive_hits and rooms:
+            for room in rooms:
+                room_name = str(room.get("name") or "").lower()
+                matched = {kw for kw in cls.REHEARSAL_KEYWORDS if kw in room_name}
+                if matched:
+                    positive_hits.extend(list(matched))
+            positive_hits = sorted(set(positive_hits))
+
         is_candidate = bool(positive_hits)
         reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
 
