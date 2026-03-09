@@ -676,7 +676,7 @@ class RoomCollectionService:
         )
         clean = re.sub(r"\s+(?:예약|방문\s*상담|전화\s*문의)\s*$", "", clean)
 
-        return re.sub(r"\s+", " ", clean).strip() or (name or "").strip()
+        return re.sub(r"\s+", " ", clean).strip()
 
     @staticmethod
     def _is_placeholder_branch_name(candidate: str, business_id: str) -> bool:
@@ -1582,7 +1582,12 @@ class RoomCollectionService:
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
-        return any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS)
+        has_negative = any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS)
+        if not has_negative:
+            return False
+        # 합주 관련 키워드가 함께 있으면 유효한 합주실로 판단
+        has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
+        return not has_positive
 
     def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
         """Detect inquiry-required rooms from structured/text policy blocks."""

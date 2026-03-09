@@ -397,10 +397,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    allowlist_ids = [
-        row["business_id"]
-        for row in supabase.table("branch").select("business_id").execute().data
-    ]
+    result = supabase.table("branch").select("business_id").execute()
+    allowlist_ids = [row["business_id"] for row in result.data or []]
     report = make_report(allowlist_ids)
 
     if args.output:
