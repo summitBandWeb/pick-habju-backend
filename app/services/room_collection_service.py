@@ -99,18 +99,20 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
-    # Exclude non-rehearsal service labels from rehearsal-room inventory.
+    # Hard: 합주와 다른 장르/용도 — 합주 키워드가 함께 있어도 무조건 필터링
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         # 교육/레슨
         "레슨", "lesson", "수업", "클래스", "원데이",
-        # 녹음/후반작업
-        "레코딩", "recording", "녹음", "믹싱", "마스터링",
         # 악기 대여
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
         # 기타
         "파티룸", "촬영", "세미나",
+    )
+    # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
+    NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
+        "레코딩", "recording", "녹음", "믹싱", "마스터링",
     )
 
     def __init__(self):
@@ -1582,12 +1584,14 @@ class RoomCollectionService:
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
-        has_negative = any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS)
-        if not has_negative:
-            return False
-        # 합주 관련 키워드가 함께 있으면 유효한 합주실로 판단
-        has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
-        return not has_positive
+        # Hard 키워드: 다른 장르/용도 → 무조건 필터링
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
+            return True
+        # Soft 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
+            has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
+            return not has_positive
+        return False
 
     def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
         """Detect inquiry-required rooms from structured/text policy blocks."""
