@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from app.core.constants import PRIORITY_AREA_QUERIES
+
 
 @pytest.mark.asyncio
 async def test_collect_by_query_forces_priority_area_mode():
@@ -25,7 +27,7 @@ async def test_collect_by_query_forces_priority_area_mode():
         assert result["requested_query"] == "hongdae practice room"
         assert result["total_unique"] == 1
         assert result["success"] == 1
-        assert mock_crawler.search_rehearsal_rooms.call_count == 6
+        assert mock_crawler.search_rehearsal_rooms.call_count == len(PRIORITY_AREA_QUERIES)
 
 
 @pytest.mark.asyncio
@@ -51,7 +53,7 @@ async def test_collect_all_regions_uses_priority_area_mode():
         assert result["total_unique"] == 1
         assert result["success"] == 1
         assert result["failed"] == 0
-        assert mock_crawler.search_rehearsal_rooms.call_count == 6
+        assert mock_crawler.search_rehearsal_rooms.call_count == len(PRIORITY_AREA_QUERIES)
 
 
 @pytest.mark.asyncio

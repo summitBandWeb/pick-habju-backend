@@ -11,6 +11,8 @@ RoomCollectionService 통합 테스트
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from app.core.constants import PRIORITY_AREA_QUERIES
+
 
 class TestCollectByIdFlow:
     """collect_by_id 전체 흐름 통합 테스트"""
@@ -201,11 +203,11 @@ class TestCollectByQueryFlow:
     # ============== IT05: Query 검색 후 각 ID 수집 ==============
     @pytest.mark.asyncio
     async def test_collect_by_query_calls_collect_by_id(self, service, mock_crawler):
-        """고정 6개 지역 검색 결과의 unique ID에 대해 collect_by_id 호출"""
+        """고정 우선 지역 검색 결과의 unique ID에 대해 collect_by_id 호출"""
         result = await service.collect_by_query("홍대 합주실")
-        
-        # 전역 정책으로 6개 우선 지역 검색이 실행됨
-        assert mock_crawler.search_rehearsal_rooms.call_count == 6
+
+        # 전역 정책으로 우선 지역 검색이 실행됨 (PRIORITY_AREA_QUERIES 개수)
+        assert mock_crawler.search_rehearsal_rooms.call_count == len(PRIORITY_AREA_QUERIES)
         
         # 중복 제거된 unique 결과 2건만 collect_by_id 호출
         assert service.collect_by_id.call_count == 2
