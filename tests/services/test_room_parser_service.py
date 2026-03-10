@@ -164,3 +164,29 @@ class TestExportUnresolved:
         if export_dir.exists():
             files = list(export_dir.glob("unresolved_*.json"))
             assert len(files) == 0
+
+    @pytest.mark.asyncio
+    async def test_export_uses_fallback_business_keys_when_primary_keys_missing(
+        self, service, tmp_path, monkeypatch
+    ):
+        import app.services.room_collection_service as mod
+
+        fake_file = str(tmp_path / "app" / "services" / "room_collection_service.py")
+        monkeypatch.setattr(mod, "__file__", fake_file)
+
+        business = {"id": "legacy-biz-1", "name": "Legacy Studio"}
+        rooms = [{"bizItemId": "r1", "name": "Room A", "desc": "정보 없음"}]
+        parsed_results = {"r1": {"max_capacity": None}}
+
+        await service._export_unresolved(business, rooms, parsed_results)
+
+        export_dir = tmp_path / "scripts" / "unresolved"
+        files = list(export_dir.glob("unresolved_*.json"))
+        assert len(files) == 1
+
+        with open(files[0], "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        assert len(data) == 1
+        assert data[0]["business_id"] == "legacy-biz-1"
+        assert data[0]["business_name"] == "Legacy Studio"

@@ -13,7 +13,6 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.core.constants import PRIORITY_AREA_BUSINESS_IDS
 from app.core.supabase_client import supabase
 
 
@@ -398,7 +397,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    allowlist_ids = list(PRIORITY_AREA_BUSINESS_IDS)
+    result = supabase.table("branch").select("business_id").execute()
+    allowlist_ids = [row["business_id"] for row in result.data or []]
     report = make_report(allowlist_ids)
 
     if args.output:

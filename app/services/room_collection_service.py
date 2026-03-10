@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import asyncio
 import json
 import os
@@ -99,17 +99,20 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
-    DESCRIPTION_FIELDS: Tuple[str, ...] = (
-        "description",
-        "desc",
-    )
-    # Exclude lesson/recording service labels from rehearsal-room inventory.
+    # Hard: 합주와 다른 장르/용도 — 합주 키워드가 함께 있어도 무조건 필터링
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
-        "레슨",
-        "lesson",
-        "레코딩",
-        "recording",
-        "녹음",
+        # 교육/레슨
+        "레슨", "lesson", "수업", "클래스", "원데이",
+        # 악기 대여
+        "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
+        # 비음악 용도
+        "무용", "댄스", "요가", "필라테스",
+        # 기타
+        "파티룸", "촬영", "세미나",
+    )
+    # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
+    NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
+        "레코딩", "recording", "녹음", "믹싱", "마스터링",
     )
 
     def __init__(self):
@@ -329,36 +332,44 @@ class RoomCollectionService:
         business = data["business"]
         rooms = data["rooms"]
 
-        if source_hint:
-            has_representative_keywords = any(source_hint.get(field) for field in self.REPRESENTATIVE_KEYWORD_FIELDS)
-            place_id = source_hint.get("placeId") or business.get("placeId")
-            if not has_representative_keywords and place_id:
-                reveal_keywords = getattr(self.map_crawler, "reveal_representative_keywords", None)
-                if callable(reveal_keywords):
-                    try:
-                        revealed = reveal_keywords(str(place_id))
-                        if inspect.isawaitable(revealed):
-                            revealed = await revealed
-                        if isinstance(revealed, list):
-                            normalized = [str(v).strip() for v in revealed if isinstance(v, str) and str(v).strip()]
-                        else:
-                            normalized = []
-                        if normalized:
-                            source_hint = dict(source_hint)
-                            source_hint["representativeKeywords"] = normalized
-                            self._source_item_hints[str(business_id)] = source_hint
-                            logger.info(
-                                "Recovered representative keywords via place page: business_id=%s place_id=%s",
-                                business_id,
-                                place_id,
-                            )
-                    except Exception as e:
-                        logger.warning(
-                            "Representative keyword reveal failed: business_id=%s place_id=%s err=%s",
+        # 대표 키워드 수집: place 페이지에서 직접 가져오는 것이 기본 경로.
+        # GraphQL API는 키워드를 내려주지 않으므로 source_hint 유무와 관계없이 실행한다.
+        has_source_hint = source_hint is not None
+        place_id = (
+            (source_hint or {}).get("placeId")
+            or business.get("placeId")
+        )
+        has_representative_keywords = source_hint and any(
+            source_hint.get(field) for field in self.REPRESENTATIVE_KEYWORD_FIELDS
+        )
+        if not has_representative_keywords and place_id:
+            reveal_keywords = getattr(self.map_crawler, "reveal_representative_keywords", None)
+            if callable(reveal_keywords):
+                try:
+                    revealed = reveal_keywords(str(place_id))
+                    if inspect.isawaitable(revealed):
+                        revealed = await revealed
+                    if isinstance(revealed, list):
+                        normalized = [str(v).strip() for v in revealed if isinstance(v, str) and str(v).strip()]
+                    else:
+                        normalized = []
+                    if normalized:
+                        enriched = dict(source_hint or {})
+                        enriched["representativeKeywords"] = normalized
+                        source_hint = enriched
+                        self._source_item_hints[str(business_id)] = enriched
+                        logger.info(
+                            "Fetched representative keywords from place page: business_id=%s place_id=%s",
                             business_id,
                             place_id,
-                            e,
                         )
+                except Exception as e:
+                    logger.warning(
+                        "Representative keyword fetch failed: business_id=%s place_id=%s err=%s",
+                        business_id,
+                        place_id,
+                        e,
+                    )
 
         domain_decision = self._evaluate_rehearsal_domain(
             source_hint=source_hint,
@@ -368,7 +379,7 @@ class RoomCollectionService:
 
         # 도메인 필터는 지도 검색으로 유입된 항목(source_hint 존재)에만 강제 적용한다.
         # 수동 점검 목적의 direct collect_by_id 호출은 최대한 허용적으로 유지한다.
-        if source_hint and not domain_decision["is_candidate"]:
+        if has_source_hint and not domain_decision["is_candidate"]:
             logger.warning(
                 "Skipping non-rehearsal business %s (pos=%s, neg=%s)",
                 business_id,
@@ -567,95 +578,57 @@ class RoomCollectionService:
         return sorted(hits)
 
     @classmethod
-    def _collect_description_text(
-        cls,
-        source_hint: Optional[Dict[str, Any]],
-        business: Dict[str, Any],
-    ) -> str:
-        """소개글 계열 텍스트를 source_hint/business 양쪽에서 수집한다."""
-        fragments: List[str] = []
-        for payload in (source_hint, business):
-            if not isinstance(payload, dict):
-                continue
-            for field in cls.DESCRIPTION_FIELDS:
-                value = payload.get(field)
-                if isinstance(value, str):
-                    text = value.strip().lower()
-                    if text:
-                        fragments.append(text)
-        # 동일 텍스트는 한 번만 남겨 키워드 판별 근거를 단순화한다.
-        return " ".join(dict.fromkeys(fragments))
-
-    @classmethod
     def _evaluate_rehearsal_domain(
         cls,
         source_hint: Optional[Dict[str, Any]],
         business: Dict[str, Any],
         rooms: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """
-        4단계 Waterfall 로직으로 합주실 도메인인지 판별한다:
-        1. 지점명 (Name)
-        2. 대표 키워드 (Representative Keywords)
-        3. 소개글 (Description)
-        4. 개별 룸 이름 (Rooms Name)
-        하나라도 합주실 키워드가 발견되면 즉시 is_candidate=True.
-        """
-        positive_hits: List[str] = []
-        reason = "no_rehearsal_keyword_match"
+        representative_candidates = cls._collect_representative_keywords(
+            source_hint=source_hint,
+            business=business,
+        )
+        representative_hits = cls._extract_representative_keywords(representative_candidates)
 
-        # 1. 지점명 (Name) 탐색
         raw_name = (
             (source_hint or {}).get("name")
             or business.get("businessDisplayName")
             or business.get("name")
             or ""
         )
-        name_text = str(raw_name).lower()
-        name_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in name_text})
-        if name_hits:
-            positive_hits.extend(name_hits)
-            reason = "matched_name_keyword"
+        # 이름 + 소개(desc/description) + 예약안내(bookingGuideJson)에서 키워드 검색
+        text_sources = [str(raw_name)]
+        for payload in (source_hint, business):
+            if not isinstance(payload, dict):
+                continue
+            for field in ("description", "desc"):
+                value = payload.get(field)
+                if isinstance(value, str) and value.strip():
+                    text_sources.append(value)
+        guide = business.get("bookingGuideJson")
+        if isinstance(guide, list):
+            for entry in guide:
+                words = (entry or {}).get("words", "") if isinstance(entry, dict) else ""
+                if isinstance(words, str) and words.strip():
+                    text_sources.append(words)
+        elif isinstance(guide, str) and guide.strip():
+            text_sources.append(guide)
+        combined_text = " ".join(text_sources).lower()
+        name_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in combined_text})
 
-        # 2. 대표 키워드 (Representative Keywords) 탐색
-        representative_candidates = cls._collect_representative_keywords(
-            source_hint=source_hint,
-            business=business,
-        )
-        representative_hits = cls._extract_representative_keywords(representative_candidates)
-        if representative_hits:
-            positive_hits.extend(representative_hits)
-            if reason == "no_rehearsal_keyword_match":
-                reason = "matched_representative_keyword"
+        positive_hits = sorted(set(representative_hits + name_hits))
 
-        # 3. 소개글 (Description) 탐색
-        if not positive_hits:
-            desc_text = cls._collect_description_text(
-                source_hint=source_hint,
-                business=business,
-            )
-            if desc_text:
-                desc_hits = sorted({kw for kw in cls.REHEARSAL_KEYWORDS if kw in desc_text})
-                if desc_hits:
-                    positive_hits.extend(desc_hits)
-                    reason = "matched_description_keyword"
-
-        # 4. 개별 룸 이름 (Rooms Name) 탐색
+        # 룸 이름에서도 키워드 탐색 (위 단계에서 미발견 시)
         if not positive_hits and rooms:
-            room_hits = []
             for room in rooms:
                 room_name = str(room.get("name") or "").lower()
                 matched = {kw for kw in cls.REHEARSAL_KEYWORDS if kw in room_name}
                 if matched:
-                    room_hits.extend(list(matched))
-            room_hits = sorted(set(room_hits))
-            if room_hits:
-                positive_hits.extend(room_hits)
-                reason = "matched_room_name_keyword"
+                    positive_hits.extend(list(matched))
+            positive_hits = sorted(set(positive_hits))
 
-        # 최종 판별
-        positive_hits = sorted(set(positive_hits))
         is_candidate = bool(positive_hits)
+        reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
 
         return {
             "is_candidate": is_candidate,
@@ -675,6 +648,37 @@ class RoomCollectionService:
         }
         tokens.discard("")
         return tokens
+
+    @staticmethod
+    def _clean_branch_name(name: str) -> str:
+        """지점명에서 프로모션/운영 안내 문구를 제거한다."""
+        clean = re.sub(r"\s+", " ", (name or "")).strip()
+        if not clean:
+            return clean
+
+        # 대괄호 프로모션/운영 태그 제거
+        promo_markers = (
+            "특가", "할인", "이벤트", "event", "예약", "문의",
+            "전화", "방문", "상담", "운영", "공지",
+        )
+        while True:
+            m = re.match(r"^\s*\[([^\]]{1,60})\]\s*", clean)
+            if not m:
+                break
+            tag = m.group(1).strip().lower()
+            if any(marker in tag for marker in promo_markers):
+                clean = clean[m.end():].strip()
+                continue
+            break
+
+        # 요일/예약 운영 꼬리 제거: "월-목 / 금토일 예약", "방문 상담" 등
+        clean = re.sub(
+            r"\s*[/·,]\s*(?:[월화수목금토일]\s*[-~]\s*)*[월화수목금토일공휴일\s]*(?:예약|운영|문의|상담)?\s*$",
+            "", clean,
+        )
+        clean = re.sub(r"\s+(?:예약|방문\s*상담|전화\s*문의)\s*$", "", clean)
+
+        return re.sub(r"\s+", " ", clean).strip()
 
     @staticmethod
     def _is_placeholder_branch_name(candidate: str, business_id: str) -> bool:
@@ -765,17 +769,20 @@ class RoomCollectionService:
             candidate = re.sub(r"\s+", " ", raw_candidate).strip()
             if not candidate:
                 continue
-            if cls._is_placeholder_branch_name(candidate, business_id):
+            cleaned = cls._clean_branch_name(candidate)
+            if not cleaned:
                 continue
-            if cls._is_room_name_collision(candidate, room_name_tokens):
+            if cls._is_placeholder_branch_name(cleaned, business_id):
+                continue
+            if cls._is_room_name_collision(cleaned, room_name_tokens):
                 logger.warning(
                     "Rejected branch name candidate due to room-name collision: business_id=%s source=%s candidate=%s",
                     business_id,
                     source,
-                    candidate,
+                    cleaned,
                 )
                 continue
-            return candidate
+            return cleaned
 
         return business_id
 
@@ -1009,6 +1016,14 @@ class RoomCollectionService:
                     final_max_cap_int // 2 if final_max_cap_int != self.MANUAL_REVIEW_FLAG else self.MANUAL_REVIEW_FLAG
                 )
 
+            # DB 제약조건 보정: recommend_capacity <= max_capacity
+            if (
+                final_rec_cap_int != self.MANUAL_REVIEW_FLAG
+                and final_max_cap_int != self.MANUAL_REVIEW_FLAG
+                and final_rec_cap_int > final_max_cap_int
+            ):
+                final_rec_cap_int = final_max_cap_int
+
             final_base_cap_int = self._coerce_int(final_base_cap)
             final_extra_charge_int = self._coerce_int(final_extra_charge)
             final_price_int = self._coerce_int(final_price)
@@ -1019,7 +1034,7 @@ class RoomCollectionService:
             room_data = {
                 "business_id": business_id,
                 "biz_item_id": rid,
-                "name": room["name"],
+                "name": parsed.get("clean_name") or room["name"],
                 "price_per_hour": final_price_int,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
@@ -1429,7 +1444,10 @@ class RoomCollectionService:
             score = 1
             if re.search(r"(전화|문의|연락|콜|tel|phone|contact|call)", window):
                 score += 10
-            if digits.startswith(("010", "011", "016", "017", "018", "019", "02", "0507")):
+            # 0507 안심번호는 사업장 대표번호일 가능성이 높으므로 최우선
+            if digits.startswith("0507"):
+                score += 20
+            elif digits.startswith(("010", "011", "016", "017", "018", "019", "02")):
                 score += 5
             elif digits.startswith(("031", "032", "033", "041", "042", "043", "044", "051", "052", "053", "054", "055", "061", "062", "063", "064", "070")):
                 score += 4
@@ -1566,7 +1584,14 @@ class RoomCollectionService:
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
-        return any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS)
+        # Hard 키워드: 다른 장르/용도 → 무조건 필터링
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
+            return True
+        # Soft 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
+            has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
+            return not has_positive
+        return False
 
     def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
         """Detect inquiry-required rooms from structured/text policy blocks."""
@@ -1602,7 +1627,11 @@ class RoomCollectionService:
         return False
 
     def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
-        """Check if room has enough reservation-related metadata to parse."""
+        """Check if room has enough reservation-related metadata to parse.
+
+        가격 정보는 필수: 가격이 없는 룸은 사용자에게 유효한 예약 정보를
+        제공할 수 없으므로 수집 대상에서 제외한다.
+        """
         base_price = self._extract_price(room)
         if isinstance(base_price, int) and base_price > 0:
             return True
@@ -1610,18 +1639,6 @@ class RoomCollectionService:
         raw_price = self._coerce_int(room.get("price"))
         if raw_price is not None and raw_price > 0:
             return True
-
-        for key in ("minBookingCount", "maxBookingCount", "minBookingTime", "maxBookingTime", "stock"):
-            if key in room and room.get(key) is not None:
-                return True
-
-        time_unit_code = room.get("bookingTimeUnitCode")
-        if isinstance(time_unit_code, str) and time_unit_code.strip():
-            return True
-
-        for key in ("bookingCountSettingJson", "bookingPrecautionJson"):
-            if self._has_non_empty_payload(room.get(key)):
-                return True
 
         return False
 
@@ -1875,6 +1892,11 @@ class RoomCollectionService:
         export the original crawled text to a JSON file for later manual verification.
         """
         unresolved_items = []
+        business_id = str(business.get("businessId") or business.get("id") or "").strip() or "unknown_business"
+        business_name = (
+            str(business.get("businessDisplayName") or business.get("name") or "").strip()
+            or business_id
+        )
 
         for room in rooms:
             rid = room["bizItemId"]
@@ -1892,10 +1914,10 @@ class RoomCollectionService:
             # Only export if there's a failure reason
             if failure_reason:
                 unresolved_item = {
-                    "business_id": business["businessId"],
-                    "business_name": business["businessDisplayName"],
+                    "business_id": business_id,
+                    "business_name": business_name,
                     "biz_item_id": rid,
-                    "raw_name": room["name"],
+                    "raw_name": room.get("name", ""),
                     "raw_desc": room.get("desc"),
                     "parsed_result": parsed,
                     "failure_reason": failure_reason,
