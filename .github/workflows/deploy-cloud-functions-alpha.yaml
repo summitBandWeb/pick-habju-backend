@@ -1,0 +1,107 @@
+# =============================================================================
+# Cloud Functions CI/CD 파이프라인 (ALPHA)
+# =============================================================================
+# Trigger: dev 브랜치에 cloud-functions/** 경로 변경 시
+# Target: health-check-reporter-alpha (Cloud Functions 2nd Gen)
+# =============================================================================
+name: Deploy Cloud Functions (Alpha)
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - "cloud-functions/**"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  FUNCTION_NAME: health-check-reporter-alpha
+  FUNCTION_SOURCE: ./cloud-functions/health-check-reporter
+  CLOUD_RUN_SERVICE: alpha-service
+  APP_ENV: alpha
+
+jobs:
+  deploy:
+    name: Deploy Cloud Function (Alpha)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------
+      # GCP 인증 (Workload Identity Federation)
+      # -----------------------------------------------------------------
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # -----------------------------------------------------------------
+      # Cloud Function 배포
+      # -----------------------------------------------------------------
+      - name: Deploy Cloud Function
+        run: |
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --runtime=python312 \
+            --region=${{ env.REGION }} \
+            --source=${{ env.FUNCTION_SOURCE }} \
+            --entry-point=health_check_reporter \
+            --trigger-http \
+            --no-allow-unauthenticated \
+            --timeout=120s \
+            --memory=256Mi \
+            --service-account=${{ secrets.WIF_SERVICE_ACCOUNT }} \
+            --set-env-vars="GCP_PROJECT_ID=${{ env.PROJECT_ID }},CLOUD_RUN_SERVICE_NAME=${{ env.CLOUD_RUN_SERVICE }},APP_ENV=${{ env.APP_ENV }}" \
+            --set-secrets="DISCORD_WEBHOOK_URL=DISCORD_HEALTH_REPORT_WEBHOOK_URL:latest"
+
+      # -----------------------------------------------------------------
+      # Discord 알림
+      # -----------------------------------------------------------------
+      - name: Discord 배포 성공 알림
+        if: success()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "⚡ **[Cloud Function] Alpha 환경 배포 성공!**",
+            "embeds": [
+              {
+                "title": "배포된 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 3066993,
+                "fields": [
+                  { "name": "Function", "value": "`${{ env.FUNCTION_NAME }}`", "inline": true },
+                  { "name": "Target Service", "value": "`${{ env.CLOUD_RUN_SERVICE }}`", "inline": true },
+                  { "name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Discord 배포 실패 알림
+        if: failure()
+        run: |
+          curl -H "Content-Type: application/json" -d '{
+            "content": "🚨 **[Cloud Function] Alpha 환경 배포 실패!**",
+            "embeds": [
+              {
+                "title": "실패한 워크플로우 바로가기",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": 15158332,
+                "fields": [
+                  { "name": "Function", "value": "`${{ env.FUNCTION_NAME }}`", "inline": true },
+                  { "name": "Branch", "value": "`${{ github.ref_name }}`", "inline": true },
+                  { "name": "Commit", "value": "`${{ github.sha }}`", "inline": true }
+                ]
+              }
+            ]
+          }' ${{ secrets.DISCORD_WEBHOOK_URL }}
