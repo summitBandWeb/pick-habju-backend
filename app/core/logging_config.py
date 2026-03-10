@@ -78,6 +78,15 @@ class LogMasker:
 
     @classmethod
     def mask_dict(cls, data: Any, depth: int = 0) -> Any:
+        """딕셔너리 및 리스트 내 민감 키의 값을 재귀적으로 마스킹한다.
+
+        Args:
+            data: 마스킹 대상 데이터. dict, list, 또는 기타 타입.
+            depth: 현재 재귀 깊이. 10을 초과하면 문자열로 변환하여 반환한다.
+
+        Returns:
+            민감 키의 값이 ``"***"``로 대체된 동일 구조의 데이터.
+        """
         # 순환 참조 및 너무 깊은 중첩 방지 (최대 10단계)
         if depth > 10:
             return str(data)
@@ -145,6 +154,14 @@ class SensitiveDataFilter(logging.Filter):
     """
     
     def filter(self, record: logging.LogRecord) -> bool:
+        """로그 레코드에 Trace ID를 주입하고 메시지 내 민감 정보를 마스킹한다.
+
+        Args:
+            record: 처리 대상 LogRecord 인스턴스.
+
+        Returns:
+            항상 True를 반환하여 로그 레코드를 통과시킨다.
+        """
         # Trace ID 주입
         record.trace_id = get_trace_id()
         
@@ -158,6 +175,13 @@ class SensitiveDataFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
+    """로그 레코드를 JSON 형식 문자열로 포맷하는 Formatter.
+
+    타임스탬프, 레벨, 로거명, Trace ID 등 표준 필드와 extra로 전달된
+    커스텀 속성을 하나의 JSON 객체로 병합하여 출력한다.
+    extra 데이터에도 LogMasker를 통한 민감 정보 마스킹이 적용된다.
+    """
+
     # 표준 LogRecord 속성 리스트 (extra 데이터를 구분하기 위함)
     DEFAULT_ATTRS = {
         "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
@@ -167,6 +191,14 @@ class JsonFormatter(logging.Formatter):
     }
 
     def format(self, record: logging.LogRecord) -> str:
+        """로그 레코드를 JSON 문자열로 변환한다.
+
+        Args:
+            record: 포맷 대상 LogRecord 인스턴스.
+
+        Returns:
+            JSON 형식의 로그 문자열.
+        """
         # 메시지가 dict면 그대로 기반으로 삼고, 아니면 기본 구조 생성
         message_body = record.msg if isinstance(record.msg, dict) else {
             "message": record.getMessage()
@@ -195,6 +227,15 @@ class JsonFormatter(logging.Formatter):
 
 
 def setup_logging(log_dir: str = "logs"):
+    """애플리케이션 로깅을 초기화한다.
+
+    콘솔 핸들러와 일자별 파일 로테이션 핸들러를 루트 로거에 등록한다.
+    모든 핸들러에 JSON 포맷터와 민감 정보 마스킹 필터가 적용되며,
+    로그 파일에는 소유자 전용(0600) 권한이 설정된다.
+
+    Args:
+        log_dir: 로그 파일을 저장할 디렉터리 경로. 존재하지 않으면 자동 생성된다.
+    """
     os.makedirs(log_dir, exist_ok=True)
 
     root_logger = logging.getLogger()
@@ -220,6 +261,7 @@ def setup_logging(log_dir: str = "logs"):
         """로테이션 시 모든 로그 파일에 0600 권한을 자동 적용하는 핸들러"""
 
         def doRollover(self):
+            """로그 파일 로테이션 후 권한을 재설정한다."""
             super().doRollover()
             # 로테이션 후 현재 로그 파일 권한 설정
             if self.baseFilename and os.path.exists(self.baseFilename):

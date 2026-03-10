@@ -52,6 +52,16 @@ from app.models.dto import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI 애플리케이션의 수명주기를 관리한다.
+
+    시작 시 전역 HTTP 클라이언트를 초기화하고, 종료 시 안전하게 정리한다.
+
+    Args:
+        app: FastAPI 애플리케이션 인스턴스.
+
+    Yields:
+        None. 애플리케이션이 실행 중인 동안 yield 상태를 유지한다.
+    """
     # 시작 시 전역 HTTP 클라이언트 초기화
     await set_global_client()
     try:
@@ -133,6 +143,11 @@ if ENABLE_METRICS:
 
 @app.get("/ping")
 def ping():
+    """컨테이너 생존 여부(Liveness) 확인용 경량 엔드포인트를 제공한다.
+
+    Returns:
+        ``{"ok": True}`` 고정 응답.
+    """
     return {"ok": True}
 
 

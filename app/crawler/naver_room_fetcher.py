@@ -11,7 +11,7 @@ from app.core.name_utils import normalize_name_token
 logger = logging.getLogger(__name__)
 
 class NaverRoomFetcher:
-    """Collect rehearsal-room details via Naver Booking GraphQL API."""
+    """네이버 예약 GraphQL API를 통해 합주실 상세 정보를 수집하는 fetcher."""
     
     GRAPHQL_URL = "https://booking.naver.com/graphql"
     HEADERS = {
@@ -27,6 +27,7 @@ class NaverRoomFetcher:
     STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
 
     def __init__(self):
+        """환경 변수에서 쿠키 헤더 또는 storage state를 로드하여 인증 헤더를 초기화한다."""
         self.headers = dict(self.HEADERS)
 
         cookie_header = os.getenv("NAVER_COOKIE_HEADER")
@@ -46,15 +47,16 @@ class NaverRoomFetcher:
         business_id: str,
         source_hint: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict]:
-        """
-        Fetch full room info for a business ID (business, rooms, nearby subway).
-        
+        """지정 business ID의 전체 합주실 정보(업체·방·인근 지하철)를 수집한다.
+
+        Args:
+            business_id (str): 네이버 예약 business ID.
+            source_hint (Optional[Dict[str, Any]]): business 조회 실패 시
+                fallback 이름으로 사용할 힌트 정보.
+
         Returns:
-            Dict: {
-                "business": {...},
-                "rooms": [...],
-                "subway": {...}
-            } or None if failed
+            Optional[Dict]: ``{"business": {...}, "rooms": [...], "subway": {...}}``
+            형태의 딕셔너리. 실패 시 None.
         """
         async with httpx.AsyncClient() as client:
             try:
@@ -116,6 +118,7 @@ class NaverRoomFetcher:
         source_hint: Optional[Dict[str, Any]] = None,
         rooms: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict:
+        """business 조회 실패 시 source_hint와 방 이름을 활용해 대체 업체 정보를 생성한다."""
         room_name_tokens = {
             normalize_name_token((room or {}).get("name"))
             for room in (rooms or [])
@@ -157,6 +160,7 @@ class NaverRoomFetcher:
 
 
     async def _fetch_business(self, client: httpx.AsyncClient, business_id: str) -> Optional[Dict]:
+        """네이버 business GraphQL 쿼리를 호출하여 업체 기본 정보를 조회한다."""
         query = """
         query business($businessId: String!) {
             business(input: {businessId: $businessId}) {
@@ -209,6 +213,7 @@ class NaverRoomFetcher:
         return business
 
     async def _fetch_biz_items(self, client: httpx.AsyncClient, business_id: str) -> List[Dict]:
+        """네이버 bizItems GraphQL 쿼리를 호출하여 업체의 방(BizItem) 목록을 조회한다."""
         query = """
         query bizItems($input: BizItemsParams) {
           bizItems(input: $input) {
@@ -261,12 +266,13 @@ class NaverRoomFetcher:
         return data.get("data", {}).get("bizItems") or []
 
     async def _fetch_near_subway(
-        self, 
-        client: httpx.AsyncClient, 
-        lat: float, 
-        lng: float, 
+        self,
+        client: httpx.AsyncClient,
+        lat: float,
+        lng: float,
         place_id: Optional[str] = None
     ) -> Optional[Dict]:
+        """좌표 기반으로 인근 지하철역 정보를 조회한다."""
         # Some cases still expect placeId-like input; empty string fallback is acceptable.
         query = """
         query nearSubway($input: NearSubwayInput) {
@@ -310,7 +316,7 @@ class NaverRoomFetcher:
         payload: Dict,
         operation_name: str,
     ) -> httpx.Response:
-        """Post GraphQL payload with rate-limit aware retry."""
+        """GraphQL 페이로드를 전송하고, 429 Rate Limit 및 일시적 오류 시 재시도한다."""
         max_attempts = self.RATE_LIMIT_RETRIES + 1
         last_response: Optional[httpx.Response] = None
 
@@ -360,11 +366,13 @@ class NaverRoomFetcher:
         raise RuntimeError(f"GraphQL {operation_name} request failed without response")
 
     def _compute_backoff_delay(self, attempt: int) -> float:
+        """지수 백오프 + 지터를 적용하여 재시도 대기 시간을 계산한다."""
         backoff = self.RATE_LIMIT_BACKOFF_SEC * (2 ** attempt)
         jitter = random.uniform(0.0, max(self.RATE_LIMIT_JITTER_SEC, 0.0))
         return backoff + jitter
 
     def _load_cookie_header_from_storage_state(self, path: Optional[str]) -> Optional[str]:
+        """storage state JSON 파일에서 네이버 도메인 쿠키를 추출하여 Cookie 헤더 문자열을 생성한다."""
         if not path:
             return None
         if not os.path.exists(path):
@@ -398,6 +406,7 @@ class NaverRoomFetcher:
 
     @staticmethod
     def _is_allowed_naver_cookie_domain(domain: str) -> bool:
+        """주어진 도메인이 네이버 쿠키 허용 도메인인지 판별한다."""
         normalized = str(domain or "").strip().lstrip(".").lower()
         return normalized == "naver.com" or normalized.endswith(".naver.com")
 
@@ -407,6 +416,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     async def main():
+        """네이버 룸 페처 동작을 테스트한다."""
         fetcher = NaverRoomFetcher()
         # Sample business test run
         info = await fetcher.fetch_full_info("522011")

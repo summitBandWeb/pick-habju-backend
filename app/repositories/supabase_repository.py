@@ -13,6 +13,7 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
     """
 
     def __init__(self):
+        """Supabase 클라이언트와 테이블명을 초기화한다."""
         self.supabase = get_supabase_client()
         self.table_name = "favorites"
 

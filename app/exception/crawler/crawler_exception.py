@@ -8,6 +8,7 @@ class CrawlerException(BaseCustomException):
         - 특정 크롤러(Naver, Groove 등)에 종속되지 않는 공통적인 크롤링 오류를 처리합니다.
     """
     def __init__(self, message: str = "크롤링 중 오류가 발생했습니다."):
+        """에러 코드와 메시지를 초기화한다."""
         super().__init__(
             message=message,
             error_code=ErrorCode.CRAWLER_EXECUTION_FAILED,
@@ -24,6 +25,7 @@ class CrawlerTimeoutError(BaseCustomException):
         - 이는 504 Gateway Timeout으로 매핑되어 적절한 HTTP 응답을 제공합니다.
     """
     def __init__(self, message: str = "크롤링 타임아웃이 발생했습니다."):
+        """에러 코드와 메시지를 초기화한다."""
         super().__init__(
             message=message,
             error_code=ErrorCode.CRAWLER_TIMEOUT,
@@ -39,6 +41,7 @@ class CrawlerBlockedError(BaseCustomException):
         - 403 Forbidden으로 응답하여 클라이언트가 접근 권한이 없음을 알립니다.
     """
     def __init__(self, message: str = "봇 감지로 인해 접근이 차단되었습니다."):
+        """에러 코드와 메시지를 초기화한다."""
         super().__init__(
             message=message,
             error_code=ErrorCode.CRAWLER_AUTH_FAILED,

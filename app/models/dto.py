@@ -170,6 +170,17 @@ class AvailabilityRequest(BaseModel):
     @field_validator("start_hour")
     @classmethod
     def validate_start_time_format(cls, value: str) -> str:
+        """시작 시간 형식(HH:MM, 00:00~23:59)을 검증한다.
+
+        Args:
+            value: 시작 시간 문자열.
+
+        Returns:
+            str: 검증을 통과한 시작 시간 문자열.
+
+        Raises:
+            ValueError: HH:MM 형식에 맞지 않을 때 발생.
+        """
         if not re.fullmatch(r"^([01]\d|2[0-3]):([0-5]\d)$", value):
             raise ValueError("시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59)")
         return value
@@ -177,6 +188,17 @@ class AvailabilityRequest(BaseModel):
     @field_validator("end_hour")
     @classmethod
     def validate_end_time_format(cls, value: str) -> str:
+        """종료 시간 형식(HH:MM, 00:00~24:00)을 검증한다.
+
+        Args:
+            value: 종료 시간 문자열.
+
+        Returns:
+            str: 검증을 통과한 종료 시간 문자열.
+
+        Raises:
+            ValueError: HH:MM 형식에 맞지 않을 때 발생.
+        """
         if not re.fullmatch(r"^(([01]\d|2[0-3]):([0-5]\d)|24:00)$", value):
             raise ValueError("종료 시간 형식이 올바르지 않습니다. (HH:MM, 00:00~24:00)")
         return value

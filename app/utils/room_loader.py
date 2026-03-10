@@ -14,11 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 def _is_priority_area_filter_enabled() -> bool:
+    """서비스 지역 우선 필터 활성화 여부를 환경변수에서 판단한다."""
     raw = (os.getenv("PRIORITY_AREA_ONLY_FILTER", "true") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
 def _resolve_priority_area_business_ids() -> List[str]:
+    """서비스 지역 필터에 사용할 business_id 목록을 결정한다."""
     env_raw = (os.getenv("PRIORITY_AREA_BUSINESS_IDS") or "").strip()
     if env_raw:
         return [v.strip() for v in env_raw.split(",") if v and v.strip()]
