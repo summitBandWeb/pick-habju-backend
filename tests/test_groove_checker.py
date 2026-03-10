@@ -101,16 +101,19 @@ async def test_availability_within_84_days_boundary(sample_groove_rooms):
 @pytest.mark.asyncio
 async def test_availability_at_and_after_84_days_boundary(sample_groove_rooms):
     """
-    [경계값] 84일 후: 모든 상태가 'unknown'으로 반환되는지 테스트합니다. (네트워크 요청 없음)
+    [경계값] 84일 후: HTTP 요청 없이 즉시 예약 불가(False)로 반환되는지 테스트합니다.
+
+    Rationale:
+        그루브합주실 예약 폼이 84일 이내만 지원하므로, 초과한 날짜는 예약 시스템이
+        지원하지 않는 것으로 간주하여 예약 불가(False) 처리함.
     """
     target_date = (datetime.now() + timedelta(days=84)).strftime("%Y-%m-%d")
     hour_slots = ["20:00", "21:00"]
     crawler = GrooveCrawler()
 
     results = await crawler.check_availability(target_date, hour_slots, sample_groove_rooms)
-    print(results)
     # 검증
     result = results[0]
-    assert result.available == "unknown"
+    assert result.available is False
     assert result.available_slots["20:00"] is False
     assert result.available_slots["21:00"] is False

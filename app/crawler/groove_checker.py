@@ -22,17 +22,18 @@ class GrooveCrawler(BaseCrawler):
 
         # 2. 오늘로부터 84일 이후인지 확인
         if (target_date - today).days >= self.RESERVATION_LIMIT_DAYS:
-            # 즉시 'unknown' 결과를 반환
-            unknown_results = []
-            for room in target_rooms:
-                slots = {hour_str: False for hour_str in hour_slots}
-                result = RoomAvailability(
+            # Rationale:
+            #   그루브합주실 예약 폼이 최대 84일 이내 날짜만 지원함.
+            #   초과 날짜는 예약 시스템 자체가 해당 날짜를 지원하지 않으므로 예약 불가(False)로 처리.
+            #   standby_days(오픈 대기) 개념과 다름 — 이는 시스템 한계로 인한 완전 불가임.
+            return [
+                RoomAvailability(
                     room_detail=room,
-                    available="unknown",
-                    available_slots=slots,
+                    available=False,
+                    available_slots={hour_str: False for hour_str in hour_slots},
                 )
-                unknown_results.append(result)
-            return unknown_results
+                for room in target_rooms
+            ]
 
         # 3. 날짜가 유효한 범위 내에 있으면 데이터 가져오기 진행
         try:
