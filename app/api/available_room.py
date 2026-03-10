@@ -58,7 +58,6 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                                             "extra_charge": 2000,
                                             "min_capacity": 1,
                                             "min_hours": 1,
-                                            "standby_days": 1,
                                             "policy_warnings": [
                                                 {
                                                     "type": "call_required_today",

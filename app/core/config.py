@@ -102,6 +102,16 @@ if HEALTH_CHECK_TIMEOUT <= 0:
 
 # CORS 허용 오리진 (환경변수 기반)
 def _parse_origins(value: str | None) -> list[str]:
+    """구분자로 연결된 오리진 문자열을 파싱하여 리스트로 변환한다.
+
+    쉼표, 줄바꿈, 세미콜론을 구분자로 인식하며, 빈 항목은 제거한다.
+
+    Args:
+        value: 구분자로 연결된 오리진 문자열. None 또는 빈 문자열이면 빈 리스트를 반환한다.
+
+    Returns:
+        파싱된 오리진 URL 문자열 리스트.
+    """
     if not value:
         return []
     normalized = value.replace("\n", ",").replace(";", ",")

@@ -48,9 +48,9 @@ class RoomDetail(BaseModel):
     # Branch 정보 확장
     lat: Optional[float] = Field(None, description="Branch latitude")
     lng: Optional[float] = Field(None, description="Branch longitude")
-    phoneNumber: Optional[str] = Field(None, description="Branch phone number (if null, use chat)")
-    displayName: Optional[str] = Field(None, description="Branch display name")
-    openWaitRule: Dict[str, Any] = Field(default_factory=dict, description="Branch open wait rule (JSON)")
+    phoneNumber: Optional[str] = Field(None, alias="phone_number", description="Branch phone number (if null, use chat)")
+    displayName: Optional[str] = Field(None, alias="display_name", description="Branch display name")
+    openWaitRule: Dict[str, Any] = Field(default_factory=dict, alias="open_wait_rule", description="Branch open wait rule (JSON)")
     standbyDays: Optional[int] = Field(None, alias="standby_days", description="오픈대기일수 (현재일 기준 N일 이후 오픈 대기 여부 판단용)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
@@ -170,6 +170,17 @@ class AvailabilityRequest(BaseModel):
     @field_validator("start_hour")
     @classmethod
     def validate_start_time_format(cls, value: str) -> str:
+        """시작 시간 형식(HH:MM, 00:00~23:59)을 검증한다.
+
+        Args:
+            value: 시작 시간 문자열.
+
+        Returns:
+            str: 검증을 통과한 시작 시간 문자열.
+
+        Raises:
+            ValueError: HH:MM 형식에 맞지 않을 때 발생.
+        """
         if not re.fullmatch(r"^([01]\d|2[0-3]):([0-5]\d)$", value):
             raise ValueError("시간 형식이 올바르지 않습니다. (HH:MM, 00:00~23:59)")
         return value
@@ -177,6 +188,17 @@ class AvailabilityRequest(BaseModel):
     @field_validator("end_hour")
     @classmethod
     def validate_end_time_format(cls, value: str) -> str:
+        """종료 시간 형식(HH:MM, 00:00~24:00)을 검증한다.
+
+        Args:
+            value: 종료 시간 문자열.
+
+        Returns:
+            str: 검증을 통과한 종료 시간 문자열.
+
+        Raises:
+            ValueError: HH:MM 형식에 맞지 않을 때 발생.
+        """
         if not re.fullmatch(r"^(([01]\d|2[0-3]):([0-5]\d)|24:00)$", value):
             raise ValueError("종료 시간 형식이 올바르지 않습니다. (HH:MM, 00:00~24:00)")
         return value
@@ -249,45 +271,14 @@ class PolicyWarning(BaseModel):
     type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
     message: str = Field(..., description="User-friendly warning message")
 
-# Room Info (Response용 평탄화된 모델)
-class RoomInfo(BaseModel):
-    """조건에 맞는 개별 룸 정보"""
-    name: str
-    branch: str
-    business_id: str
-    biz_item_id: str
-    imageUrls: List[str]
-    maxCapacity: int
-    recommendCapacity: int
-    recommendCapacityRange: Optional[List[int]] = Field(
-        default=None,
-        description="Recommended capacity range [min, max]",
-    )
-    recommendCapacityMin: int = Field(..., description="Calculated min recommend capacity")
-    recommendCapacityMax: int = Field(..., description="Calculated max recommend capacity")
-    
-    baseCapacity: Optional[int] = None
-    extraCharge: Optional[int] = None
-    pricePerHour: int
-    
-    # v2.0.0 추가 필드
-    minCapacity: int
-    minHours: int
-    maxHours: Optional[int] = None
-    phoneNumber: Optional[str] = None
-    displayName: Optional[str] = None
-    standbyDays: Optional[int] = None
 
-    # [v2.0.0] 계산된 정보
-    estimatedPrice: Optional[int] = None
-    policyWarnings: List[PolicyWarning] = Field(default_factory=list)
-    
+
 # Crawler Result DTO (Internal Logic Use Only)
 class RoomAvailability(BaseModel):
     """Availability information for a single room (Internal Use)"""
     room_detail: RoomDetail = Field(..., description="Room detail information")
-    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot (false for standby)")
+    available: bool = Field(..., description="Availability status (true: Available, false: Unavailable or Partial)")
+    available_slots: Dict[str, bool] = Field(..., description="Availability by time slot")
     
     # [v2.0.0] 추가 정보
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
@@ -299,8 +290,8 @@ class RoomResponse(BaseModel):
     biz_item_id: str
     name: str
     price_per_hour: int
-    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+    available: bool = Field(..., description="Availability status (true: Available, false: Unavailable or Partial)")
+    available_slots: Dict[str, bool] = Field(..., description="Availability by time slot")
     estimated_price: Optional[int] = None
     image_urls: List[str]
     max_capacity: int
@@ -311,7 +302,6 @@ class RoomResponse(BaseModel):
     min_capacity: int
     min_hours: int
     max_hours: Optional[int] = None
-    standby_days: Optional[int] = None
     policy_warnings: List[PolicyWarning] = Field(default_factory=list)
 
 class BranchResponse(BaseModel):

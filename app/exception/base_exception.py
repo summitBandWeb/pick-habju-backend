@@ -35,6 +35,7 @@ class BaseCustomException(Exception):
     status_code: int = 500
 
     def __init__(self, message: str = None, error_code: ErrorCode = None, status_code: int = None):
+        """에러 코드, 메시지, HTTP 상태 코드를 초기화한다."""
         if message:
             self.message = message
         if error_code:

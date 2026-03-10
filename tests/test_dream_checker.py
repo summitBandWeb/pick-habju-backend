@@ -108,15 +108,20 @@ async def test_dream_partial_availability(sample_dream_rooms):
 
 @pytest.mark.asyncio
 async def test_dream_beyond_date_limit(sample_dream_rooms):
-    """예약 한도(121일) 초과 시 모든 상태가 'unknown'으로 반환되는지 검증"""
+    """예약 한도(121일) 초과 시 HTTP 요청 없이 즉시 예약 불가(False)로 반환되는지 검증
+
+    Rationale:
+        드림합주실 예약 폼이 121일 이내만 지원하므로, 초과한 날짜는 예약 시스템이
+        지원하지 않는 것으로 간주하여 예약 불가(False) 처리함.
+    """
     date = (datetime.now() + timedelta(days=121)).strftime("%Y-%m-%d")
     hour_slots = ["13:00", "14:00"]
     crawler = DreamCrawler()
 
-    # NOTE: 날짜 한도 초과 시 HTTP 요청 없이 즉시 unknown 반환
+    # NOTE: 날짜 한도 초과 시 HTTP 요청 없이 즉시 False 반환
     result = await crawler.check_availability(date, hour_slots, sample_dream_rooms[:1])
 
     room_result = result[0]
-    assert room_result.available == "unknown"
+    assert room_result.available is False
     assert room_result.available_slots["13:00"] is False
     assert room_result.available_slots["14:00"] is False

@@ -52,16 +52,28 @@ class DreamCrawler(BaseCrawler):
         target_date = datetime.strptime(date, '%Y-%m-%d').date()
 
         if (target_date - today).days >= self.DATE_LIMIT_DAYS:
+            # Rationale:
+            #   드림합주실 예약 폼이 최대 121일 이내 날짜만 지원함.
+            #   초과 날짜는 예약 시스템 자체가 해당 날짜를 제공하지 않으므로 예약 불가(False)로 처리.
+            #   standby_days(오픈 대기) 개념과 다름 — 이는 시스템 한계로 인한 완전 불가임.
             return [
                 RoomAvailability(
                     room_detail=room,
-                    available="unknown",
+                    available=False,
                     available_slots={hour_str: False for hour_str in hour_slots},
                 )
                 for room in target_rooms
             ]
 
         async def safe_fetch(room: RoomDetail) -> RoomResult:
+            """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
+
+            Args:
+                room (RoomDetail): 조회할 방 정보.
+
+            Returns:
+                RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
+            """
             try:
                 return await self._fetch_dream_availability_room(date, hour_slots, room)
             except BaseCustomException as e:
@@ -73,6 +85,7 @@ class DreamCrawler(BaseCrawler):
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
     async def _fetch_dream_availability_room(self, date: str, hour_slots: List[str], room: RoomDetail) -> RoomAvailability:
+        """드림 합주실 자체 예약 폼에 POST 요청하여 단일 방의 시간대별 예약 가능 여부를 조회한다."""
         data = {
             'rm_ix': room.biz_item_id,
             'sch_date': date

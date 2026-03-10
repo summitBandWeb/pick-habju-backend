@@ -41,6 +41,18 @@ class TraceIDMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """요청에 Trace ID를 부여하고 응답 헤더에 포함하여 반환한다.
+
+        클라이언트가 보낸 X-Trace-ID 헤더가 유효한 UUID 형식이면 그대로 사용하고,
+        없거나 형식이 잘못된 경우 새로운 UUIDv4를 생성한다.
+
+        Args:
+            request: 수신된 HTTP Request 객체.
+            call_next: 다음 미들웨어 또는 라우트 핸들러 호출 함수.
+
+        Returns:
+            X-Trace-ID 헤더가 포함된 Response 객체.
+        """
         # 1. 클라이언트가 보낸 Trace ID 확인
         trace_id = request.headers.get("X-Trace-ID")
 
@@ -80,6 +92,15 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """/api 경로 응답에 캐시 방지 헤더를 추가한다.
+
+        Args:
+            request: 수신된 HTTP Request 객체.
+            call_next: 다음 미들웨어 또는 라우트 핸들러 호출 함수.
+
+        Returns:
+            Cache-Control 헤더가 설정된 Response 객체.
+        """
         response = await call_next(request)
 
         # /api 경로에 대해서만 캐시 방지 헤더 추가
@@ -105,6 +126,18 @@ class RealIPMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """실제 클라이언트 IP를 추출하고 요청/응답 정보를 로깅한다.
+
+        프록시 헤더에서 클라이언트 IP를 식별한 뒤 request.state에 저장하며,
+        응답 상태 코드와 레이턴시를 포함한 구조화된 로그를 남긴다.
+
+        Args:
+            request: 수신된 HTTP Request 객체.
+            call_next: 다음 미들웨어 또는 라우트 핸들러 호출 함수.
+
+        Returns:
+            다음 핸들러가 반환한 Response 객체.
+        """
         # 실제 클라이언트 IP 추출
         real_ip = self._get_real_ip(request)
 
@@ -213,6 +246,17 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        """HTTP 요청의 상태 코드와 소요 시간을 Prometheus 메트릭으로 기록한다.
+
+        메트릭이 비활성화되었거나 /metrics 경로 자체에 대한 요청은 수집을 건너뛴다.
+
+        Args:
+            request: 수신된 HTTP Request 객체.
+            call_next: 다음 미들웨어 또는 라우트 핸들러 호출 함수.
+
+        Returns:
+            다음 핸들러가 반환한 Response 객체.
+        """
         if not ENABLE_METRICS or request.url.path.startswith("/metrics"):
             return await call_next(request)
 

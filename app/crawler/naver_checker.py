@@ -12,8 +12,36 @@ from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
 
 class NaverCrawler(BaseCrawler):
+    """네이버 예약 GraphQL API를 통해 합주실 예약 가능 여부를 확인하는 크롤러.
+
+    네이버 예약(booking.naver.com)의 schedule GraphQL 엔드포인트를 호출하여
+    시간대별 재고(unitStock)와 예약 수(unitBookingCount)를 비교해 가용 여부를 판단한다.
+    """
+
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
+        """네이버 예약 API로 특정 날짜와 시간대에 예약 가능한 방들을 조회한다.
+
+        각 방을 asyncio.gather로 병렬 조회하며, 개별 실패는 Exception 객체로
+        안전하게 포획하여 나머지 결과에 영향을 주지 않도록 한다.
+
+        Args:
+            date (str): 조회할 날짜 (예: '2026-05-20').
+            hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00']).
+            target_rooms (List[RoomDetail]): 조회 대상 방 리스트.
+
+        Returns:
+            List[RoomResult]: 방별 RoomAvailability 또는 에러 Exception 객체 배열.
+        """
+
         async def safe_fetch(room: RoomDetail) -> RoomResult:
+            """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
+
+            Args:
+                room (RoomDetail): 조회할 방 정보.
+
+            Returns:
+                RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
+            """
             try:
                 return await self._fetch_naver_availability_room(date, hour_slots, room)
             except BaseCustomException as e:
@@ -25,6 +53,7 @@ class NaverCrawler(BaseCrawler):
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
     async def _fetch_naver_availability_room(self, date: str, hour_slots: List[str], room: RoomDetail) -> RoomAvailability:
+        """네이버 schedule GraphQL API를 호출하여 단일 방의 시간대별 예약 가능 여부를 조회한다."""
         url = "https://booking.naver.com/graphql?opName=schedule"
         start_dt = f"{date}T00:00:00"
         end_dt = f"{date}T23:59:59"

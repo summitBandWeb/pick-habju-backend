@@ -42,6 +42,14 @@ class TimeBand(BaseModel):
 
     @model_validator(mode="after")
     def validate_end_hour(self):
+        """end_hour가 start_hour보다 큰지 검증한다.
+
+        Returns:
+            TimeBand: 검증을 통과한 인스턴스 자신.
+
+        Raises:
+            ValueError: end_hour가 start_hour 이하일 때 발생.
+        """
         if self.end_hour <= self.start_hour:
             raise ValueError("end_hour must be greater than start_hour")
         return self
