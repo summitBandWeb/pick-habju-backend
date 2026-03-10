@@ -48,9 +48,9 @@ class RoomDetail(BaseModel):
     # Branch 정보 확장
     lat: Optional[float] = Field(None, description="Branch latitude")
     lng: Optional[float] = Field(None, description="Branch longitude")
-    phoneNumber: Optional[str] = Field(None, description="Branch phone number (if null, use chat)")
-    displayName: Optional[str] = Field(None, description="Branch display name")
-    openWaitRule: Dict[str, Any] = Field(default_factory=dict, description="Branch open wait rule (JSON)")
+    phoneNumber: Optional[str] = Field(None, alias="phone_number", description="Branch phone number (if null, use chat)")
+    displayName: Optional[str] = Field(None, alias="display_name", description="Branch display name")
+    openWaitRule: Dict[str, Any] = Field(default_factory=dict, alias="open_wait_rule", description="Branch open wait rule (JSON)")
     standbyDays: Optional[int] = Field(None, alias="standby_days", description="오픈대기일수 (현재일 기준 N일 이후 오픈 대기 여부 판단용)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
@@ -249,39 +249,8 @@ class PolicyWarning(BaseModel):
     type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
     message: str = Field(..., description="User-friendly warning message")
 
-# Room Info (Response용 평탄화된 모델)
-class RoomInfo(BaseModel):
-    """조건에 맞는 개별 룸 정보"""
-    name: str
-    branch: str
-    business_id: str
-    biz_item_id: str
-    imageUrls: List[str]
-    maxCapacity: int
-    recommendCapacity: int
-    recommendCapacityRange: Optional[List[int]] = Field(
-        default=None,
-        description="Recommended capacity range [min, max]",
-    )
-    recommendCapacityMin: int = Field(..., description="Calculated min recommend capacity")
-    recommendCapacityMax: int = Field(..., description="Calculated max recommend capacity")
-    
-    baseCapacity: Optional[int] = None
-    extraCharge: Optional[int] = None
-    pricePerHour: int
-    
-    # v2.0.0 추가 필드
-    minCapacity: int
-    minHours: int
-    maxHours: Optional[int] = None
-    phoneNumber: Optional[str] = None
-    displayName: Optional[str] = None
-    standbyDays: Optional[int] = None
 
-    # [v2.0.0] 계산된 정보
-    estimatedPrice: Optional[int] = None
-    policyWarnings: List[PolicyWarning] = Field(default_factory=list)
-    
+
 # Crawler Result DTO (Internal Logic Use Only)
 class RoomAvailability(BaseModel):
     """Availability information for a single room (Internal Use)"""

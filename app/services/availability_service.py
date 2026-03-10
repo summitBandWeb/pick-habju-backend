@@ -513,6 +513,16 @@ class AvailabilityService:
             if b.available_count > 0 or b.min_price_partial is not None
         ]
 
+        excluded = [
+            b.business_id for b in branch_dict.values()
+            if not (b.available_count > 0 or b.min_price_partial is not None)
+        ]
+        if excluded:
+            logger.info(
+                "[branch_filter] %d branch(es) excluded (no bookable rooms): business_ids=%s",
+                len(excluded), excluded,
+            )
+
         return AvailabilityResponse(
             date=request.date,
             start_hour=request.start_hour,
