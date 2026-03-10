@@ -19,7 +19,7 @@ env:
   FUNCTION_NAME: health-check-reporter-prod
   FUNCTION_SOURCE: ./cloud-functions/health-check-reporter
   CLOUD_RUN_SERVICE: prod-service
-  APP_ENV: production
+  APP_ENV: prod
 
 jobs:
   deploy:
@@ -69,6 +69,7 @@ jobs:
       # -----------------------------------------------------------------
       - name: Discord 배포 성공 알림
         if: success()
+        continue-on-error: true
         run: |
           curl -H "Content-Type: application/json" -d '{
             "content": "⚡ **[Cloud Function] Prod 환경 배포 성공!**",
@@ -89,6 +90,7 @@ jobs:
 
       - name: Discord 배포 실패 알림
         if: failure()
+        continue-on-error: true
         run: |
           curl -H "Content-Type: application/json" -d '{
             "content": "🚨 **[Cloud Function] Prod 환경 배포 실패!**",
