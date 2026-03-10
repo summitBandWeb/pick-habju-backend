@@ -182,8 +182,32 @@ class RoomParserService:
             "can_reserve_one_hour": can_reserve_1h,
         }
 
-    @staticmethod
-    def _clean_room_name(name: str) -> str:
+    # 시간대 구분 키워드: 태그에서 이 키워드가 감지되면 프로모 제거 후 레이블로 보존
+    _TIME_SLOT_KEYWORDS = {
+        "평일 낮": "평일 낮",
+        "평일낮": "평일 낮",
+        "평일 오전": "평일 오전",
+        "평일 야간": "평일 야간",
+        "평일": "평일",
+        "주말": "주말",
+        "공휴일": "공휴일",
+        "주말/공휴일": "주말/공휴일",
+        "심야": "심야",
+        "야간": "야간",
+        "주간": "주간",
+    }
+
+    @classmethod
+    def _extract_time_slot_label(cls, tag_text: str) -> Optional[str]:
+        """태그 텍스트에서 시간대 레이블을 추출한다. 긴 키워드부터 매칭."""
+        lowered = tag_text.lower()
+        for keyword, label in sorted(cls._TIME_SLOT_KEYWORDS.items(), key=lambda x: -len(x[0])):
+            if keyword in lowered:
+                return label
+        return None
+
+    @classmethod
+    def _clean_room_name(cls, name: str) -> str:
         """Normalize room display name by stripping promo/policy noise."""
         clean = re.sub(r"\s+", " ", (name or "")).strip()
         if not clean:
@@ -208,6 +232,8 @@ class RoomParserService:
         clean = re.sub(r"\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)", " ", clean)
 
         # Remove leading bracket labels when they look like promo/operation notes.
+        # 시간대 키워드가 포함된 태그는 레이블을 추출해서 뒤에 붙인다.
+        time_slot_label: Optional[str] = None
         promo_markers = (
             "특가",
             "할인",
@@ -232,6 +258,8 @@ class RoomParserService:
                 break
             tag = m.group(1).strip().lower()
             if any(marker in tag for marker in promo_markers):
+                if time_slot_label is None:
+                    time_slot_label = cls._extract_time_slot_label(tag)
                 clean = clean[m.end():].strip()
                 continue
             break
@@ -258,7 +286,13 @@ class RoomParserService:
             clean = clean.replace(")", " ")
 
         clean = re.sub(r"\s+", " ", clean).strip(" -_/")
-        return clean or (name or "").strip()
+        clean = clean or (name or "").strip()
+
+        # 시간대 레이블이 추출되었으면 이름 뒤에 붙인다.
+        if time_slot_label:
+            clean = f"{clean} ({time_slot_label})"
+
+        return clean
 
     def _extract_capacity_from_text(
         self, text: str

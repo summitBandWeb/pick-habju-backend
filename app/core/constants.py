@@ -2,22 +2,33 @@
 애플리케이션 전역에서 사용되는 상수를 정의합니다.
 """
 
-# 합주실 최저 시간당 가격 임계치 (원)
-# Rationale:
-#   크롤러 LLM 파싱 과정에서 드럼스틱·기타 등 악세사리 대여 예약 페이지가
-#   개별 합주실로 오수집되어 price_per_hour가 비정상적으로 낮게 파싱되는 케이스가 발생.
-#   합주실 시장 실현 최저가 기준(~10,000원)보다 충분히 낮으나 방어 가능한 5,000원을 임계치로 설정하여
-#   서버 레벨 방어 필터링을 수행함. 향후 정책 변경 시 이 상수 하나만 수정하면 됨.
-MAX_EXCLUDED_PRICE_PER_HOUR: int = 5000
+import math
+from typing import Dict, List, Tuple
 
-# 우선 수집 대상 6개 역세권 (전역 기본 검색 범위)
+# 서비스 지역 지하철역 좌표 (위도, 경도)
+SERVICE_AREA_STATIONS: Dict[str, Tuple[float, float]] = {
+    "이수역": (37.4856, 126.9823),
+    "사당역": (37.4766, 126.9816),
+    "홍대입구역": (37.5571, 126.9236),
+    "합정역": (37.5496, 126.9139),
+    "신촌역": (37.5550, 126.9366),
+    "상도역": (37.5028, 126.9532),
+    "흑석역": (37.5084, 126.9631),
+}
+
+# 서비스 지역 반경 (km)
+SERVICE_AREA_RADIUS_KM = 2.0
+
+# 우선 수집 대상 역세권 검색 쿼리
 PRIORITY_AREA_QUERIES = [
     "이수역 합주실",
-    "상도역 합주실",
     "사당역 합주실",
+    "사당역 음악연습실",
     "흑석역 합주실",
+    "상도역 합주실",
     "홍대입구역 합주실",
     "합정역 합주실",
+    "신촌역 합주실",
 ]
 
 # 서울 25개 자치구
@@ -36,52 +47,25 @@ MAJOR_CITIES = [
 ]
 
 
-# API ?? ???: 2026-03-03 ?? ?? 6? ?? ?? business_id allowlist
-# - ??? ?? business_id(??)
-# - ??? ??? ???(sadang, dream_sadang)
-PRIORITY_AREA_BUSINESS_IDS = [
-    "sadang",
-    "dream_sadang",
-    "984268",
-    "917236",
-    "1132767",
-    "838294",
-    "706924",
-    "1374245",
-    "1602278",
-    "773046",
-    "522011",
-    "1593535",
-    "1496947",
-    "691007",
-    "247786",
-    "1384809",
-    "570236",
-    "1061592",
-    "446860",
-    "1062791",
-    "1410283",
-    "1033058",
-    "1064404",
-    "95732",
-    "26276",
-    "890006",
-    "1314022",
-    "329314",
-    "331813",
-    "1385421",
-    "1574159",
-    "70462",
-    "1085326",
-    "1062814",
-    "1240775",
-    "1482133",
-    "1582546",
-    "152010",
-    "1415457",
-    "844479",
-    "1182602",
-    "706413",
-    "759837",
-    "1500479",
-]
+def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """두 좌표 간 거리를 km 단위로 반환한다 (Haversine 공식)."""
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def is_in_service_area(
+    lat: float,
+    lng: float,
+    radius_km: float = SERVICE_AREA_RADIUS_KM,
+) -> bool:
+    """좌표가 서비스 지역(역 기준 반경) 내에 있는지 판별한다."""
+    for _, (slat, slng) in SERVICE_AREA_STATIONS.items():
+        if haversine_km(lat, lng, slat, slng) <= radius_km:
+            return True
+    return False
