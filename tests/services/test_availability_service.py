@@ -369,8 +369,9 @@ class TestAvailabilityServiceFlow:
 
     @pytest.mark.asyncio
     async def test_full_flow_partial_availability_with_error(self, service, mock_crawler, mock_pricing_service):
-        """is_partial 상태일 때 요금 계산(calculate_total_price)에서 예외 발생 시, 
-        estimated_price가 None이 되고 min_price_partial 갱신에서 예외가 발생하지 않는지 검증"""
+        """is_partial 상태일 때 요금 계산(calculate_total_price)에서 예외 발생 시,
+        예외 없이 graceful하게 처리되고 min_price_partial이 갱신되지 않으므로
+        지점이 응답에서 제외되어야 함을 검증."""
         # Given
         req = AvailabilityRequest(
             date=FUTURE_DATE, capacity=3, start_hour="14:00", end_hour="16:00",
@@ -402,20 +403,15 @@ class TestAvailabilityServiceFlow:
                 # Exception should be caught and not thrown
                 response = await service.check_availability(req)
 
-            # Then
+            # Then: 예외가 발생해도 서버 에러는 없어야 함
             assert mock_calc.call_count == 2
-            
-            assert len(response.branches) == 1
-            branch = response.branches[0]
-            assert len(branch.rooms) == 1
-            res = branch.rooms[0]
 
-            assert res.name == "MockRoom"
-            assert res.available is False
-            assert res.estimated_price is None
-            
-            # min_price_partial should be left as None without error
-            assert branch.min_price_partial is None
+            # is_partial이지만 가격 계산 실패(estimated_price=None) → min_price_partial=None
+            # → 즉시/부분 가능 기준 모두 충족하지 못해 지점이 응답에서 제외됨
+            assert len(response.branches) == 0, (
+                "가격 계산 실패로 min_price_partial이 None인 경우, "
+                "부분 가능 지점도 응답에서 제외되어야 함"
+            )
 
 
     @pytest.mark.asyncio
@@ -611,7 +607,7 @@ class TestAvailabilityServiceFlow:
         )
         avail_2 = RoomAvailability(room_detail=room2, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000)
 
-        # 3. days_diff(7) < standbyDays(10) 인 방 -> 크롤링 대상 제외, available="unknown"
+        # 3. days_diff(7) < standbyDays(10) 인 방 -> 크롤링 대상 및 응답 모두 제외
         room3 = RoomDetail(
             name="Room3", branch="Branch", business_id="b1", biz_item_id="r3",
             pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
@@ -626,16 +622,134 @@ class TestAvailabilityServiceFlow:
             mock_db.return_value = [room1, room2, room3]
             response = await service.check_availability(req)
 
+        # standby(room3)는 응답에서 완전 제외되므로 2개 룸만 포함
         assert len(response.branches) == 1
         branch = response.branches[0]
-        assert len(branch.rooms) == 3
+        assert len(branch.rooms) == 2
 
-        r1 = next(r for r in branch.rooms if r.biz_item_id == "r1")
-        assert r1.available is True
-        
-        r2 = next(r for r in branch.rooms if r.biz_item_id == "r2")
-        assert r2.available is True
+        biz_ids_in_response = {r.biz_item_id for r in branch.rooms}
+        assert "r1" in biz_ids_in_response
+        assert "r2" in biz_ids_in_response
+        assert "r3" not in biz_ids_in_response, "standby 룸은 응답에서 완전 제외되어야 함"
 
-        r3 = next(r for r in branch.rooms if r.biz_item_id == "r3")
-        assert r3.available == "unknown"
-        assert r3.standby_days == 10
+
+class TestBranchFiltering:
+    """available_count == 0 지점 응답 제외 검증."""
+
+    @pytest.fixture
+    def service(self):
+        svc = AvailabilityService({})
+        svc.pricing_service = MagicMock()
+        return svc
+
+    @pytest.fixture
+    def mock_crawler(self):
+        return AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_branch_excluded_when_all_rooms_unavailable(self, service, mock_crawler):
+        """모든 룸이 예약 불가(available=False)인 지점은 응답 branches에서 제외되어야 함."""
+        service.crawlers_map = {"naver": mock_crawler}
+
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=1, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room = RoomDetail(
+            name="Room", branch="Branch", business_id="bid1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        avail = RoomAvailability(
+            room_detail=room, available=False,
+            available_slots={"14:00": False, "15:00": False}
+        )
+        mock_crawler.check_availability.return_value = [avail]
+
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room]
+            response = await service.check_availability(req)
+
+        assert len(response.branches) == 0, "모든 룸이 예약 불가이면 지점 자체가 응답에서 제외되어야 함"
+
+    @pytest.mark.asyncio
+    async def test_branch_included_when_at_least_one_room_available(self, service, mock_crawler):
+        """한 지점에서 하나라도 예약 가능한 룸이 있으면 지점이 응답에 포함되어야 함."""
+        service.crawlers_map = {"naver": mock_crawler}
+
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=1, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room_ok = RoomDetail(
+            name="RoomOK", branch="Branch", business_id="bid1", biz_item_id="r1",
+            pricePerHour=15000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        room_no = RoomDetail(
+            name="RoomNo", branch="Branch", business_id="bid1", biz_item_id="r2",
+            pricePerHour=15000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        avail_ok = RoomAvailability(
+            room_detail=room_ok, available=True,
+            available_slots={"14:00": True, "15:00": True}, estimated_price=30000
+        )
+        avail_no = RoomAvailability(
+            room_detail=room_no, available=False,
+            available_slots={"14:00": False, "15:00": False}
+        )
+        mock_crawler.check_availability.return_value = [avail_ok, avail_no]
+
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room_ok, room_no]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room_ok, room_no]
+            response = await service.check_availability(req)
+
+        assert len(response.branches) == 1, "예약 가능 룸이 있는 지점은 포함되어야 함"
+        assert response.branches[0].available_count == 1
+
+    @pytest.mark.asyncio
+    async def test_available_count_does_not_include_partial(self, service, mock_crawler):
+        """부분 가능(is_partial) 룸은 available=False지만 응답에는 포함되고 available_count에는 미집계."""
+        service.crawlers_map = {"naver": mock_crawler}
+
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=1, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room_full = RoomDetail(
+            name="Full", branch="Branch", business_id="bid1", biz_item_id="r1",
+            pricePerHour=15000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        room_partial = RoomDetail(
+            name="Partial", branch="Branch", business_id="bid1", biz_item_id="r2",
+            pricePerHour=15000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        avail_full = RoomAvailability(
+            room_detail=room_full, available=True,
+            available_slots={"14:00": True, "15:00": True}, estimated_price=30000
+        )
+        # available=False이지만 일부 슬롯이 True → is_partial
+        avail_partial = RoomAvailability(
+            room_detail=room_partial, available=False,
+            available_slots={"14:00": True, "15:00": False}, estimated_price=15000
+        )
+        mock_crawler.check_availability.return_value = [avail_full, avail_partial]
+
+        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
+             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room_full, room_partial]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            mock_db.return_value = [room_full, room_partial]
+            response = await service.check_availability(req)
+
+        assert len(response.branches) == 1
+        # 전체 예약 가능(r1)만 available_count에 집계, 부분 가능(r2)은 미집계
+        assert response.branches[0].available_count == 1
+        room_ids = {r.biz_item_id for r in response.branches[0].rooms}
+        assert "r2" in room_ids, "부분 가능 룸은 응답에는 포함되어야 함"

@@ -305,22 +305,23 @@ class AvailabilityService:
         
         validate_availability_request(request.date, hour_slots, target_rooms)
 
-        # 2.5. 오픈 대기 상태 검증 (standby_days 기준 예약 불가능한 방 미리 걸러내기)
+        # 2.5. 오픈 대기 상태 검증 (standby_days 기준 예약 불가능한 방 선제 제외)
+        # Rationale:
+        #   UI가 지도 마커 방식으로 변경되면서 'unknown(오픈 대기)' 상태 마커를 클릭하면
+        #   예약 대기 모달이 뜨는 UX 문제가 발생. 즉시 예약 가능한 룸이 없는 지점은
+        #   지도에 노출하지 않는 정책으로 변경함에 따라 unknown 결과를 생성하지 않고
+        #   해당 룸을 조회 대상에서 아예 배제함.
         today = datetime.now().date()
         target_date_obj = datetime.strptime(request.date, "%Y-%m-%d").date()
         days_diff = (target_date_obj - today).days
 
-        standby_results = []
         crawling_rooms = []
-        
         for room in target_rooms:
             if room.standbyDays is not None and days_diff < room.standbyDays:
-                logger.info(f"[standby_filter] biz_item_id={room.biz_item_id} excluded: standby_days={room.standbyDays} > days_diff={days_diff}")
-                standby_results.append(RoomAvailability(
-                    room_detail=room,
-                    available="unknown",
-                    available_slots={hour_str: False for hour_str in hour_slots[:-1]}
-                ))
+                logger.info(
+                    "[standby_filter] biz_item_id=%s excluded from response: standby_days=%s > days_diff=%s",
+                    room.biz_item_id, room.standbyDays, days_diff,
+                )
             else:
                 crawling_rooms.append(room)
 
@@ -356,7 +357,13 @@ class AvailabilityService:
                     tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     task_dates.append(request.date)
 
-        if not tasks and not standby_results:
+        if not tasks:
+            excluded = len(target_rooms) - len(crawling_rooms)
+            logger.info(
+                "[check_availability] 크롤링 가능한 룸 없음. date=%s capacity=%s "
+                "total_rooms=%d standby_excluded=%d → 빈 응답 반환",
+                request.date, request.capacity, len(target_rooms), excluded,
+            )
             return AvailabilityResponse(
                 date=request.date,
                 start_hour=request.start_hour,
@@ -368,7 +375,7 @@ class AvailabilityService:
 
         results_of_lists = await asyncio.gather(*tasks) if tasks else []
         
-        all_results = list(standby_results)
+        all_results = []
         for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
             for item in res_list:
                 if isinstance(item, Exception):
@@ -386,14 +393,13 @@ class AvailabilityService:
             if biz_id in merged_dict:
                 existing = merged_dict[biz_id]
                 
-                # 1. 예약 가능 여부 병합
-                if existing.available == r.available:
-                    pass # 동일 상태면 유지
-                else:
-                    if existing.available == "unknown" or r.available == "unknown":
-                        existing.available = "unknown" # 상태가 엇갈리거나 이미 unknown이면 그대로 unknown
-                    else:
-                        existing.available = False # True 와 False 엇갈림 -> False
+                # 1. 예약 가능 여부 병합: 두 슬롯 모두 True여야 True, 하나라도 False면 False
+                # Rationale:
+                #   심야 예약은 당일/익일로 분할 조회하므로 동일 룸의 결과가 2개 생성됨.
+                #   두 슈팅이 모두 예약 가능(True)일 때만 True로 유지하고,
+                #   하나라도 False면 일부 슬롯이 막혀 있는 것이므로 False(partial) 처리.
+                if existing.available != r.available:
+                    existing.available = False  # True↔False 엇갈림 → 부분 가능이므로 False
                     
                 # 2. 각 시간대별 슬롯 가능 여부 딕셔너리 병합
                 existing.available_slots.update(r.available_slots)
@@ -405,8 +411,7 @@ class AvailabilityService:
                     existing.estimated_price = r.estimated_price
                     
                 # 4. 정책 경고 로그 병합
-                if hasattr(existing, 'policy_warnings') and hasattr(r, 'policy_warnings'):
-                    existing.policy_warnings.extend(r.policy_warnings)
+                existing.policy_warnings.extend(r.policy_warnings)
             else:
                 merged_dict[biz_id] = r
                 
@@ -419,15 +424,14 @@ class AvailabilityService:
         for res in processed_results:
             room_detail = res.room_detail
 
-            if res.available not in (True, False, "unknown"):
-                logger.warning(f"Unexpected available value: {res.available!r} for biz_item_id={room_detail.biz_item_id}")
-
             is_partial = AvailabilityService.is_partial_available(res)
             if is_partial:
                 logger.info(f"[partial_availability] biz_item_id={room_detail.biz_item_id} marked as partial (available=False but has true slots)")
 
-            # 예약 가능한 룸, 부분 예약 룸, 결제 불가능한 오픈대기 룸만 포함
-            if res.available is True or res.available == "unknown" or is_partial:
+            # 즉시 예약 가능한 룸 또는 부분 가능 룸만 포함
+            # Rationale: 예약 불가(available=False) 룸이라도 is_partial이면 일부 시간대 예약 가능하므로
+            #             응답에 포함시킴. 모든 룸이 False인 지점은 최종적으로 bookable_branches에서 제외.
+            if res.available is True or is_partial:
                 # _apply_policies에서 이미 계산된 estimated_price가 있으면 그대로 사용
                 # NOTE: 0원도 유효한 가격이므로 None 여부만 확인함
                 if res.estimated_price is not None:
@@ -466,11 +470,10 @@ class AvailabilityService:
                     min_capacity=room_detail.minCapacity,
                     min_hours=room_detail.minHours,
                     max_hours=room_detail.maxHours,
-                    standby_days=room_detail.standbyDays if res.available == "unknown" else None,
                     policy_warnings=res.policy_warnings
                 )
 
-                if res.available != "unknown":
+                if res.available is True:
                     available_ids.append(room_detail.biz_item_id)
                 bid = room_detail.business_id
                 
@@ -482,7 +485,7 @@ class AvailabilityService:
                         lng=room_detail.lng,
                         min_price_available=None,
                         min_price_partial=None,
-                        available_count=1 if res.available != "unknown" else 0,
+                        available_count=1 if res.available is True else 0,
                         phone_number=room_detail.phoneNumber,
                         display_name=room_detail.displayName,
                         rooms=[room_resp]
@@ -491,7 +494,7 @@ class AvailabilityService:
                 else:
                     branch_obj = branch_dict[bid]
                     branch_obj.rooms.append(room_resp)
-                    if res.available != "unknown":
+                    if res.available is True:
                         branch_obj.available_count += 1
                     
                     AvailabilityService._update_min_prices(branch_obj, res.available, total_price, is_partial)
@@ -501,19 +504,28 @@ class AvailabilityService:
                     if not branch_obj.display_name and room_detail.displayName:
                         branch_obj.display_name = room_detail.displayName
 
+        # 즉시 예약 가능 또는 부분 예약 가능 룸이 하나 이상 있는 지점만 응답에 포함
+        # Rationale: 지도에 마커가 떠도 예약 가능한 방이 완전히 없으면 UX 비용만 발생.
+        #             완전 가능(available_count > 0) 또는 부분 가능(min_price_partial 존재)
+        #             지점은 포함하되, 모든 룸이 예약 불가인 지점은 제외함.
+        bookable_branches = [
+            b for b in branch_dict.values()
+            if b.available_count > 0 or b.min_price_partial is not None
+        ]
+
         return AvailabilityResponse(
             date=request.date,
             start_hour=request.start_hour,
             end_hour=request.end_hour,
             hour_slots=hour_slots,
             available_biz_item_ids=available_ids,
-            branches=list(branch_dict.values())
+            branches=bookable_branches
         )
 
     @staticmethod
     def _update_min_prices(
         branch_obj: BranchResponse, 
-        available: bool | str, 
+        available: bool, 
         total_price: Optional[int], 
         is_partial: bool = False) -> None:
         """
@@ -521,7 +533,7 @@ class AvailabilityService:
         
         Args:
             branch_obj: 대상 지점 응답 모델
-            available: 방의 현재 예약 상태 (True, False, "unknown")
+            available: 방의 현재 예약 상태 (True: 완전 가능, False: 불가 또는 부분 가능)
             total_price: 계산된 총 가격
             is_partial: 해당 방이 예약 상태는 False지만 부분적으로 이용 가능한 슬롯이 있는지 여부
         """

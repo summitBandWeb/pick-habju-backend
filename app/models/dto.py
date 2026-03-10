@@ -286,8 +286,8 @@ class RoomInfo(BaseModel):
 class RoomAvailability(BaseModel):
     """Availability information for a single room (Internal Use)"""
     room_detail: RoomDetail = Field(..., description="Room detail information")
-    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot (false for standby)")
+    available: bool = Field(..., description="Availability status (true: Available, false: Unavailable or Partial)")
+    available_slots: Dict[str, bool] = Field(..., description="Availability by time slot")
     
     # [v2.0.0] 추가 정보
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
@@ -299,8 +299,8 @@ class RoomResponse(BaseModel):
     biz_item_id: str
     name: str
     price_per_hour: int
-    available: Union[bool, str] = Field(..., description="Availability status (true: Available, false: Unavailable or Partial, 'unknown': Standby/Not Opened)")
-    available_slots: Dict[str, Union[bool, str]] = Field(..., description="Availability by time slot")
+    available: bool = Field(..., description="Availability status (true: Available, false: Unavailable or Partial)")
+    available_slots: Dict[str, bool] = Field(..., description="Availability by time slot")
     estimated_price: Optional[int] = None
     image_urls: List[str]
     max_capacity: int
@@ -311,7 +311,6 @@ class RoomResponse(BaseModel):
     min_capacity: int
     min_hours: int
     max_hours: Optional[int] = None
-    standby_days: Optional[int] = None
     policy_warnings: List[PolicyWarning] = Field(default_factory=list)
 
 class BranchResponse(BaseModel):
