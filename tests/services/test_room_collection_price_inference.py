@@ -150,7 +150,8 @@ async def test_price_band_fallback_applied_for_unknown_business_in_10k_15k_band(
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 5
     assert room_data["recommend_capacity"] == 4
-    assert room_data["recommend_capacity_range"] == [4, 4]
+    # ±delta 로직: rec_cap=4 < 9 → delta=1 → [3, 5]
+    assert room_data["recommend_capacity_range"] == [3, 5]
 
 
 @pytest.mark.asyncio
@@ -176,7 +177,8 @@ async def test_price_band_fallback_applied_for_unknown_business_in_15k_20k_band(
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 8
     assert room_data["recommend_capacity"] == 7
-    assert room_data["recommend_capacity_range"] == [7, 7]
+    # ±delta 로직: rec_cap=7 < 9 → delta=1 → [6, 8]
+    assert room_data["recommend_capacity_range"] == [6, 8]
 
 
 @pytest.mark.asyncio
@@ -202,4 +204,5 @@ async def test_price_band_fallback_applied_for_unknown_business_in_20k_plus_band
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 11
     assert room_data["recommend_capacity"] == 10
-    assert room_data["recommend_capacity_range"] == [10, 11]
+    # ±delta 로직: rec_cap=10 >= 9 → delta=2 → [8, 11] (max_capacity 상한 적용)
+    assert room_data["recommend_capacity_range"] == [8, 11]

@@ -52,7 +52,8 @@ def test_extract_price_fallback_from_room_name_text(service):
 
 
 @pytest.mark.asyncio
-async def test_save_to_db_defaults_price_to_zero_when_missing(service, mock_supabase):
+async def test_save_to_db_skips_room_when_price_is_zero(service, mock_supabase):
+    """price=0 룸은 유효한 예약 정보가 없으므로 저장하지 않는다."""
     business = {"businessId": "biz1", "businessDisplayName": "test studio"}
     rooms = [
         {
@@ -66,6 +67,6 @@ async def test_save_to_db_defaults_price_to_zero_when_missing(service, mock_supa
 
     await service._save_to_db(business, rooms, parsed_results)
 
-    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
-    upsert_data = upsert_call[0][0]
-    assert upsert_data["price_per_hour"] == 0
+    # price=0 룸은 upsert되지 않아야 한다 (branch upsert만 호출됨)
+    room_upsert_calls = mock_supabase._room_table.upsert.call_args_list
+    assert len(room_upsert_calls) == 0

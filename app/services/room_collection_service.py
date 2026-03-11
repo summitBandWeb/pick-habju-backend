@@ -33,10 +33,18 @@ class RoomCollectionService:
     PRICE_MATCH_TOLERANCE = 1000
     # 룸 단위 수용 인원 정보가 없을 때의 글로벌 fallback 규칙
     # 운영 기준:
+    # - 7,000~9,999원 → 2~4명 (소형룸)
     # - 10,000~14,999원 → 4~5명
     # - 15,000~19,999원 → 7~8명
     # - 20,000원 이상 → 10명 이상
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
+        {
+            "name": "7k_10k",
+            "min_price": 7000,
+            "max_price": 9999,
+            "max_capacity": 4,
+            "recommend_capacity": 2,
+        },
         {
             "name": "10k_15k",
             "min_price": 10000,
@@ -101,8 +109,15 @@ class RoomCollectionService:
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
+        # 개인연습/비합주
+        "피아노", "그랜드피아노", "화상면접", "면접",
         # 기타
         "파티룸", "촬영", "세미나",
+    )
+    # 안내성 항목: 실제 룸이 아닌 예약 안내/이벤트/견적 등의 더미 항목
+    NON_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
+        "당일 예약", "전화 문의", "이벤트 할인", "이벤트 예약",
+        "셀프견적", "견적", "공지", "안내",
     )
     # 조건부 허용: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
     NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
@@ -841,10 +856,13 @@ class RoomCollectionService:
                 branch_standby_days = parsed.get("standby_days")
                 break
 
+        # display_name 정제: 예약 안내 문구, 대괄호 태그 제거
+        clean_display_name = self._sanitize_display_name(display_name)
+
         branch_data = {
             "business_id": business_id,
             "name": display_name,
-            "display_name": display_name,
+            "display_name": clean_display_name,
         }
 
         # business 페이로드 누락 시 기존 좌표를 null로 덮어쓰지 않는다.
@@ -856,6 +874,10 @@ class RoomCollectionService:
         elif isinstance(coords, list) and len(coords) >= 2:
             lng_val = self._coerce_float(coords[0])
             lat_val = self._coerce_float(coords[1])
+
+        # 위경도 뒤바뀜 보정: 한국 좌표 기준 lat < 100, lng > 100
+        if lat_val is not None and lng_val is not None and lat_val > 100 and lng_val < 100:
+            lat_val, lng_val = lng_val, lat_val
 
         if lat_val is not None:
             branch_data["lat"] = lat_val
@@ -1033,8 +1055,15 @@ class RoomCollectionService:
             final_extra_charge_int = self._coerce_int(final_extra_charge)
             final_price_int = self._coerce_int(final_price)
             if final_price_int is None or final_price_int < 0:
-                # DB constraint requires non-null numeric price.
                 final_price_int = 0
+
+            # price=0 룸은 유효한 예약 정보를 제공할 수 없으므로 저장하지 않는다.
+            if final_price_int == 0:
+                logger.info(
+                    "Skipping room with price=0: business_id=%s biz_item_id=%s name=%s",
+                    business_id, rid, room.get("name"),
+                )
+                continue
 
             room_data = {
                 "business_id": business_id,
@@ -1575,11 +1604,14 @@ class RoomCollectionService:
         return selected, filtered_stats
 
     def _is_non_rehearsal_room_name(self, room: Dict[str, Any]) -> bool:
-        """룸 이름에서 레슨/녹음 등 비합주 라벨을 감지한다."""
+        """룸 이름에서 레슨/녹음 등 비합주 라벨 및 안내성 더미 항목을 감지한다."""
         name = room.get("name")
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
+        # 안내성 더미 항목: 실제 룸이 아닌 예약 안내/이벤트/견적
+        if any(keyword in normalized for keyword in self.NON_ROOM_NAME_KEYWORDS):
+            return True
         # 강제 제외 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
@@ -1621,6 +1653,17 @@ class RoomCollectionService:
                 return True
 
         return False
+
+    @staticmethod
+    def _sanitize_display_name(name: str) -> str:
+        """지점 display_name에서 예약 안내 문구, 대괄호 태그를 제거한다."""
+        if not name:
+            return name
+        # 대괄호 태그 제거: [밴드 합주, 드럼 개인연습 전용] 등
+        cleaned = re.sub(r"\[.*?\]", "", name).strip()
+        # 예약/안내 문구 제거
+        cleaned = re.sub(r"\s*(예약|방문\s*상담|문의|안내)$", "", cleaned).strip()
+        return cleaned if cleaned else name
 
     # 밴드 합주실 최소 가격 기준 (원/시간)
     # 개인연습실(피아노, 보컬 등)은 보통 3,000~6,000원대이므로
