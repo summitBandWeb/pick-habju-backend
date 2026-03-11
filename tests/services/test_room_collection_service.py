@@ -366,9 +366,9 @@ class TestV2NewFields:
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):
         """파서가 범위를 반환하지 않으면 규칙 기반으로 계산
-        
+
         Rationale:
-            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [4, 6]
+            extra_charge=None, rec_cap=4 (< 9) → delta=1 → [3, 5]
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 10000}}]
@@ -382,15 +382,51 @@ class TestV2NewFields:
                 "requires_contact_on_sameday": False
             }
         }
-        
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
-        
-        # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
-        assert room_data["recommend_capacity_range"] == [4, 6]
-    
+
+        # NOTE: 규칙 기반 → rec_cap=4, delta=1 → [3, 5]
+        assert room_data["recommend_capacity_range"] == [3, 5]
+
+    # ============== TC: capacity_range delta 경계값 (rec_cap=8 vs 9) ==============
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rec_cap, max_cap, expected_range",
+        [
+            (8, 14, [7, 9]),    # rec < 9 → delta=1 → [7, 9]
+            (9, 14, [7, 11]),   # rec >= 9 → delta=2 → [7, 11]
+            (10, 14, [8, 12]),  # rec >= 9 → delta=2 → [8, 12]
+            (5, 14, [4, 6]),    # rec < 9 → delta=1 → [4, 6]
+            (1, 14, [1, 2]),    # rec < 9 → delta=1 → max(1-1,1)=1 → [1, 2]
+        ],
+    )
+    async def test_capacity_range_delta_boundary(
+        self, service, mock_supabase, rec_cap, max_cap, expected_range
+    ):
+        """rec_cap 기준 delta 전환 경계값 검증 (8: ±1, 9: ±2)"""
+        business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
+        rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 10000}}]
+        parsed_results = {
+            "r1": {
+                "max_capacity": max_cap,
+                "recommend_capacity": rec_cap,
+                "recommend_capacity_range": None,
+                "base_capacity": None,
+                "extra_charge": None,
+                "requires_contact_on_sameday": False,
+            }
+        }
+
+        await service._save_to_db(business, rooms, parsed_results)
+
+        upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
+        room_data = upsert_call[0][0]
+
+        assert room_data["recommend_capacity_range"] == expected_range
+
     # ============== TC: display_name 및 standby_days 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_display_name_and_standby_days_to_branch(self, service, mock_supabase):

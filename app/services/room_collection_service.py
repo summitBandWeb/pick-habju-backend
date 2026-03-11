@@ -87,9 +87,6 @@ class RoomCollectionService:
         "합주실",
         "합주",
         "밴드합주",
-        "음악연습실",
-        "악기연습실",
-        "드럼연습실",
     )
     REPRESENTATIVE_KEYWORD_FIELDS: Tuple[str, ...] = (
         "representativeKeyword",
@@ -1626,18 +1623,23 @@ class RoomCollectionService:
 
         return False
 
+    # 밴드 합주실 최소 가격 기준 (원/시간)
+    # 개인연습실(피아노, 보컬 등)은 보통 3,000~6,000원대이므로
+    # 7,000원 미만은 합주실이 아닐 가능성이 높아 수집 대상에서 제외한다.
+    MIN_REHEARSAL_PRICE = 7000
+
     def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
         """Check if room has enough reservation-related metadata to parse.
 
-        가격 정보는 필수: 가격이 없는 룸은 사용자에게 유효한 예약 정보를
-        제공할 수 없으므로 수집 대상에서 제외한다.
+        가격 정보는 필수이며, 밴드 합주실 최소 가격(MIN_REHEARSAL_PRICE) 이상이어야 한다.
+        개인연습실 등 저가 룸은 합주실이 아닐 가능성이 높으므로 수집에서 제외한다.
         """
         base_price = self._extract_price(room)
-        if isinstance(base_price, int) and base_price > 0:
+        if isinstance(base_price, int) and base_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         raw_price = self._coerce_int(room.get("price"))
-        if raw_price is not None and raw_price > 0:
+        if raw_price is not None and raw_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         return False
@@ -1835,7 +1837,7 @@ class RoomCollectionService:
         Rationale:
             1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
             2. 추가 요금 발생 시 [base_cap, max_cap]
-            3. 추가 요금 없을 시 [rec_cap, rec_cap + 2] (최대 max_cap)
+            3. 추가 요금 없을 시 rec_cap ±delta (rec_cap < 9: ±1, rec_cap >= 9: ±2)
         """
         # 1. 파싱된 범위 검증 후 우선 사용
         # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
@@ -1873,15 +1875,16 @@ class RoomCollectionService:
             return [base_cap, real_max]
             
         # 3. 추가 요금 없는 경우 (기본)
-        # min: rec_cap, max: rec_cap + 2
-        # 단 max_cap을 넘지 않도록 제한
-        min_c = rec_cap
-        max_c = min(rec_cap + 2, max_cap)
-        
-        # 만약 rec_cap + 2 > max_cap 이라면 max_c가 min_c보다 작아지는 경우 방어
-        # (예: rec=5, max=5 -> min=5, max=5)
+        # rec_cap 기준 ±delta로 범위 산출
+        # rec_cap < 9: ±1 (소규모 룸은 좁은 범위)
+        # rec_cap >= 9: ±2 (대규모 룸은 넓은 범위)
+        delta = 2 if rec_cap >= 9 else 1
+        min_c = max(rec_cap - delta, 1)
+        max_c = min(rec_cap + delta, max_cap)
+
+        # max_cap이 너무 작아 min_c > max_c가 되는 경우 방어
         max_c = max(max_c, min_c)
-        
+
         return [min_c, max_c]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
