@@ -43,7 +43,6 @@ class RoomCollectionService:
             "max_price": 14999,
             "max_capacity": 5,
             "recommend_capacity": 4,
-            "recommend_range": [4, 4],
         },
         {
             "name": "15k_20k",
@@ -51,7 +50,6 @@ class RoomCollectionService:
             "max_price": 19999,
             "max_capacity": 8,
             "recommend_capacity": 7,
-            "recommend_range": [7, 7],
         },
         {
             "name": "20k_plus",
@@ -59,7 +57,6 @@ class RoomCollectionService:
             "max_price": None,  # open upper bound
             "max_capacity": 11,
             "recommend_capacity": 10,
-            "recommend_range": [10, 11],
         },
     ]
     PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
@@ -950,6 +947,17 @@ class RoomCollectionService:
                 final_rec_cap = price_inferred["recommend_capacity"]
                 price_inferred_applied = True
 
+            # price_inferred의 recommend_range는 max_cap과 rec_cap이 모두
+            # 동일 price band에서 추론된 경우에만 사용 (혼합 소스 불일치 방지)
+            inferred_range = None
+            if (
+                price_inferred
+                and price_inferred_applied
+                and final_max_cap == price_inferred.get("max_capacity")
+                and final_rec_cap == price_inferred.get("recommend_capacity")
+            ):
+                inferred_range = price_inferred.get("recommend_range")
+
             # Preserve existing JSON values unless parser explicitly provides replacements.
             existing_price_config = existing.get("price_config", []) if existing else []
             existing_base_cap = existing.get("base_capacity") if existing else None
@@ -1040,11 +1048,7 @@ class RoomCollectionService:
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range
                     or parsed.get("recommend_capacity_range")
-                    or (
-                        price_inferred.get("recommend_range")
-                        if price_inferred and price_inferred_applied
-                        else None
-                    ),
+                    or inferred_range,
                     final_rec_cap_int,
                     final_max_cap_int,
                     final_base_cap_int,
@@ -1113,7 +1117,6 @@ class RoomCollectionService:
             max_price = band_rule.get("max_price")
             default_max = band_rule.get("max_capacity")
             default_rec = band_rule.get("recommend_capacity")
-            default_range = band_rule.get("recommend_range")
 
             if not isinstance(min_price, int) or not isinstance(default_max, int):
                 continue
@@ -1126,15 +1129,12 @@ class RoomCollectionService:
 
             if not isinstance(default_rec, int):
                 default_rec = default_max // 2 if default_max > 4 else default_max
-            if not (
-                isinstance(default_range, list)
-                and len(default_range) == 2
-                and all(isinstance(v, int) for v in default_range)
-            ):
-                default_range = [max(default_rec - 1, 1), min(default_rec + 1, default_max)]
+
+            # ±delta 규칙으로 범위 동적 계산 (rec < 9: ±1, rec >= 9: ±2)
+            delta = 2 if default_rec >= 9 else 1
+            rec_range = [max(default_rec - delta, 1), min(default_rec + delta, default_max)]
 
             rec_cap = default_rec
-            rec_range = default_range
 
             logger.info(
                 "Price-band fallback inference applied: business_id=%s room=%s price=%s band=%s max=%s",
