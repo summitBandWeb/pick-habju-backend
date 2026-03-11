@@ -36,30 +36,32 @@ class RoomCollectionService:
     # - 10,000~14,999 KRW -> 4~5 people
     # - 15,000~19,999 KRW -> 7~8 people
     # - 20,000+ KRW -> 10+ people
+    # max_capacity 규칙: recommend_range 상한 + 3 이상
+    # recommend < 9 → ±1, recommend >= 9 → ±2
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
         {
             "name": "10k_15k",
             "min_price": 10000,
             "max_price": 14999,
-            "max_capacity": 5,
+            "max_capacity": 8,
             "recommend_capacity": 4,
-            "recommend_range": [4, 4],
+            "recommend_range": [3, 5],
         },
         {
             "name": "15k_20k",
             "min_price": 15000,
             "max_price": 19999,
-            "max_capacity": 8,
+            "max_capacity": 11,
             "recommend_capacity": 7,
-            "recommend_range": [7, 7],
+            "recommend_range": [6, 8],
         },
         {
             "name": "20k_plus",
             "min_price": 20000,
             "max_price": None,  # open upper bound
-            "max_capacity": 11,
+            "max_capacity": 15,
             "recommend_capacity": 10,
-            "recommend_range": [10, 11],
+            "recommend_range": [8, 12],
         },
     ]
     PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
@@ -1134,7 +1136,8 @@ class RoomCollectionService:
                 and len(default_range) == 2
                 and all(isinstance(v, int) for v in default_range)
             ):
-                default_range = [max(default_rec - 1, 1), min(default_rec + 1, default_max)]
+                delta = 2 if default_rec >= 9 else 1
+                default_range = [max(default_rec - delta, 1), min(default_rec + delta, default_max)]
 
             rec_cap = default_rec
             rec_range = default_range
@@ -1525,7 +1528,7 @@ class RoomCollectionService:
         if pair_match:
             rec = int(pair_match.group(1))
             max_cap = int(pair_match.group(2))
-            return max_cap, rec, [rec, rec]
+            return max_cap, rec, None
 
         rec_cap: Optional[int] = None
         max_cap: Optional[int] = None
@@ -1543,8 +1546,6 @@ class RoomCollectionService:
         rec_match = re.search(r"정원\s*(\d+)\s*명", text)
         if rec_match:
             rec_cap = int(rec_match.group(1))
-            if rec_range is None:
-                rec_range = [rec_cap, rec_cap]
 
         max_match = re.search(r"최대\s*(\d+)\s*명", text)
         if max_match:
@@ -1873,13 +1874,12 @@ class RoomCollectionService:
             return [base_cap, real_max]
             
         # 3. 추가 요금 없는 경우 (기본)
-        # min: rec_cap, max: rec_cap + 2
-        # 단 max_cap을 넘지 않도록 제한
-        min_c = rec_cap
-        max_c = min(rec_cap + 2, max_cap)
-        
-        # 만약 rec_cap + 2 > max_cap 이라면 max_c가 min_c보다 작아지는 경우 방어
-        # (예: rec=5, max=5 -> min=5, max=5)
+        # recommend < 9 → ±1, recommend >= 9 → ±2
+        delta = 2 if rec_cap >= 9 else 1
+        min_c = max(rec_cap - delta, 1)
+        max_c = min(rec_cap + delta, max_cap) if max_cap > 0 else rec_cap + delta
+
+        # min <= max 보장
         max_c = max(max_c, min_c)
         
         return [min_c, max_c]

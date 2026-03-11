@@ -110,8 +110,6 @@ class RoomParserService:
             can_reserve_1h = False
 
         rec_range = parsed_range
-        if not rec_range and rec_cap:
-            rec_range = [rec_cap, rec_cap]
 
         def _map_day_type(keyword: Optional[str]) -> str:
             """요일 키워드를 day_type 문자열로 매핑한다.

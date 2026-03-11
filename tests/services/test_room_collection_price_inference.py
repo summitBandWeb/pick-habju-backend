@@ -148,9 +148,9 @@ async def test_price_band_fallback_applied_for_unknown_business_in_10k_15k_band(
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["max_capacity"] == 5
+    assert room_data["max_capacity"] == 8
     assert room_data["recommend_capacity"] == 4
-    assert room_data["recommend_capacity_range"] == [4, 4]
+    assert room_data["recommend_capacity_range"] == [3, 5]
 
 
 @pytest.mark.asyncio
@@ -174,9 +174,9 @@ async def test_price_band_fallback_applied_for_unknown_business_in_15k_20k_band(
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["max_capacity"] == 8
+    assert room_data["max_capacity"] == 11
     assert room_data["recommend_capacity"] == 7
-    assert room_data["recommend_capacity_range"] == [7, 7]
+    assert room_data["recommend_capacity_range"] == [6, 8]
 
 
 @pytest.mark.asyncio
@@ -200,6 +200,6 @@ async def test_price_band_fallback_applied_for_unknown_business_in_20k_plus_band
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["max_capacity"] == 11
+    assert room_data["max_capacity"] == 15
     assert room_data["recommend_capacity"] == 10
-    assert room_data["recommend_capacity_range"] == [10, 11]
+    assert room_data["recommend_capacity_range"] == [8, 12]

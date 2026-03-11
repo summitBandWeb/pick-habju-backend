@@ -362,13 +362,14 @@ class TestV2NewFields:
         assert room_data["recommend_capacity_range"] == [4, 6]
         assert room_data["price_config"] == []
     
-    # ============== TC: range 없으면 [n, n] Fallback ==============
+    # ============== TC: range 없으면 ±1/±2 Fallback ==============
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):
         """파서가 범위를 반환하지 않으면 규칙 기반으로 계산
-        
+
         Rationale:
-            extra_charge=None → [rec_cap, min(rec_cap+2, max_cap)] = [4, 6]
+            recommend < 9 → ±1, recommend >= 9 → ±2
+            rec=4, price=10000 → price band(10k_15k) 적용 → rec=4, ±1 → [3, 5]
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 10000}}]
@@ -382,14 +383,14 @@ class TestV2NewFields:
                 "requires_contact_on_sameday": False
             }
         }
-        
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
-        
-        # NOTE: 규칙 기반 → [4, min(6, 6)] = [4, 6]
-        assert room_data["recommend_capacity_range"] == [4, 6]
+
+        # rec=4 (<9) → ±1 → [3, 5]
+        assert room_data["recommend_capacity_range"] == [3, 5]
     
     # ============== TC: display_name 및 standby_days 저장 ==============
     @pytest.mark.asyncio
@@ -428,7 +429,7 @@ class TestV2NewFields:
             "r1": {
                 "max_capacity": 6,
                 "recommend_capacity": 4,
-                "recommend_capacity_range": [4, 4],
+                "recommend_capacity_range": None,
                 "price_config": price_cfg,
                 "base_capacity": None,
                 "extra_charge": None,
