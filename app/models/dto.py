@@ -5,15 +5,15 @@ import logging
 from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
 
 class HealthResponse(BaseModel):
-    """Health Check Response Model"""
+    """헬스 체크 응답 모델"""
     status: Literal["healthy", "degraded", "unhealthy"] = Field(description="Health status of the system (healthy, degraded, unhealthy)")
     dependencies: Dict[str, str] = Field(description="Health status of individual dependencies (e.g., database)")
 
 logger = logging.getLogger(__name__)
 
-# Room Information DTO (DB Query Result)
+# 룸 정보 DTO (DB 조회 결과 + Branch join)
 class RoomDetail(BaseModel):
-    """Room detail information (DB column mapping with branch join)"""
+    """룸 상세 정보 (DB 컬럼 매핑 + Branch join)"""
     model_config = ConfigDict(populate_by_name=True)
     MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = 100
     BRANCH_FALLBACK_NAME: ClassVar[str] = "지점 정보 없음"
@@ -139,9 +139,9 @@ class RoomDetail(BaseModel):
 
         return self
 
-# Request DTO
+# 예약 가능 여부 요청 DTO
 class AvailabilityRequest(BaseModel):
-    """Request for checking availability"""
+    """예약 가능 여부 조회 요청 모델"""
     date: str = Field(..., description="Reservation date (YYYY-MM-DD)")
     capacity: int = Field(..., description="Number of users")
     start_hour: str = Field(..., description="Start time (HH:MM)")
@@ -265,7 +265,7 @@ class AvailabilityRequest(BaseModel):
         return self
 
 
-# Policy Warning DTO
+# 정책 경고 DTO
 class PolicyWarning(BaseModel):
     """예약 정책 위반 경고"""
     type: str = Field(..., description="Warning type (call_required, limit_exceeded, etc.)")
@@ -273,9 +273,9 @@ class PolicyWarning(BaseModel):
 
 
 
-# Crawler Result DTO (Internal Logic Use Only)
+# 크롤러 결과 DTO (내부 로직 전용)
 class RoomAvailability(BaseModel):
-    """Availability information for a single room (Internal Use)"""
+    """단일 룸의 예약 가능 여부 정보 (내부 사용 전용)"""
     room_detail: RoomDetail = Field(..., description="Room detail information")
     available: bool = Field(..., description="Availability status (true: Available, false: Unavailable or Partial)")
     available_slots: Dict[str, bool] = Field(..., description="Availability by time slot")
@@ -284,7 +284,7 @@ class RoomAvailability(BaseModel):
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
     policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
 
-# Branch-grouped Response DTOs
+# 지점 그룹형 응답 DTO
 class RoomResponse(BaseModel):
     """지점 하위의 룸 단위 응답"""
     biz_item_id: str
@@ -317,10 +317,10 @@ class BranchResponse(BaseModel):
     display_name: Optional[str] = None
     rooms: List[RoomResponse] = Field(default_factory=list)
 
-# Full Response DTO (Nested Branch Structure)
+# 전체 응답 DTO (지점 중첩 구조)
 class AvailabilityResponse(BaseModel):
-    """Response for availability check
-    
+    """예약 가능 여부 조회 응답 모델
+
     프론트엔드 최적화를 위해 지점(Branch) 단위로 룸을 그룹핑하여 반환합니다.
     """
     date: str = Field(..., description="Checked date")

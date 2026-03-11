@@ -118,5 +118,5 @@ class NaverCrawler(BaseCrawler):
             available_slots=available_slots
         )
 
-# Register the crawler
+# 크롤러 등록
 registry.register("naver", NaverCrawler())

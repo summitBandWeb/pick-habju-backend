@@ -65,10 +65,10 @@ class CrawlerRegistry:
         """
         return self._crawlers.copy()
 
-    # Alias for backward compatibility
+    # 하위 호환성 별칭
     def get_all_as_dict(self) -> dict[str, BaseCrawler]:
         """get_all_map의 별칭 (하위 호환성 유지)."""
         return self.get_all_map()
 
-# Global singleton instance
+# 전역 싱글톤 인스턴스
 registry = CrawlerRegistry()

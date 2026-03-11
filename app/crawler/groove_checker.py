@@ -19,7 +19,7 @@ class GrooveCrawler(BaseCrawler):
     LoginManager로 세션을 확보한 뒤 HTML을 파싱하여 예약 정보를 조회한다.
     """
 
-    RESERVATION_LIMIT_DAYS = 84  # Reservation window limit per Groove policy.
+    RESERVATION_LIMIT_DAYS = 84  # 그루브 합주실 정책상 예약 가능 기한
 
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         """그루브 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회한다.
@@ -112,5 +112,5 @@ class GrooveCrawler(BaseCrawler):
             available_slots=slots,
         )
 
-# Register the crawler
+# 크롤러 등록
 registry.register("groove", GrooveCrawler())

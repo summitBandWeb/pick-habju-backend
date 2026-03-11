@@ -19,23 +19,23 @@ from app.core.name_utils import normalize_name_token
 logger = logging.getLogger(__name__)
 
 class RoomCollectionService:
-    """Service for collecting and parsing rehearsal room data."""
-    
-    # Tunable parameters for concurrency
+    """합주실 데이터 수집 및 파싱 서비스"""
+
+    # 동시성 튜닝 파라미터
     BATCH_SIZE = 5
     MAX_CONCURRENT_BATCHES = 3
     DEFAULT_PRIORITY_AREA_QUERIES = list(PRIORITY_AREA_QUERIES)
     
-    # Capacity value indicating parsing failure - flags for manual review
+    # 파싱 실패 시 수동 검토 플래그 값
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
     MANUAL_REVIEW_FLAG = 100
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
-    # Global fallback when room-level basic capacity info is missing.
-    # Rule from ops:
-    # - 10,000~14,999 KRW -> 4~5 people
-    # - 15,000~19,999 KRW -> 7~8 people
-    # - 20,000+ KRW -> 10+ people
+    # 룸 단위 수용 인원 정보가 없을 때의 글로벌 fallback 규칙
+    # 운영 기준:
+    # - 10,000~14,999원 → 4~5명
+    # - 15,000~19,999원 → 7~8명
+    # - 20,000원 이상 → 10명 이상
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
         {
             "name": "10k_15k",
@@ -60,12 +60,12 @@ class RoomCollectionService:
         },
     ]
     PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
-        # Groove sadang (manual baseline)
+        # 그루브 사당점 (수동 기준선)
         "sadang": [
             {"price": 8000, "max_capacity": 4, "recommend_capacity": 2, "recommend_range": [1, 2]},
             {"price": 10000, "max_capacity": 6, "recommend_capacity": 3, "recommend_range": [1, 3]},
         ],
-        # Biju rehearsal rooms (manual baseline)
+        # 비쥬 합주실 (수동 기준선)
         "522011": [
             {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [4, 6]},
         ],
@@ -75,7 +75,7 @@ class RoomCollectionService:
         "917236": [
             {"price": 20000, "max_capacity": 12, "recommend_capacity": 6, "recommend_range": [4, 6]},
         ],
-        # Junsound sadang (manual baseline)
+        # 준사운드 사당점 (수동 기준선)
         "1384809": [
             {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [3, 5]},
         ],
@@ -93,7 +93,7 @@ class RoomCollectionService:
         "hashtagList",
         "hashtag",
     )
-    # Hard: 합주와 다른 장르/용도 — 합주 키워드가 함께 있어도 무조건 필터링
+    # 강제 제외: 합주와 다른 장르/용도 — 합주 키워드가 함께 있어도 무조건 필터링
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         # 교육/레슨
         "레슨", "lesson", "수업", "클래스", "원데이",
@@ -104,7 +104,7 @@ class RoomCollectionService:
         # 기타
         "파티룸", "촬영", "세미나",
     )
-    # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
+    # 조건부 허용: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
     NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
         "레코딩", "recording", "녹음", "믹싱", "마스터링",
     )
@@ -134,7 +134,7 @@ class RoomCollectionService:
         area_queries: Optional[List[str]] = None,
         max_targets: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Collect room data only from configured priority station areas."""
+        """설정된 우선 역세권에서만 룸 데이터를 수집한다."""
         queries = self._resolve_priority_area_queries(area_queries)
         if not queries:
             raise ValueError("No priority area queries configured")
@@ -176,7 +176,7 @@ class RoomCollectionService:
                         "unique_businesses_in_query": len(set(discovered_business_ids)),
                     }
                 )
-                # Short randomized delay between station queries to reduce burst calls.
+                # 역 쿼리 간 랜덤 지연으로 burst 호출 방지
                 await asyncio.sleep(0.8 + random.uniform(0, 0.8))
             except Exception as e:
                 logger.error("Priority query failed (%s): %s", query, e)
@@ -264,7 +264,7 @@ class RoomCollectionService:
         self,
         items: List[Dict[str, Any]],
     ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Collect by business id for each item and aggregate success/failure stats."""
+        """각 아이템의 business ID별로 수집하고 성공/실패 통계를 집계한다."""
         success_count = 0
         failed_count = 0
         failures: List[Dict[str, Any]] = []
@@ -451,7 +451,7 @@ class RoomCollectionService:
             )
 
         # 2. 규칙 기반 파싱 (배치 + 동시성)
-        # Keep business-level context in payload for downstream compatibility.
+        # 다운스트림 호환을 위해 business 수준 컨텍스트를 페이로드에 유지
         business_desc = (business.get("desc") or "")[: self.MAX_BUSINESS_DESC_CHARS]
         parse_items = []
         for room in target_rooms:
@@ -787,7 +787,7 @@ class RoomCollectionService:
         parsed_results: Dict,
         source_hint: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Save collected/parsed data to Supabase."""
+        """수집/파싱된 데이터를 Supabase에 저장한다."""
         
         # 1. Save Branch
         business_id = str(business.get("businessId") or business.get("id") or "").strip()
@@ -847,7 +847,7 @@ class RoomCollectionService:
             "display_name": display_name,
         }
 
-        # Do not overwrite existing coordinates with null when business payload is missing.
+        # business 페이로드 누락 시 기존 좌표를 null로 덮어쓰지 않는다.
         lat_val: Optional[float] = None
         lng_val: Optional[float] = None
         if isinstance(coords, dict):
@@ -869,7 +869,7 @@ class RoomCollectionService:
         # Branch도 room과 동일하게 롤링 배포 중 스키마 차이를 허용한다.
         self._upsert_branch_with_schema_fallback(branch_data)
 
-        # [Data Preservation] Fetch existing rooms for this business to check for manual overrides
+        # [데이터 보존] 수동 오버라이드 확인을 위해 해당 business의 기존 room 조회
         try:
             existing_resp = self.supabase.table("room").select("*").eq("business_id", business_id).execute()
             existing_map = {r["biz_item_id"]: r for r in existing_resp.data}
@@ -877,21 +877,21 @@ class RoomCollectionService:
             logger.warning(f"Failed to fetch existing rooms: {e}")
             existing_map = {}
 
-        # 2. Save Room (including images)
+        # 2. 룸 저장 (이미지 포함)
         for room in rooms:
             rid = room["bizItemId"]
             parsed = parsed_results.get(rid, {})
             existing = existing_map.get(rid)
 
-            # Extract image URLs
+            # 이미지 URL 추출
             images = room.get("bizItemResources", [])
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
-            # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            # Priority for capacity:
-            #   1) High-confidence text patterns in room name/desc
-            #   2) Parser output
-            #   3) Manual review flag
+            # 신규 값 (MANUAL_REVIEW_FLAG = 100, 파싱 실패 시 수동 검토용)
+            # 수용 인원 결정 우선순위:
+            #   1) 룸 이름/설명의 고신뢰 텍스트 패턴
+            #   2) 파서 출력
+            #   3) 수동 검토 플래그
             text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
 
             new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
@@ -915,7 +915,7 @@ class RoomCollectionService:
             )
             new_price_config = parsed.get("price_config")
 
-            # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
+            # [로직] 새 값이 기본값(0 또는 1)이면 기존 유효 값을 보존
             final_max_cap = new_max_cap
             final_rec_cap = new_rec_cap
             final_price = new_price
@@ -933,8 +933,8 @@ class RoomCollectionService:
                 if (new_rec_cap <= 1 or new_rec_cap == self.MANUAL_REVIEW_FLAG) and existing_rec > 1 and existing_rec != self.MANUAL_REVIEW_FLAG:
                     final_rec_cap = existing_rec
 
-                # If new price is 0/None but existing is valid, keep existing
-                # Note: self._extract_price returns None if missing, which is not > 0.
+                # 새 가격이 0/None이고 기존 값이 유효하면 기존 값 보존
+                # NOTE: self._extract_price는 값이 없으면 None을 반환하며, None은 > 0이 아님.
                 existing_price = existing.get("price_per_hour")
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
@@ -958,7 +958,7 @@ class RoomCollectionService:
             ):
                 inferred_range = price_inferred.get("recommend_range")
 
-            # Preserve existing JSON values unless parser explicitly provides replacements.
+            # 파서가 명시적으로 대체 값을 제공하지 않으면 기존 JSON 값을 보존
             existing_price_config = existing.get("price_config", []) if existing else []
             existing_base_cap = existing.get("base_capacity") if existing else None
             existing_extra_charge = existing.get("extra_charge") if existing else None
@@ -975,7 +975,7 @@ class RoomCollectionService:
             else:
                 final_extra_charge = existing_extra_charge
 
-            # Boolean fields fallback
+            # Boolean 필드 fallback
             existing_can_reserve = existing.get("can_reserve_one_hour", True) if existing else True
             parsed_can_reserve = parsed.get("can_reserve_one_hour")
             structured_can_reserve = self._extract_structured_can_reserve_one_hour(room)
@@ -1010,7 +1010,7 @@ class RoomCollectionService:
             else:
                 final_requires_call = existing_requires_call
 
-            # Room Data
+            # 룸 데이터 구성
             final_max_cap_int = self._coerce_int(final_max_cap)
             if final_max_cap_int is None:
                 final_max_cap_int = self.MANUAL_REVIEW_FLAG
@@ -1041,7 +1041,7 @@ class RoomCollectionService:
                 "biz_item_id": rid,
                 "name": parsed.get("clean_name") or room["name"],
                 "price_per_hour": final_price_int,
-                # Schema constraint: Default to 1 if null
+                # 스키마 제약: null이면 기본값 1
                 "max_capacity": final_max_cap_int,
                 "recommend_capacity": final_rec_cap_int,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
@@ -1061,10 +1061,10 @@ class RoomCollectionService:
                 "requires_contact_on_sameday": final_requires_call,
                 "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
                 "can_reserve_one_hour": final_can_reserve,
-                "image_urls": image_urls  # Save to JSONB column
+                "image_urls": image_urls  # JSONB 컬럼에 저장
             }
             
-            # Upsert Room (with schema-compat fallback for rolling migrations)
+            # 룸 Upsert (롤링 마이그레이션용 스키마 호환 fallback 포함)
             self._upsert_room_with_schema_fallback(room_data)
 
         return True
@@ -1075,7 +1075,7 @@ class RoomCollectionService:
         room_name: Optional[str],
         price_per_hour: Optional[int],
     ) -> Optional[Dict[str, Any]]:
-        """Infer capacity using curated per-business price rules."""
+        """업체별 가격 규칙을 사용하여 수용 인원을 추론한다."""
         if not business_id or not isinstance(price_per_hour, int) or price_per_hour <= 0:
             return None
 
@@ -1110,7 +1110,7 @@ class RoomCollectionService:
                     "recommend_range": best_rule.get("recommend_range"),
                 }
 
-        # Global fallback by price band when no business-specific rule matched.
+        # 업체별 규칙 미매칭 시 가격대 기반 글로벌 fallback
         for band_rule in self.PRICE_BAND_CAPACITY_DEFAULTS:
             band_name = band_rule.get("name")
             min_price = band_rule.get("min_price")
@@ -1153,10 +1153,10 @@ class RoomCollectionService:
         return None
 
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
-        """Upsert room row and retry if payload contains unknown columns.
+        """룸 행을 upsert하고, 알 수 없는 컬럼이 포함되면 재시도한다.
 
-        During rolling migrations, some environments may still miss one of the
-        alias columns (e.g., requires_contact_on_sameday vs requires_contact_same_day).
+        롤링 마이그레이션 중 일부 환경에서 alias 컬럼(requires_contact_on_sameday vs
+        requires_contact_same_day 등)이 아직 없을 수 있다.
         """
         payload = dict(room_data)
         for col in list(self._unsupported_room_columns):
@@ -1177,7 +1177,7 @@ class RoomCollectionService:
                 self._unsupported_room_columns.add(missing_col)
                 payload.pop(missing_col, None)
 
-        # Defensive fallback (should not be reached under normal circumstances)
+        # 방어 코드 (정상적으로는 위 루프에서 return 됨)
         self.supabase.table("room").upsert(payload).execute()
 
     # 왜: 롤링 배포 중 브랜치 컬럼 스키마가 환경마다 달라도 수집 파이프라인을 중단시키지 않기 위해 필요하다.
@@ -1211,7 +1211,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _extract_missing_column_from_error(exc: Exception) -> Optional[str]:
-        """Extract missing-column name from PostgREST/Supabase error text."""
+        """PostgREST/Supabase 에러 텍스트에서 누락된 컬럼명을 추출한다."""
         text = str(exc)
 
         patterns = [
@@ -1225,7 +1225,7 @@ class RoomCollectionService:
         return None
 
     def _extract_structured_can_reserve_one_hour(self, room: Dict) -> Optional[bool]:
-        """Infer one-hour reservation availability from structured booking policy fields."""
+        """구조화된 예약 정책 필드에서 1시간 예약 가능 여부를 추론한다."""
         unit_code = (room.get("bookingTimeUnitCode") or "").upper()
         min_booking_time = room.get("minBookingTime")
 
@@ -1253,7 +1253,7 @@ class RoomCollectionService:
         return None
 
     def _extract_structured_extra_charge(self, room: Dict) -> Optional[int]:
-        """Extract extra charge from structured JSON fields before text fallback."""
+        """텍스트 fallback 전에 구조화된 JSON 필드에서 추가 요금을 추출한다."""
         extra_fee_setting = room.get("extraFeeSettingJson")
         if isinstance(extra_fee_setting, str):
             try:
@@ -1297,7 +1297,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _coerce_int(value: Any) -> Optional[int]:
-        """Best-effort conversion of number-like values to int."""
+        """숫자형 값을 int로 변환한다 (best-effort)."""
         if isinstance(value, bool):
             return None
         if isinstance(value, int):
@@ -1315,7 +1315,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _coerce_bool(value: Any) -> Optional[bool]:
-        """Best-effort conversion of bool-like values to bool."""
+        """bool형 값을 bool로 변환한다 (best-effort)."""
         if isinstance(value, bool):
             return value
         if isinstance(value, (int, float)):
@@ -1336,7 +1336,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _coerce_float(value: Any) -> Optional[float]:
-        """Best-effort conversion of number-like values to float."""
+        """숫자형 값을 float로 변환한다 (best-effort)."""
         if isinstance(value, bool):
             return None
         if isinstance(value, (int, float)):
@@ -1353,7 +1353,7 @@ class RoomCollectionService:
 
     @classmethod
     def _extract_phone_number_from_payload(cls, payload: Any) -> Optional[str]:
-        """Recursively extract a plausible phone number from JSON-like payloads."""
+        """JSON 형태의 페이로드에서 전화번호를 재귀적으로 추출한다."""
         if payload is None:
             return None
 
@@ -1364,7 +1364,7 @@ class RoomCollectionService:
             try:
                 parsed = json.loads(stripped)
             except json.JSONDecodeError:
-                # Ignore URL noise when parsing free-form text payloads.
+                # 자유 형식 텍스트에서 URL 노이즈를 제거 후 재파싱
                 cleaned = re.sub(r"https?://\S+", " ", stripped)
                 return cls._extract_phone_number_from_text(cleaned)
             return cls._extract_phone_number_from_payload(parsed)
@@ -1414,11 +1414,11 @@ class RoomCollectionService:
 
     @staticmethod
     def _extract_phone_number_from_text(text: str) -> Optional[str]:
-        """Extract a Korean business phone-like token from plain text."""
+        """일반 텍스트에서 한국식 사업장 전화번호 토큰을 추출한다."""
         if not text:
             return None
 
-        # Keep this allow-list tight to avoid false positives from timestamps/URLs.
+        # 타임스탬프/URL 오탐 방지를 위해 허용 패턴을 엄격하게 유지
         pattern = (
             r"(?<!\d)0507[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
             r"|(?<!\d)(?:\+82[\s\-]?)?0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}(?!\d)"
@@ -1434,7 +1434,7 @@ class RoomCollectionService:
             if len(digits) < 8 or len(digits) > 12:
                 continue
 
-            # Prefer tokens near contact keywords to avoid non-phone numeric noise.
+            # 비전화 숫자 노이즈 방지를 위해 연락처 키워드 근처 토큰 우선
             left = max(0, match.start() - 24)
             right = min(len(text), match.end() + 24)
             window = text[left:right].lower()
@@ -1470,7 +1470,7 @@ class RoomCollectionService:
         rooms: List[Dict[str, Any]],
         source_hint: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
-        """Extract branch phone number from business payload, map hint, and room payloads."""
+        """비즈니스 페이로드, 지도 힌트, 룸 페이로드에서 지점 전화번호를 추출한다."""
         business_candidates = [
             business.get("phoneInformationJson"),
             business.get("phone"),
@@ -1508,7 +1508,7 @@ class RoomCollectionService:
     def _extract_capacity_text_signals(
         self, room: Dict[str, Any]
     ) -> Tuple[Optional[int], Optional[int], Optional[List[int]]]:
-        """Extract high-confidence capacity signals from room name/desc text.
+        """룸 이름/설명 텍스트에서 고신뢰 수용 인원 신호를 추출한다.
 
         Returns:
             (max_capacity, recommend_capacity, recommend_capacity_range)
@@ -1517,7 +1517,7 @@ class RoomCollectionService:
         desc = room.get("desc") or ""
         text = f"{name} {desc}"
 
-        # Strongest pattern: "정원 N명, 최대 M명"
+        # 최강 패턴: "정원 N명, 최대 M명"
         pair_match = re.search(r"정원\s*(\d+)\s*명[^0-9]{0,20}최대\s*(\d+)\s*명", text)
         if pair_match:
             rec = int(pair_match.group(1))
@@ -1528,7 +1528,7 @@ class RoomCollectionService:
         max_cap: Optional[int] = None
         rec_range: Optional[List[int]] = None
 
-        # Recommended range: "4~6명", "4-6명", "권장 4~6명"
+        # 권장 범위 패턴: "4~6명", "4-6명", "권장 4~6명"
         range_match = re.search(r"(\d+)\s*[~\-]\s*(\d+)\s*명", text)
         if range_match:
             min_r = int(range_match.group(1))
@@ -1550,10 +1550,9 @@ class RoomCollectionService:
         return max_cap, rec_cap, rec_range
 
     def _filter_rooms_for_regex_parsing(self, rooms: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
-        """Exclude non-rehearsal labels and rooms lacking reservation metadata.
+        """비합주실 라벨 및 예약 메타데이터가 없는 룸을 제외한다.
 
-        Inquiry-required rooms are still included because they can be reservable
-        via phone/chat/manual confirmation flows.
+        문의 필요 룸은 전화/채팅/수동 확인 플로우로 예약 가능하므로 포함한다.
         """
         selected: List[Dict[str, Any]] = []
         filtered_stats = {
@@ -1576,22 +1575,22 @@ class RoomCollectionService:
         return selected, filtered_stats
 
     def _is_non_rehearsal_room_name(self, room: Dict[str, Any]) -> bool:
-        """Detect lesson/recording labels in room name."""
+        """룸 이름에서 레슨/녹음 등 비합주 라벨을 감지한다."""
         name = room.get("name")
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
-        # Hard 키워드: 다른 장르/용도 → 무조건 필터링
+        # 강제 제외 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
-        # Soft 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
+        # 조건부 허용 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
             has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
             return not has_positive
         return False
 
     def _requires_inquiry(self, room: Dict[str, Any]) -> bool:
-        """Detect inquiry-required rooms from structured/text policy blocks."""
+        """구조화/텍스트 정책 블록에서 문의 필요 룸을 감지한다."""
         structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
         if structured_requires_call is True:
             return True
@@ -1629,7 +1628,7 @@ class RoomCollectionService:
     MIN_REHEARSAL_PRICE = 7000
 
     def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
-        """Check if room has enough reservation-related metadata to parse.
+        """룸에 파싱할 충분한 예약 메타데이터가 있는지 확인한다.
 
         가격 정보는 필수이며, 밴드 합주실 최소 가격(MIN_REHEARSAL_PRICE) 이상이어야 한다.
         개인연습실 등 저가 룸은 합주실이 아닐 가능성이 높으므로 수집에서 제외한다.
@@ -1646,7 +1645,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _has_non_empty_payload(value: Any) -> bool:
-        """Return True for non-empty JSON-like payloads."""
+        """비어있지 않은 JSON 형태의 페이로드이면 True를 반환한다."""
         if value is None:
             return False
         if isinstance(value, str):
@@ -1666,7 +1665,7 @@ class RoomCollectionService:
 
     @staticmethod
     def _collect_room_policy_texts(room: Dict[str, Any]) -> List[str]:
-        """Collect policy-related text snippets for inquiry detection."""
+        """문의 감지를 위한 정책 관련 텍스트 스니펫을 수집한다."""
         texts: List[str] = []
 
         def walk(value: Any) -> None:
@@ -1690,7 +1689,7 @@ class RoomCollectionService:
         return texts
 
     def _extract_structured_requires_call_on_same_day(self, room: Dict[str, Any]) -> Optional[bool]:
-        """Extract requires-call-on-same-day from structured JSON-like fields."""
+        """구조화된 JSON 필드에서 당일 예약 연락 필요 여부를 추출한다."""
         candidate_fields = [
             room.get("extraDescJson"),
             room.get("bookingCountSettingJson"),
@@ -1761,7 +1760,7 @@ class RoomCollectionService:
             if result is not None:
                 return result
 
-            # Fallback on structured text blocks (e.g., extraDescJson[].title/context)
+            # 구조화 텍스트 블록 fallback (예: extraDescJson[].title/context)
             texts: List[str] = []
             collect_texts(candidate, texts)
             if texts:
@@ -1777,30 +1776,30 @@ class RoomCollectionService:
                     for token in ["없이", "불필요", "필요없", "not required", "no need", "without"]
                 )
 
-                # Strong positive: same-day + call/contact signals
+                # 강한 긍정: 당일 + 전화/문의 신호
                 if has_same_day and has_call and not has_negative:
                     return True
 
-                # Explicit negative phrase in structured text
+                # 구조화 텍스트 내 명시적 부정 표현
                 if has_same_day and has_call and has_negative:
                     return False
         return None
 
     def _extract_price(self, room: Dict) -> Optional[int]:
-        """Extract pricing information with fallbacks for sparse payloads."""
+        """데이터가 부족한 페이로드에 대비한 fallback과 함께 가격 정보를 추출한다."""
         min_max = room.get("minMaxPrice")
         if isinstance(min_max, dict):
-            # Primary source: booking GraphQL min price.
+            # 1차 소스: 예약 GraphQL 최저 가격
             min_price = self._coerce_int(min_max.get("minPrice"))
             if min_price is not None and min_price >= 0:
                 return min_price
 
-        # Secondary source: direct price field.
+        # 2차 소스: 직접 price 필드
         direct_price = self._coerce_int(room.get("price"))
         if direct_price is not None and direct_price >= 0:
             return direct_price
 
-        # Last-resort source: textual hints like "(18,000원/1시간)" in room name/desc.
+        # 최후 수단: 룸 이름/설명 내 텍스트 힌트 (예: "(18,000원/1시간)")
         for text in (room.get("name"), room.get("desc")):
             if not isinstance(text, str) or not text.strip():
                 continue
@@ -1905,7 +1904,7 @@ class RoomCollectionService:
             rid = room["bizItemId"]
             parsed = parsed_results.get(rid, {})
 
-            # Identify unresolved items based on capacity parsing failures
+            # 수용 인원 파싱 실패 기준으로 미해결 항목 식별
             max_capacity = parsed.get("max_capacity")
             failure_reason = None
 
@@ -1914,7 +1913,7 @@ class RoomCollectionService:
             elif max_capacity == self.MANUAL_REVIEW_FLAG:
                 failure_reason = "manual_review_flag"
 
-            # Only export if there's a failure reason
+            # 실패 사유가 있을 때만 내보내기
             if failure_reason:
                 unresolved_item = {
                     "business_id": business_id,
@@ -1929,18 +1928,18 @@ class RoomCollectionService:
                 }
                 unresolved_items.append(unresolved_item)
 
-        # If there are unresolved items, export them
+        # 미해결 항목이 있으면 파일로 내보내기
         if unresolved_items:
             # 로컬 환경에서 호출 시 경로 설정 가능. 기본값은 프로젝트 루트/scripts/unresolved
             default_dir = Path(__file__).parent.parent.parent / "scripts" / "unresolved"
             export_dir = Path(os.getenv("UNRESOLVED_EXPORT_DIR", str(default_dir)))
             export_dir.mkdir(parents=True, exist_ok=True)
 
-            # Generate filename with current date
+            # 현재 날짜로 파일명 생성
             date_str = datetime.now().strftime("%Y%m%d")
             export_file = export_dir / f"unresolved_{date_str}.json"
 
-            # Load existing data if file exists, otherwise start with empty list
+            # 기존 파일이 있으면 불러오고, 없으면 빈 리스트로 시작
             existing_data = []
             if export_file.exists():
                 try:
@@ -1949,7 +1948,7 @@ class RoomCollectionService:
                 except Exception as e:
                     logger.warning(f"Failed to read existing unresolved file: {e}")
 
-            # Append new unresolved items with duplicate check
+            # 중복 체크 후 새 미해결 항목 추가
             existing_ids = {item["biz_item_id"] for item in existing_data}
             new_items = [item for item in unresolved_items if item["biz_item_id"] not in existing_ids]
 

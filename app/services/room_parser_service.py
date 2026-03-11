@@ -22,7 +22,7 @@ KEYWORD_CAPACITY_MAP = {
 
 
 class RoomParserService:
-    """Rule-based parser for rehearsal room information."""
+    """규칙 기반 합주실 정보 파서"""
 
     async def parse_room_desc(self, name: str, desc: str) -> Dict[str, Any]:
         """룸 이름과 설명을 기반으로 구조화된 정보를 추출합니다."""
@@ -208,15 +208,15 @@ class RoomParserService:
 
     @classmethod
     def _clean_room_name(cls, name: str) -> str:
-        """Normalize room display name by stripping promo/policy noise."""
+        """프로모션/정책 노이즈를 제거하여 룸 표시명을 정규화한다."""
         clean = re.sub(r"\s+", " ", (name or "")).strip()
         if not clean:
             return clean
 
-        # Common prefix noise: EVENT))1번방 -> 1번방
+        # 일반적인 접두사 노이즈 제거: EVENT))1번방 -> 1번방
         clean = re.sub(r"^\s*(?:event|이벤트)\s*[)\]-]*\s*", "", clean, flags=re.IGNORECASE)
 
-        # Remove day-type tags and capacity tags anywhere in name.
+        # 요일 유형 태그 및 수용 인원 태그 제거
         clean = re.sub(r"\[평일\]|\(평일\)", " ", clean)
         clean = re.sub(r"\[주말[^\]]*\]|\(주말[^)]*\)|\[주말/공휴일\]", " ", clean)
         clean = re.sub(
@@ -231,7 +231,7 @@ class RoomParserService:
         )
         clean = re.sub(r"\s*\(\s*-\s*\d+\s*(?:인|명)\s*\)", " ", clean)
 
-        # Remove leading bracket labels when they look like promo/operation notes.
+        # 프로모션/운영 메모로 보이는 앞쪽 대괄호 라벨 제거
         # 시간대 키워드가 포함된 태그는 레이블을 추출해서 뒤에 붙인다.
         time_slot_label: Optional[str] = None
         promo_markers = (
@@ -264,7 +264,7 @@ class RoomParserService:
                 continue
             break
 
-        # Remove trailing parenthetical notes related to reservation/promo/time.
+        # 예약/프로모션/시간 관련 후행 괄호 메모 제거
         note_pattern = re.compile(
             r"(예약|입금|문의|전화|필수|요망|확인|할인|특가|평일|주말|공휴일|심야|야간|주간|요금|당일|event|이벤트|정원|최대|\d+\s*%|\d{1,2}\s*시|~|원)",
             re.IGNORECASE,
@@ -279,7 +279,7 @@ class RoomParserService:
                 continue
             break
 
-        # Guard against dangling parenthesis after partial tag stripping.
+        # 부분 태그 제거 후 남은 불완전한 괄호 처리
         if clean.count("(") > clean.count(")"):
             clean = re.sub(r"\([^)]*$", "", clean).strip()
         elif clean.count(")") > clean.count("("):

@@ -30,7 +30,7 @@ class DreamCrawler(BaseCrawler):
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
     }
-    DATE_LIMIT_DAYS = 121  # Reservation window limit per Dream policy.
+    DATE_LIMIT_DAYS = 121  # 드림 합주실 정책상 예약 가능 기한
 
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         """드림 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회합니다.
@@ -134,5 +134,5 @@ class DreamCrawler(BaseCrawler):
 
         return available_slots
 
-# Register the crawler
+# 크롤러 등록
 registry.register("dream", DreamCrawler())

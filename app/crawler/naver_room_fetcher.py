@@ -19,7 +19,7 @@ class NaverRoomFetcher:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     
-    # Configurable timeout via environment variable
+    # 환경변수로 설정 가능한 타임아웃/재시도 파라미터
     REQUEST_TIMEOUT = float(os.getenv("FETCHER_TIMEOUT", "10.0"))
     RATE_LIMIT_RETRIES = int(os.getenv("FETCHER_RATE_LIMIT_RETRIES", "3"))
     RATE_LIMIT_BACKOFF_SEC = float(os.getenv("FETCHER_RATE_LIMIT_BACKOFF_SEC", "1.2"))
@@ -27,7 +27,7 @@ class NaverRoomFetcher:
     STORAGE_STATE_PATH_ENV = "NAVER_STORAGE_STATE_PATH"
 
     def __init__(self):
-        """환경 변수에서 쿠키 헤더 또는 storage state를 로드하여 인증 헤더를 초기화한다."""
+        """환경변수에서 쿠키 헤더 또는 storage state를 로드하여 인증 헤더를 초기화한다."""
         self.headers = dict(self.HEADERS)
 
         cookie_header = os.getenv("NAVER_COOKIE_HEADER")
@@ -118,7 +118,7 @@ class NaverRoomFetcher:
         source_hint: Optional[Dict[str, Any]] = None,
         rooms: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict:
-        """business 조회 실패 시 source_hint와 방 이름을 활용해 대체 업체 정보를 생성한다."""
+        """business 조회 실패 시 source_hint와 룸 이름을 활용해 대체 업체 정보를 생성한다."""
         room_name_tokens = {
             normalize_name_token((room or {}).get("name"))
             for room in (rooms or [])
@@ -160,7 +160,7 @@ class NaverRoomFetcher:
 
 
     async def _fetch_business(self, client: httpx.AsyncClient, business_id: str) -> Optional[Dict]:
-        """네이버 business GraphQL 쿼리를 호출하여 업체 기본 정보를 조회한다."""
+        """네이버 business GraphQL 쿼리로 업체 기본 정보를 조회한다."""
         query = """
         query business($businessId: String!) {
             business(input: {businessId: $businessId}) {
@@ -213,7 +213,7 @@ class NaverRoomFetcher:
         return business
 
     async def _fetch_biz_items(self, client: httpx.AsyncClient, business_id: str) -> List[Dict]:
-        """네이버 bizItems GraphQL 쿼리를 호출하여 업체의 방(BizItem) 목록을 조회한다."""
+        """네이버 bizItems GraphQL 쿼리로 업체의 룸(BizItem) 목록을 조회한다."""
         query = """
         query bizItems($input: BizItemsParams) {
           bizItems(input: $input) {
@@ -273,7 +273,7 @@ class NaverRoomFetcher:
         place_id: Optional[str] = None
     ) -> Optional[Dict]:
         """좌표 기반으로 인근 지하철역 정보를 조회한다."""
-        # Some cases still expect placeId-like input; empty string fallback is acceptable.
+        # 일부 케이스에서 placeId 형태의 입력을 기대함. 빈 문자열 fallback 허용.
         query = """
         query nearSubway($input: NearSubwayInput) {
             nearSubway(input: $input) {
@@ -372,7 +372,7 @@ class NaverRoomFetcher:
         return backoff + jitter
 
     def _load_cookie_header_from_storage_state(self, path: Optional[str]) -> Optional[str]:
-        """storage state JSON 파일에서 네이버 도메인 쿠키를 추출하여 Cookie 헤더 문자열을 생성한다."""
+        """storage state JSON에서 네이버 도메인 쿠키를 추출하여 Cookie 헤더 문자열을 생성한다."""
         if not path:
             return None
         if not os.path.exists(path):
@@ -410,7 +410,7 @@ class NaverRoomFetcher:
         normalized = str(domain or "").strip().lstrip(".").lower()
         return normalized == "naver.com" or normalized.endswith(".naver.com")
 
-# Manual smoke test
+# 수동 동작 테스트
 if __name__ == "__main__":
     import asyncio
     logging.basicConfig(level=logging.INFO)
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     async def main():
         """네이버 룸 페처 동작을 테스트한다."""
         fetcher = NaverRoomFetcher()
-        # Sample business test run
+        # 샘플 business 테스트 실행
         info = await fetcher.fetch_full_info("522011")
         print(f"Business: {info['business']['businessDisplayName']}")
         print(f"Room count: {len(info['rooms'])}")

@@ -170,8 +170,8 @@ def validate_hour_continuous(hour_slots: List[str], date: str):
 
 def _slot_to_minutes(slot: str) -> int:
     """HH:MM 문자열을 분 단위 정수로 변환"""
-    # This helper assumes slot already passed HOUR_PATTERN validation.
-    # AvailabilityService._slot_to_minutes performs strict regex/range validation.
+    # 이 헬퍼는 slot이 HOUR_PATTERN 검증을 통과했다고 가정한다.
+    # AvailabilityService._slot_to_minutes에서 엄격한 regex/범위 검증을 수행함.
     try:
         hour, minute = slot.split(":")
         return int(hour) * 60 + int(minute)

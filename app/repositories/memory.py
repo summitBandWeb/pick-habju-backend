@@ -12,7 +12,7 @@ class MockFavoriteRepository(IFavoriteRepository):
     
     def __init__(self):
         """빈 In-Memory Set 저장소를 초기화한다."""
-        # Data Structure: {(device_id, business_id, biz_item_id), ...}
+        # 자료구조: {(device_id, business_id, biz_item_id), ...}
         self._data: Set[Tuple[str, str, str]] = set()
 
     def add(self, device_id: str, business_id: str, biz_item_id: str) -> bool:

@@ -27,12 +27,10 @@ class SupabaseFavoriteRepository(IFavoriteRepository):
                 "business_id": business_id,
                 "biz_item_id": biz_item_id
             }
-            # upsert=True is default for .upsert(), preventing duplicates on PK
-            # returning='minimal' or 'representation'
+            # .upsert() 기본값으로 PK 중복 방지
             response = self.supabase.table(self.table_name).upsert(data).execute()
-            
-            # response.data would be non-empty if successful and returning data
-            # Typically Supabase Python client returns an object with .data
+
+            # 성공 시 response.data가 비어있지 않음 (Supabase Python 클라이언트)
             return True
         except Exception as e:
             logger.error(f"Error adding favorite: {e}")

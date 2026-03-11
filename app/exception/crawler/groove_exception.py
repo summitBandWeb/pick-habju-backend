@@ -27,7 +27,7 @@ class GrooveRequestError(BaseCustomException):
         super().__init__(
             message=message,
             error_code=ErrorCode.CRAWLER_EXECUTION_FAILED,
-            status_code=503 # Service Unavailable
+            status_code=503  # 서비스 일시 불가
         )
 
 class GrooveRoomParseError(BaseCustomException):

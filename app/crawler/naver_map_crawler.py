@@ -15,16 +15,16 @@ from fake_useragent import UserAgent
 logger = logging.getLogger(__name__)
 
 class NaverMapCrawler:
-    """Search Naver Map for rehearsal rooms and collect business IDs.
+    """네이버 지도에서 합주실을 검색하고 business ID를 수집하는 크롤러.
 
-    Main behavior:
-    - Launch sync Playwright in a background thread for stable Windows runtime.
-    - Parse window.__APOLLO_STATE__ to extract place/business objects.
+    주요 동작:
+    - Windows 런타임 안정성을 위해 sync Playwright를 백그라운드 스레드에서 실행.
+    - window.__APOLLO_STATE__를 파싱하여 장소/업체 객체를 추출.
     """
     
     BASE_URL = "https://pcmap.place.naver.com/place/list"
     
-    # Configurable timeouts via environment variables
+    # 환경변수로 설정 가능한 타임아웃
     PAGE_WAIT_MS = int(os.getenv("CRAWLER_PAGE_WAIT_MS", "3000"))
     MAX_PAGES = int(os.getenv("CRAWLER_MAX_PAGES", "5"))
     RATE_LIMIT_RETRIES = int(os.getenv("CRAWLER_RATE_LIMIT_RETRIES", "3"))
@@ -47,19 +47,19 @@ class NaverMapCrawler:
         self._executor = ThreadPoolExecutor(max_workers=1)
 
     async def search_rehearsal_rooms(self, query: str = "합주실") -> List[Dict[str, str]]:
-        """Search rehearsal rooms by keyword and return parsed item summaries.
+        """키워드로 합주실을 검색하고 파싱된 아이템 요약을 반환한다.
 
         Args:
-            query: Search phrase for Naver Map (for example, "sadang rehearsal room").
+            query: 네이버 지도 검색어 (예: "사당역 합주실").
 
         Returns:
-            List of dictionaries containing id, name, and address fields.
+            id, name, address 필드를 포함하는 딕셔너리 리스트.
         """
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, self._search_sync, query)
 
     async def reveal_phone_number(self, place_id: str) -> Optional[str]:
-        """Reveal phone number from place page (visible text or click-to-reveal flow)."""
+        """장소 페이지에서 전화번호를 추출한다 (표시된 텍스트 또는 클릭 노출 방식)."""
         if not place_id:
             return None
         loop = asyncio.get_running_loop()
@@ -77,7 +77,7 @@ class NaverMapCrawler:
         )
 
     def _search_sync(self, query: str) -> List[Dict[str, str]]:
-        """Synchronous search implementation."""
+        """동기 검색 구현."""
         user_agent_str = self._resolve_user_agent()
 
         results = {}
@@ -131,7 +131,7 @@ class NaverMapCrawler:
 
             context = browser.new_context(**context_kwargs)
             
-            # Apply stealth if available
+            # stealth 모듈이 있으면 적용
             try:
                 from playwright_stealth import stealth_sync
                 stealth_sync(context)
@@ -140,7 +140,7 @@ class NaverMapCrawler:
             except Exception as e:
                 logger.warning(f"Failed to apply stealth: {e}")
 
-            # Override navigator.webdriver to avoid detection (redundant if stealth used, but safe)
+            # navigator.webdriver 감지 방지 (stealth 적용 시 중복이나 안전을 위해 유지)
             context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             page = context.new_page()
             
@@ -181,7 +181,7 @@ class NaverMapCrawler:
         return list(results.values())
 
     def _reveal_phone_sync(self, place_id: str) -> Optional[str]:
-        """Open place entry page and extract/reveal phone number."""
+        """장소 상세 페이지를 열어 전화번호를 추출/노출한다."""
         user_agent_str = self._resolve_user_agent()
         entry_url = f"https://map.naver.com/p/entry/place/{place_id}"
         revealed_from_api: Optional[str] = None
@@ -561,7 +561,7 @@ class NaverMapCrawler:
         matches = cls.PHONE_PATTERN.findall(text)
         if not matches:
             return None
-        # Prefer first appearance in place panel text.
+        # 장소 패널 텍스트에서 첫 번째 매칭을 우선 사용
         return re.sub(r"[.\s]+", "-", str(matches[0])).strip("-")
 
     @classmethod
@@ -569,7 +569,7 @@ class NaverMapCrawler:
         if not payload:
             return None
 
-        # Some endpoints return base64-encoded JSON like {"number":"010-xxxx-xxxx"}.
+        # 일부 엔드포인트는 {"number":"010-xxxx-xxxx"} 형태의 base64 인코딩 JSON을 반환
         raw = payload.strip()
         try:
             decoded = base64.b64decode(raw).decode("utf-8", errors="ignore")
@@ -581,7 +581,7 @@ class NaverMapCrawler:
         except Exception:
             pass
 
-        # Fallback: payload itself may contain JSON/plain phone token.
+        # Fallback: 페이로드 자체가 JSON/일반 전화번호 토큰을 포함할 수 있음
         try:
             parsed = json.loads(payload)
             if isinstance(parsed, dict):
@@ -704,7 +704,7 @@ class NaverMapCrawler:
         """)
 
     def _merge_results(self, target: Dict, source: List[Dict]):
-        """Merge results while deduplicating by business id."""
+        """business ID 기준 중복 제거하며 결과를 병합한다."""
         for item in source:
             if not isinstance(item, dict):
                 logger.warning(f"Skipping non-dict item: {item}")
@@ -723,10 +723,9 @@ class NaverMapCrawler:
                 target[item_id] = item
 
     async def crawl_all_regions(self) -> List[Dict]:
-        """
-        Crawl only globally configured priority station areas.
-        Sequential execution for stability on Windows.
-        Returns list of collected business Item dicts (deduplicated).
+        """전역 설정된 우선 역세권만 크롤링한다.
+
+        Windows 안정성을 위해 순차 실행하며, 중복 제거된 business 아이템 딕셔너리 리스트를 반환한다.
         """
         all_queries = list(PRIORITY_AREA_QUERIES)
         logger.info(f"Starting sequential crawl for {len(all_queries)} priority areas...")
@@ -743,7 +742,7 @@ class NaverMapCrawler:
                     if item["id"] not in all_results:
                         all_results[item["id"]] = item
                         
-                # Small randomized delay between regions to reduce burst patterns
+                # 지역 간 랜덤 지연으로 burst 패턴 방지
                 await asyncio.sleep(2 + random.uniform(0, 1.5))
                 
             except Exception as e:
@@ -752,7 +751,7 @@ class NaverMapCrawler:
         logger.info(f"Total unique businesses found in priority areas: {len(all_results)}")
         return list(all_results.values())
 
-# Manual run helper
+# 수동 실행 헬퍼
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     crawler = NaverMapCrawler(headless=False)

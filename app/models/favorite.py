@@ -17,14 +17,13 @@ class Favorite(BaseModel):
         - id 필드 제거 (Composite Key 사용으로 인해 불필요하거나, DB 자동 생성)
     """
     
-    # Rationale (Index):
-    # device_id: '내 즐겨찾기 목록 조회' API에서 WHERE 조건으로 사용됨.
+    # 인덱스 근거: '내 즐겨찾기 목록 조회' API에서 WHERE 조건으로 사용됨.
     device_id: str = Field(..., description="사용자 기기 식별값 (UUID)")
-    
-    # FK or Grouping key
+
+    # FK 또는 그룹핑 키
     business_id: str = Field(..., description="합주실 지점 구별 ID")
-    
-    # Unique Item ID
+
+    # 고유 항목 ID
     biz_item_id: str = Field(..., description="합주실 룸 구별 ID")
     
     created_at: datetime | None = Field(default=None, description="생성 일시")
