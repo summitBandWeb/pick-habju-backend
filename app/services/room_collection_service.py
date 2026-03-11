@@ -31,6 +31,8 @@ class RoomCollectionService:
     MANUAL_REVIEW_FLAG = 100
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
+    # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
+    MIN_REHEARSAL_PRICE = 5000
     # Global fallback when room-level basic capacity info is missing.
     # Rule from ops:
     # - 10,000~14,999 KRW -> 4~5 people
@@ -410,7 +412,9 @@ class RoomCollectionService:
                 "representative_keywords": domain_decision["representative_keywords"],
             }
 
-        target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(rooms)
+        target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(
+            rooms, business_is_rehearsal=domain_decision["is_candidate"],
+        )
         if not target_rooms:
             if (
                 filtered_stats["non_rehearsal_keyword"] > 0
@@ -849,10 +853,11 @@ class RoomCollectionService:
                 branch_standby_days = parsed.get("standby_days")
                 break
 
+        clean_display_name = self._sanitize_display_name(display_name)
         branch_data = {
             "business_id": business_id,
-            "name": display_name,
-            "display_name": display_name,
+            "name": clean_display_name,
+            "display_name": clean_display_name,
         }
 
         # Do not overwrite existing coordinates with null when business payload is missing.
@@ -864,6 +869,14 @@ class RoomCollectionService:
         elif isinstance(coords, list) and len(coords) >= 2:
             lng_val = self._coerce_float(coords[0])
             lat_val = self._coerce_float(coords[1])
+
+        # 위경도 뒤바뀜 자동 보정: 한국 좌표 기준 lat < 100, lng > 100
+        if lat_val is not None and lng_val is not None and lat_val > 100 and lng_val < 100:
+            lat_val, lng_val = lng_val, lat_val
+            logger.warning(
+                "Swapped lat/lng for business_id=%s (detected reversed coordinates)",
+                business_id,
+            )
 
         if lat_val is not None:
             branch_data["lat"] = lat_val
@@ -1032,6 +1045,14 @@ class RoomCollectionService:
             if final_price_int is None or final_price_int < 0:
                 # DB constraint requires non-null numeric price.
                 final_price_int = 0
+
+            # 이중 방어: 최소 가격 미만 룸은 저장하지 않는다.
+            if final_price_int < self.MIN_REHEARSAL_PRICE:
+                logger.info(
+                    "Skipping room with price=%s (< MIN_REHEARSAL_PRICE=%s): business_id=%s biz_item_id=%s name=%s",
+                    final_price_int, self.MIN_REHEARSAL_PRICE, business_id, rid, room.get("name"),
+                )
+                continue
 
             room_data = {
                 "business_id": business_id,
@@ -1553,11 +1574,16 @@ class RoomCollectionService:
 
         return max_cap, rec_cap, rec_range
 
-    def _filter_rooms_for_regex_parsing(self, rooms: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    def _filter_rooms_for_regex_parsing(
+        self, rooms: List[Dict[str, Any]], *, business_is_rehearsal: bool = False,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
         """Exclude non-rehearsal labels and rooms lacking reservation metadata.
 
         Inquiry-required rooms are still included because they can be reservable
         via phone/chat/manual confirmation flows.
+
+        Args:
+            business_is_rehearsal: Stage 1 도메인 필터 통과 여부. Soft 키워드 판정에 사용.
         """
         selected: List[Dict[str, Any]] = []
         filtered_stats = {
@@ -1567,7 +1593,7 @@ class RoomCollectionService:
         }
 
         for room in rooms:
-            if self._is_non_rehearsal_room_name(room):
+            if self._is_non_rehearsal_room_name(room, business_is_rehearsal=business_is_rehearsal):
                 filtered_stats["non_rehearsal_keyword"] += 1
                 continue
             if self._requires_inquiry(room):
@@ -1579,8 +1605,13 @@ class RoomCollectionService:
 
         return selected, filtered_stats
 
-    def _is_non_rehearsal_room_name(self, room: Dict[str, Any]) -> bool:
-        """Detect lesson/recording labels in room name."""
+    def _is_non_rehearsal_room_name(self, room: Dict[str, Any], *, business_is_rehearsal: bool = False) -> bool:
+        """Detect lesson/recording labels in room name.
+
+        Args:
+            business_is_rehearsal: True이면 Business가 Stage 1 도메인 필터를 통과한 상태.
+                Soft 키워드 룸은 합주실 사업장 소속이므로 보존한다.
+        """
         name = room.get("name")
         if not isinstance(name, str) or not name.strip():
             return False
@@ -1588,8 +1619,10 @@ class RoomCollectionService:
         # Hard 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
-        # Soft 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
+        # Soft 키워드: 음악 후반작업 → Business가 합주실이거나 룸 이름에 합주 키워드 있으면 보존
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
+            if business_is_rehearsal:
+                return False
             has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
             return not has_positive
         return False
@@ -1630,15 +1663,15 @@ class RoomCollectionService:
     def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
         """Check if room has enough reservation-related metadata to parse.
 
-        가격 정보는 필수: 가격이 없는 룸은 사용자에게 유효한 예약 정보를
-        제공할 수 없으므로 수집 대상에서 제외한다.
+        가격이 MIN_REHEARSAL_PRICE 미만이면 개인연습실로 간주하여 제외한다.
+        가격 정보가 아예 없는 룸도 제외한다.
         """
         base_price = self._extract_price(room)
-        if isinstance(base_price, int) and base_price > 0:
+        if isinstance(base_price, int) and base_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         raw_price = self._coerce_int(room.get("price"))
-        if raw_price is not None and raw_price > 0:
+        if raw_price is not None and raw_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         return False
@@ -1812,6 +1845,15 @@ class RoomCollectionService:
                 if candidate is not None and candidate >= 1000:
                     return candidate
         return None
+
+    @staticmethod
+    def _sanitize_display_name(name: str) -> str:
+        """지점명에서 대괄호 태그와 예약/안내성 접미어를 제거한다."""
+        if not name:
+            return name
+        cleaned = re.sub(r"\[.*?\]", "", name).strip()
+        cleaned = re.sub(r"\s*(예약|방문\s*상담|문의|안내)$", "", cleaned).strip()
+        return cleaned if cleaned else name
 
     def _calculate_capacity_range(
         self,

@@ -52,7 +52,8 @@ def test_extract_price_fallback_from_room_name_text(service):
 
 
 @pytest.mark.asyncio
-async def test_save_to_db_defaults_price_to_zero_when_missing(service, mock_supabase):
+async def test_save_to_db_skips_room_when_price_is_zero(service, mock_supabase):
+    """가격 0원 룸은 MIN_REHEARSAL_PRICE 미만이므로 저장하지 않는다."""
     business = {"businessId": "biz1", "businessDisplayName": "test studio"}
     rooms = [
         {
@@ -66,6 +67,47 @@ async def test_save_to_db_defaults_price_to_zero_when_missing(service, mock_supa
 
     await service._save_to_db(business, rooms, parsed_results)
 
-    upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
-    upsert_data = upsert_call[0][0]
-    assert upsert_data["price_per_hour"] == 0
+    room_upsert_calls = mock_supabase._room_table.upsert.call_args_list
+    assert len(room_upsert_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_skips_room_below_min_rehearsal_price(service, mock_supabase):
+    """MIN_REHEARSAL_PRICE(5000원) 미만 룸은 _save_to_db에서도 저장하지 않는다 (이중 방어)."""
+    business = {"businessId": "biz1", "businessDisplayName": "test studio"}
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "피아노 연습실",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 3000},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": 2, "recommend_capacity": 1}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    room_upsert_calls = mock_supabase._room_table.upsert.call_args_list
+    assert len(room_upsert_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_to_db_saves_room_at_min_rehearsal_price(service, mock_supabase):
+    """MIN_REHEARSAL_PRICE(5000원) 이상 룸은 정상 저장된다."""
+    business = {"businessId": "biz1", "businessDisplayName": "test studio"}
+    rooms = [
+        {
+            "bizItemId": "room1",
+            "name": "소형 합주실",
+            "bizItemResources": [],
+            "minMaxPrice": {"minPrice": 5000},
+        }
+    ]
+    parsed_results = {"room1": {"max_capacity": 4, "recommend_capacity": 3}}
+
+    await service._save_to_db(business, rooms, parsed_results)
+
+    room_upsert_calls = mock_supabase._room_table.upsert.call_args_list
+    assert len(room_upsert_calls) == 1
+    upsert_data = room_upsert_calls[0][0][0]
+    assert upsert_data["price_per_hour"] == 5000
