@@ -294,7 +294,7 @@ async def test_structured_requires_call_overrides_parser(service, mock_supabase)
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         }
     }
 
@@ -302,7 +302,7 @@ async def test_structured_requires_call_overrides_parser(service, mock_supabase)
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_contact_on_sameday"] is True
+    assert room_data["requires_call_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -328,7 +328,7 @@ async def test_parser_requires_call_used_when_structured_missing(service, mock_s
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_contact_on_sameday": True,
+            "requires_call_on_sameday": True,
         }
     }
 
@@ -336,7 +336,7 @@ async def test_parser_requires_call_used_when_structured_missing(service, mock_s
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_contact_on_sameday"] is True
+    assert room_data["requires_call_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -369,7 +369,7 @@ async def test_structured_text_requires_call_overrides_parser(service, mock_supa
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         }
     }
 
@@ -377,7 +377,7 @@ async def test_structured_text_requires_call_overrides_parser(service, mock_supa
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_contact_on_sameday"] is True
+    assert room_data["requires_call_on_sameday"] is True
 
 
 @pytest.mark.asyncio
@@ -410,7 +410,7 @@ async def test_structured_text_negative_requires_call_overrides_parser(service, 
         "room1": {
             "max_capacity": 6,
             "recommend_capacity": 4,
-            "requires_contact_on_sameday": True,
+            "requires_call_on_sameday": True,
         }
     }
 
@@ -418,4 +418,4 @@ async def test_structured_text_negative_requires_call_overrides_parser(service, 
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
-    assert room_data["requires_contact_on_sameday"] is False
+    assert room_data["requires_call_on_sameday"] is False

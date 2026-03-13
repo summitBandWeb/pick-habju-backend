@@ -49,7 +49,7 @@ def test_extract_missing_column_from_error_parses_postgrest_message():
 
 def test_upsert_room_fallback_removes_missing_column_and_retries():
     room_table = _RoomTableStub(
-        first_error="{'message': \"Could not find the 'requires_contact_on_sameday' column of 'room' in the schema cache\"}"
+        first_error="{'message': \"Could not find the 'some_future_column' column of 'room' in the schema cache\"}"
     )
     service = object.__new__(RoomCollectionService)
     service.supabase = _SupabaseStub(room_table=room_table)
@@ -59,16 +59,16 @@ def test_upsert_room_fallback_removes_missing_column_and_retries():
     payload = {
         "business_id": "1061592",
         "biz_item_id": "5587861",
-        "requires_contact_on_sameday": False,
-        "requires_contact_same_day": False,
+        "some_future_column": "value",
+        "requires_call_on_sameday": False,
     }
 
     service._upsert_room_with_schema_fallback(payload)
 
     assert room_table.call_count == 2
-    assert "requires_contact_on_sameday" in room_table.payloads[0]
-    assert "requires_contact_on_sameday" not in room_table.payloads[1]
-    assert "requires_contact_same_day" in room_table.payloads[1]
+    assert "some_future_column" in room_table.payloads[0]
+    assert "some_future_column" not in room_table.payloads[1]
+    assert "requires_call_on_sameday" in room_table.payloads[1]
 
 
 def test_upsert_room_fallback_reraises_unrelated_errors():

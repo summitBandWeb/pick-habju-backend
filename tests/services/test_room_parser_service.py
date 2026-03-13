@@ -33,7 +33,7 @@ class TestParseWithRegex:
 
     def test_same_day_call_required(self, parser):
         result = parser._parse_with_regex("레드룸", "당일 예약은 전화 문의 바랍니다")
-        assert result["requires_contact_on_sameday"] is True
+        assert result["requires_call_on_sameday"] is True
 
     def test_cannot_reserve_one_hour(self, parser):
         result = parser._parse_with_regex("블루룸", "최소 2시간부터 예약 가능합니다")
