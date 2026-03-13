@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import random
 from app.models.dto import (
     AvailabilityRequest, AvailabilityResponse,
     RoomAvailability, PolicyWarning,
@@ -285,6 +286,10 @@ class AvailabilityService:
             전체 합주실 조회 서비스의 실패(500 서버 장애)로 이어지지 않도록 방어 로직을 구성함.
         """
 
+        # 0. 확률적 캐시 정리 (1% 확률)
+        if random.random() < 0.01:
+            availability_cache.cleanup()
+
         # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
         # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
         try:
@@ -306,20 +311,45 @@ class AvailabilityService:
 
         validate_availability_request(request.date, hour_slots, target_rooms)
 
-        # 2.5. 캐시 확인 및 크롤링 대상 필터링
-        # Rationale: 이미 캐싱된 룸은 크롤러 호출을 생략하여 응답 속도를 높이고 외부 API 부하를 줄임.
-        cached_results = []
-        crawling_rooms = []
-        
-        for room in target_rooms:
-            cached = availability_cache.get(request.date, request.start_hour, request.end_hour, room.biz_item_id)
-            if cached:
-                cached_results.append(cached)
-            else:
-                crawling_rooms.append(room)
+        # 2.5. 캐시 확인 및 크롤링 대상 필터링 (get_or_compute 패턴 사용)
+        # Rationale: 각 룸의 가용성을 개별적으로 get_or_compute로 관리하되, 내부적으로는 배치 크롤링을 수행함.
+        #            이를 통해 동일 룸/시간대에 대한 동시 요청(Stampede)을 완벽히 방어함.
+        batch_results_map: Dict[str, RoomAvailability] = {}
+        batch_finished = asyncio.Event()
 
-        if cached_results:
-            logger.info(f"[check_availability] Cache hit: {len(cached_results)} rooms")
+        async def room_compute_wrapper(biz_item_id: str) -> Optional[RoomAvailability]:
+            """배치 크롤링 결과를 대기하여 특정 룸의 결과를 반환함."""
+            await batch_finished.wait()
+            return batch_results_map.get(biz_item_id)
+
+        # 현재 캐시나 In-flight에 없는 '진짜' 크롤링 대상 식별
+        # NOTE: get_or_compute 내부에서도 동일 검증을 수행하지만, 
+        #       배치 크롤러 호출 범위를 결정하기 위해 여기서 사전 필터링함.
+        crawling_rooms = [
+            room for room in target_rooms
+            if availability_cache.get(request.date, request.start_hour, request.end_hour, room.biz_item_id) is None
+            and availability_cache._inflight.get(availability_cache._get_key(request.date, request.start_hour, request.end_hour, room.biz_item_id)) is None
+        ]
+        
+        # 모든 룸에 대해 get_or_compute 태스크 생성
+        # (이미 캐싱되었거나 타 요청에서 크롤링 중인 경우 해당 결과를 기다림)
+        availability_tasks = [
+            availability_cache.get_or_compute(
+                request.date, request.start_hour, request.end_hour, room.biz_item_id,
+                room_compute_wrapper(room.biz_item_id)
+            )
+            for room in target_rooms
+        ]
+
+        total_count = len(target_rooms)
+        cached_count = total_count - len(crawling_rooms)
+        crawling_count = len(crawling_rooms)
+        
+        logger.info(
+            f"[AvailabilityCache Metrics] Date: {request.date} Time: {request.start_hour}-{request.end_hour} | "
+            f"Total: {total_count} | Hit/Inflight: {cached_count} | Miss(Fetch): {crawling_count} | "
+            f"Hit Rate: {cached_count / max(1, total_count) * 100:.1f}%"
+        )
 
         # 3. 크롤러 비동기 작업 준비 및 실행
         tasks = []
@@ -353,75 +383,52 @@ class AvailabilityService:
                     tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     task_dates.append(request.date)
 
-        # tasks가 비어있더라도(모든 룸 캐시 히트) 아래 로직에서 cached_results를 처리하므로 조기 리턴하지 않음
-
-        results_of_lists = await asyncio.gather(*tasks) if tasks else []
+        if tasks:
+            try:
+                results_of_lists = await asyncio.gather(*tasks)
+                
+                all_results = []
+                for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
+                    for item in res_list:
+                        if isinstance(item, Exception):
+                            item.date_context = t_date
+                        all_results.append(item)
         
-        all_results = []
-        for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
-            for item in res_list:
-                if isinstance(item, Exception):
-                    item.date_context = t_date  # 익일 요청 실패 시의 날짜 추적을 위해 context 주입
-                all_results.append(item)
-
-        self._log_errors(all_results, request.date)
-
-        # 3.5. 크롤링 성공 결과물 캐시 저장 및 기존 캐시와 병합
-        successful_results = [r for r in all_results if not isinstance(r, Exception)]
-        for r in successful_results:
-            availability_cache.set(request.date, request.start_hour, request.end_hour, r.room_detail.biz_item_id, r)
+                self._log_errors(all_results, request.date)
         
-        # 캐시 데이터와 신규 조회 데이터 통합
-        total_results = cached_results + successful_results
-
-        # 3.6. Standby(대기) 기간 필터링
-        # Rationale: 지점별로 설정된 standby_days(예: 3일) 내의 예약은 필터링함.
-        filtered_results = []
-        today_dt = datetime.strptime(datetime.now().strftime("%Y-%m-%d"), "%Y-%m-%d")
-        request_dt = datetime.strptime(request.date, "%Y-%m-%d")
-        days_diff = (request_dt - today_dt).days
-
-        for r in total_results:
-            standby_days = 0
-            # branch 정보 또는 open_wait_rule에서 standby_days 추출
-            if hasattr(r.room_detail, 'openWaitRule') and isinstance(r.room_detail.openWaitRule, dict):
-                standby_days = r.room_detail.openWaitRule.get("standby_days", 0)
-            
-            if days_diff < standby_days:
-                logger.info(f"[standby_filter] Skipping {r.room_detail.biz_item_id}: request_days={days_diff} < standby_days={standby_days}")
-                continue
-            filtered_results.append(r)
-
-        # 4. 결과 집계 및 정책/가격 적용
-        merged_dict = {}
-        for r in filtered_results:
-            biz_id = r.room_detail.biz_item_id
-            if biz_id in merged_dict:
-                existing = merged_dict[biz_id]
+                successful_results = [r for r in all_results if not isinstance(r, Exception)]
                 
-                # 1. 예약 가능 여부 병합: 두 슬롯 모두 True여야 True, 하나라도 False면 False
-                # Rationale:
-                #   심야 예약은 당일/익일로 분할 조회하므로 동일 룸의 결과가 2개 생성됨.
-                #   두 슈팅이 모두 예약 가능(True)일 때만 True로 유지하고,
-                #   하나라도 False면 일부 슬롯이 막혀 있는 것이므로 False(partial) 처리.
-                if existing.available != r.available:
-                    existing.available = False  # True↔False 엇갈림 → 부분 가능이므로 False
-                    
-                # 2. 각 시간대별 슬롯 가능 여부 딕셔너리 병합
-                existing.available_slots.update(r.available_slots)
+                # --- 병합 로직 ( fragments -> merged ) ---
+                merge_temp: Dict[str, RoomAvailability] = {}
+                for r in successful_results:
+                    bid = r.room_detail.biz_item_id
+                    if bid in merge_temp:
+                        existing = merge_temp[bid]
+                        if existing.available != r.available:
+                            existing.available = False
+                        existing.available_slots.update(r.available_slots)
+                        if isinstance(existing.estimated_price, int) and isinstance(r.estimated_price, int):
+                            existing.estimated_price += r.estimated_price
+                        elif isinstance(r.estimated_price, int):
+                            existing.estimated_price = r.estimated_price
+                        existing.policy_warnings.extend(r.policy_warnings)
+                    else:
+                        merge_temp[bid] = r
                 
-                # 3. 크롤러가 반환한 가격 병합
-                if isinstance(existing.estimated_price, int) and isinstance(r.estimated_price, int):
-                    existing.estimated_price += r.estimated_price
-                elif isinstance(r.estimated_price, int):
-                    existing.estimated_price = r.estimated_price
-                    
-                # 4. 정책 경고 로그 병합
-                existing.policy_warnings.extend(r.policy_warnings)
-            else:
-                merged_dict[biz_id] = r
-                
-        merged_results = list(merged_dict.values())
+                # 배치 결과 맵 업데이트 및 이벤트 세팅
+                batch_results_map.update(merge_temp)
+                batch_finished.set()
+            finally:
+                if not batch_finished.is_set():
+                    batch_finished.set()
+        else:
+            # 크롤링할 태스크가 없는 경우 (전원 캐시 히트 등) 즉시 세팅
+            batch_finished.set()
+
+        # 전체 결과 (캐시 히트 + 방금 크롤링 완료된 결과) 취합
+        merged_results = await asyncio.gather(*availability_tasks)
+        merged_results = [r for r in merged_results if r is not None]
+
         processed_results = self._apply_policies(merged_results, request, hour_slots)
         
         branch_dict: Dict[str, BranchResponse] = {}
@@ -535,7 +542,8 @@ class AvailabilityService:
             end_hour=request.end_hour,
             hour_slots=hour_slots,
             available_biz_item_ids=available_ids,
-            branches=bookable_branches
+            branches=bookable_branches,
+            is_cached=cached_count > 0
         )
 
     @staticmethod
