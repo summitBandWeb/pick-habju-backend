@@ -82,6 +82,42 @@ def test_soft_keyword_preserved_when_room_name_has_rehearsal_keyword(service):
     assert stats["non_rehearsal_keyword"] == 0
 
 
+# --- Individual 키워드: 개인/전용 연습실 ---
+
+
+def test_individual_keyword_filtered_even_when_business_is_rehearsal(service):
+    """개인연습실/보컬 등은 business가 합주실이어도 필터링된다."""
+    rooms = [
+        {"bizItemId": "room-individual", "name": "개인 연습실", "minMaxPrice": {"minPrice": 10000}},
+        {"bizItemId": "room-vocal", "name": "보컬 연습실", "minMaxPrice": {"minPrice": 12000}},
+        {"bizItemId": "room-drum-only", "name": "드럼 전용 연습실", "minMaxPrice": {"minPrice": 15000}},
+        {"bizItemId": "room-ok", "name": "A합주실", "minMaxPrice": {"minPrice": 15000}},
+    ]
+
+    selected, stats = service._filter_rooms_for_regex_parsing(
+        rooms, business_is_rehearsal=True,
+    )
+
+    assert len(selected) == 1
+    assert selected[0]["bizItemId"] == "room-ok"
+    assert stats["non_rehearsal_keyword"] == 3
+
+
+def test_individual_keyword_preserved_when_room_name_has_rehearsal_keyword(service):
+    """룸 이름에 합주 키워드가 공존하면 Individual 키워드여도 보존된다."""
+    rooms = [
+        {"bizItemId": "room-both", "name": "보컬 합주실", "minMaxPrice": {"minPrice": 15000}},
+        {"bizItemId": "room-both2", "name": "개인연습 겸 밴드합주", "minMaxPrice": {"minPrice": 15000}},
+    ]
+
+    selected, stats = service._filter_rooms_for_regex_parsing(
+        rooms, business_is_rehearsal=False,
+    )
+
+    assert len(selected) == 2
+    assert stats["non_rehearsal_keyword"] == 0
+
+
 # --- MIN_REHEARSAL_PRICE ---
 
 

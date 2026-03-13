@@ -128,7 +128,7 @@ class RoomCollectionService:
     # Business 이름에 포함 시 합주실이 아닐 가능성이 높은 키워드.
     # 단, REHEARSAL_KEYWORDS 중 "합주"/"밴드"가 이름에 함께 있으면 보존.
     NON_REHEARSAL_BUSINESS_NAME_KEYWORDS: Tuple[str, ...] = (
-        "피아노",
+        "피아노", "무용", "파티룸",
     )
     # 수동 차단 사업체 ID (합주실 사칭, 비합주 업종 등)
     BLACKLISTED_BUSINESS_IDS: frozenset = frozenset({
@@ -142,6 +142,13 @@ class RoomCollectionService:
     # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
     NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
         "레코딩", "recording", "녹음", "믹싱", "마스터링",
+    )
+    # Individual: 개인/전용 연습실 — business 여부 무관, 룸 이름에 합주/밴드 키워드 공존 시만 보존
+    NON_REHEARSAL_INDIVIDUAL_ROOM_KEYWORDS: Tuple[str, ...] = (
+        "개인연습", "개인 연습",
+        "보컬",
+        "악기연습", "악기 연습",
+        "드럼전용", "드럼 전용",
     )
 
     def __init__(self):
@@ -1678,6 +1685,10 @@ class RoomCollectionService:
         # Hard 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
+        # Individual 키워드: 개인/전용 연습실 → 룸 이름에 합주/밴드 키워드 있을 때만 보존
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_INDIVIDUAL_ROOM_KEYWORDS):
+            has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
+            return not has_positive
         # Soft 키워드: 음악 후반작업 → Business가 합주실이거나 룸 이름에 합주 키워드 있으면 보존
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
             if business_is_rehearsal:
