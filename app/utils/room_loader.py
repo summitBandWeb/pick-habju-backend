@@ -28,7 +28,6 @@ def get_rooms_by_criteria(
         # Deploy 환경마다 branch 컬럼 반영 시점이 다를 수 있어 select를 순차 fallback.
         # !inner 조인으로 branch 테이블 조건을 room 조회에 반영.
         select_candidates = [
-            "*, branch!inner(name, lat, lng, phone_number, display_name, open_wait_rule)",
             "*, branch!inner(name, lat, lng, phone_number, display_name)",
             "*, branch!inner(name, lat, lng)",
         ]
@@ -64,14 +63,12 @@ def get_rooms_by_criteria(
                 row["lng"] = branch.get("lng")
                 row["phone_number"] = branch.get("phone_number")
                 row["display_name"] = branch.get("display_name")
-                row["open_wait_rule"] = branch.get("open_wait_rule")
             else:
                 row["branch"] = RoomDetail.BRANCH_FALLBACK_NAME
                 row["lat"] = None
                 row["lng"] = None
                 row["phone_number"] = None
                 row["display_name"] = None
-                row["open_wait_rule"] = {}
 
             lat = row.get("lat")
             lng = row.get("lng")
