@@ -223,9 +223,10 @@ class AvailabilityRequest(BaseModel):
                         최대 5시간을 초과하는 등 주요 예약 정책 위반 시 발생.
 
         Rationale (의도):
-            API 진입점(DTO 계층)에서 올바른 지도 좌표 범위를 선제적으로 검사하고,
-            단순 시간 입력 실수(예: 15:00~13:00)와 정상적인 심야 예약(예: 23:00~02:00)을 
-            명확히 구분하여 사용자 친화적인 에러를 반환하기 위해 설계되었습니다.
+            API 진입점(DTO 계층)에서 올바른 지도 좌표 범위를 선제적으로 검사합니다.
+            시간 역전(예: 15:00~13:00)이나 자정을 넘기는 심야 예약(예: 23:00~02:00) 모두
+            익일로 보정(+24시간)한 후 '최대 5시간' 기준 하나로 일괄 검사하여,
+            프론트엔드의 총 이용시간 UI 흐름과 일치하는 직관적인 에러를 반환하도록 설계되었습니다.
         """
         if not (-90 <= self.swLat <= 90) or not (-90 <= self.neLat <= 90):
             raise ValueError("위도는 -90도에서 90도 사이여야 합니다.")
@@ -244,13 +245,7 @@ class AvailabilityRequest(BaseModel):
 
         # 자정을 넘기는 케이스 처리 (예: 23:00 -> 02:00)
         if start_minutes > end_minutes:
-            # 시작 시간이 19:00 이후이고 종료 시간이 05:00 이하일 때만 밤샘(Overnight) 의도로 간주 (05:00 포함)
-            is_intended_overnight = (start_minutes >= 1140) and (end_minutes <= 300)
-            
-            if is_intended_overnight:
-                end_minutes += 1440
-            else:
-                raise ValueError("종료 시간이 시작 시간보다 빠를 수 없습니다.")
+            end_minutes += 1440
                 
         if (end_minutes - start_minutes) > 300:
             raise ValueError("최대 5시간까지만 예약할 수 있습니다.")

@@ -63,11 +63,11 @@ def test_availability_request_validation_error():
         assert response.status_code == 422
         assert "date" in response.text or "과거 날짜" in response.text
 
-        # 7. Start > End Time (Logic Check)
+        # 7. Start > End Time (Logic Check) -> This now falls into the > 5 hours check
         future_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
         response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=21:00&end_hour=18:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
-        assert "start_hour" in response.text or "end_hour" in response.text or "시작 시간" in response.text
+        assert "5시간" in response.text
 
         # 9. Past Time (Today)
         # 현재 시간(12:00)보다 1시간 전으로 요청 (11:00)
