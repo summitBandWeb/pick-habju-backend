@@ -102,7 +102,8 @@ class AvailabilityService:
         start_min = self._slot_to_minutes(start_str)
         end_min = self._slot_to_minutes(end_str)
 
-        # DTO 우회(단위 테스트, 내부 직접 호출 등) 대비 방어적 보정
+        # DTO 계층을 우회한 직접 호출(단위 테스트, 내부 서비스 간 호출 등) 대비 방어적 보정.
+        # 정상 플로우에서는 DTO의 validate_logic()이 이미 동일한 보정을 수행하므로 중복 적용되지 않음.
         if start_min > end_min:
             end_min += 1440
 

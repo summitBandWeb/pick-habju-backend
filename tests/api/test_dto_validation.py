@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from app.core.limiter import limiter
+from app.models.dto import AvailabilityRequest
 
 @pytest.fixture(autouse=True)
 def disable_limiter():
@@ -62,6 +63,8 @@ def test_availability_request_validation_error():
         response = client.get(f"{url}?date={past_date}&capacity=3&start_hour=18:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "date" in response.text or "과거 날짜" in response.text
+        
+        # NOTE: 아래 케이스부터는 로직 그룹화 및 유지보수 편의를 위해 개별 번호(Case 7 이후)를 생략합니다.
 
         # Start > End Time (Logic Check) -> This now falls into the > 5 hours check
         future_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -105,17 +108,28 @@ def test_availability_request_validation_error():
             finally:
                 app.dependency_overrides.clear()
 
-        # Boundary Case: Exactly 5 hours (00:00 ~ 05:00) -> Should PASS
-        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
-        assert response.status_code == 200
-        assert response.json()["isSuccess"] is True
+def test_dto_logic_boundary_cases():
+    """AvailabilityRequest DTO 자체의 비즈니스 로직(경계값) 단위 테스트"""
+    
+    # 공통 파라미터 (미래 날짜 사용으로 과거 날짜 검증 회피)
+    base_params = {
+        "date": "2099-01-01",
+        "capacity": 3,
+        "swLat": 37.0, "swLng": 127.0, "neLat": 38.0, "neLng": 128.0
+    }
 
-        # Boundary Case: 5 hours 1 minute (00:00 ~ 05:01) -> Should FAIL
-        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:01&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
-        assert response.status_code == 422
-        assert "5시간" in response.text
+    # 1. 경계값: 정확히 5시간 (00:00 ~ 05:00) -> 통과
+    req = AvailabilityRequest(start_hour="00:00", end_hour="05:00", **base_params)
+    assert req.validate_logic() is not None
 
-        # 13. Same Hour (0-hour booking) -> Should FAIL
-        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=14:00&end_hour=14:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
-        assert response.status_code == 422
-        assert "같을 수 없습니다" in response.text
+    # 2. 경계값: 5시간 1분 초과 (00:00 ~ 05:01) -> FAIL
+    with pytest.raises(ValueError, match="5시간"):
+        AvailabilityRequest(start_hour="00:00", end_hour="05:01", **base_params).validate_logic()
+
+    # 3. 0시간 예약 (14:00 ~ 14:00) -> FAIL
+    with pytest.raises(ValueError, match="같을 수 없습니다"):
+        AvailabilityRequest(start_hour="14:00", end_hour="14:00", **base_params).validate_logic()
+    
+    # 4. 심야 예약 (23:00 ~ 02:00) -> 통과 (3시간)
+    req = AvailabilityRequest(start_hour="23:00", end_hour="02:00", **base_params)
+    assert req.validate_logic() is not None
