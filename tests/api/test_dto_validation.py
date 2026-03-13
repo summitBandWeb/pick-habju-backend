@@ -78,3 +78,29 @@ def test_availability_request_validation_error():
         response = client.get(f"{url}?date={today_str}&capacity=3&start_hour={past_hour}&end_hour={end_hour}&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "지나간 시간" in response.text or "past" in response.text.lower()
+
+        # 10. Valid Overnight (23:00 ~ 02:00) -> 3 hours, should PASS validation
+        # Note: Using app.dependency_overrides to mock the service for a clean test
+        from app.api.dependencies import get_availability_service
+        
+        async def mock_check_availability(*args, **kwargs):
+            return {
+                "date": future_date,
+                "start_hour": "23:00",
+                "end_hour": "02:00",
+                "hour_slots": ["23:00", "00:00", "01:00", "02:00"],
+                "available_biz_item_ids": [],
+                "branches": []
+            }
+
+        with patch('app.api.available_room.get_availability_service') as mock_get_svc:
+            mock_svc = mock_get_svc.return_value
+            mock_svc.check_availability = mock_check_availability
+            app.dependency_overrides[get_availability_service] = lambda: mock_svc
+
+            try:
+                response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=23:00&end_hour=02:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
+                assert response.status_code == 200
+                assert response.json()["isSuccess"] is True
+            finally:
+                app.dependency_overrides.clear()
