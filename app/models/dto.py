@@ -219,8 +219,8 @@ class AvailabilityRequest(BaseModel):
             AvailabilityRequest: 유효성 검증을 통과한 인스턴스 자신.
 
         Raises:
-            ValueError: 위경도 범위를 벗어나거나, 종료 시간이 시작 시간보다 빠르거나(심야 별도),
-                        최대 5시간을 초과하는 등 주요 예약 정책 위반 시 발생.
+            ValueError: 위경도 범위를 벗어나거나 최대 5시간을 초과하는 등 주요 예약 정책 위반 시 발생.
+                        시작 시간 > 종료 시간인 경우, 최대 5시간을 초과하는 경우로 간주
 
         Rationale (의도):
             API 진입점(DTO 계층)에서 올바른 지도 좌표 범위를 선제적으로 검사합니다.
