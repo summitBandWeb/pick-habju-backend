@@ -104,3 +104,13 @@ def test_availability_request_validation_error():
                 assert response.json()["isSuccess"] is True
             finally:
                 app.dependency_overrides.clear()
+
+        # 11. Boundary Case: Exactly 5 hours (00:00 ~ 05:00) -> Should PASS
+        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
+        assert response.status_code == 200
+        assert response.json()["isSuccess"] is True
+
+        # 12. Boundary Case: 5 hours 1 minute (00:00 ~ 05:01) -> Should FAIL
+        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:01&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
+        assert response.status_code == 422
+        assert "5시간" in response.text
