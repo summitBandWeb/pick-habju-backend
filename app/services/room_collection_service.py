@@ -238,7 +238,7 @@ class RoomCollectionService:
         if isinstance(max_targets, int) and max_targets > 0:
             target_items = target_items[:max_targets]
 
-        success_count, failed_count, failures, skipped = await self._collect_items(target_items)
+        success_count, failed_count, failures, skipped, collected_business_ids = await self._collect_items(target_items)
         skipped_no_rooms = [row for row in skipped if row.get("status") == "skipped_no_rooms"]
         skipped_non_rehearsal = [row for row in skipped if row.get("status") == "skipped_non_rehearsal"]
         skipped_filtered_rooms = [row for row in skipped if row.get("status") == "skipped_all_rooms_filtered"]
@@ -257,6 +257,7 @@ class RoomCollectionService:
             "skipped_non_rehearsal": len(skipped_non_rehearsal),
             "skipped_all_rooms_filtered": len(skipped_filtered_rooms),
             "skipped_details": skipped,
+            "collected_business_ids": collected_business_ids,
         }
 
     async def collect_by_query(self, query: str) -> Dict[str, Any]:
@@ -299,12 +300,17 @@ class RoomCollectionService:
     async def _collect_items(
         self,
         items: List[Dict[str, Any]],
-    ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Collect by business id for each item and aggregate success/failure stats."""
+    ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+        """Collect by business id for each item and aggregate success/failure stats.
+
+        Returns:
+            (success_count, failed_count, failures, skipped, collected_business_ids)
+        """
         success_count = 0
         failed_count = 0
         failures: List[Dict[str, Any]] = []
         skipped: List[Dict[str, Any]] = []
+        collected_business_ids: List[str] = []
         total_items = len(items)
 
         for idx, item in enumerate(items):
@@ -334,6 +340,7 @@ class RoomCollectionService:
                         )
                         continue
                 success_count += 1
+                collected_business_ids.append(str(business_id))
             except Exception as e:
                 logger.exception("Failed to collect item=%s", item)
                 failed_count += 1
@@ -344,7 +351,7 @@ class RoomCollectionService:
                     "reason": str(e),
                 })
 
-        return success_count, failed_count, failures, skipped
+        return success_count, failed_count, failures, skipped, collected_business_ids
 
     async def collect_by_id(self, business_id: str) -> Dict[str, Any]:
         """특정 Business ID의 룸 정보를 수집하고 저장한다."""
@@ -368,8 +375,7 @@ class RoomCollectionService:
         business = data["business"]
         rooms = data["rooms"]
 
-        # 대표 키워드 수집: place 페이지에서 직접 가져오는 것이 기본 경로.
-        # GraphQL API는 키워드를 내려주지 않으므로 source_hint 유무와 관계없이 실행한다.
+        # 대표 키워드 수집: Apollo State(검색 단계)에서 1차 확보, 부족 시 place 페이지 방문.
         has_source_hint = source_hint is not None
         place_id = (
             (source_hint or {}).get("placeId")
@@ -378,6 +384,8 @@ class RoomCollectionService:
         has_representative_keywords = source_hint and any(
             source_hint.get(field) for field in self.REPRESENTATIVE_KEYWORD_FIELDS
         )
+        keyword_source = "apollo_state" if has_representative_keywords else "none"
+        playwright_keyword_failed = False
         if not has_representative_keywords and place_id:
             reveal_keywords = getattr(self.map_crawler, "reveal_representative_keywords", None)
             if callable(reveal_keywords):
@@ -394,16 +402,20 @@ class RoomCollectionService:
                         enriched["representativeKeywords"] = normalized
                         source_hint = enriched
                         self._source_item_hints[str(business_id)] = enriched
+                        keyword_source = "playwright"
                         logger.info(
                             "Fetched representative keywords from place page: business_id=%s place_id=%s",
                             business_id,
                             place_id,
                         )
                 except Exception as e:
+                    playwright_keyword_failed = True
                     logger.warning(
-                        "Representative keyword fetch failed: business_id=%s place_id=%s err=%s",
+                        "Representative keyword fetch failed (keyword data may be incomplete): "
+                        "business_id=%s place_id=%s name=%s err=%s",
                         business_id,
                         place_id,
+                        (source_hint or {}).get("name", "unknown"),
                         e,
                     )
 
@@ -416,11 +428,19 @@ class RoomCollectionService:
         # 도메인 필터는 지도 검색으로 유입된 항목(source_hint 존재)에만 강제 적용한다.
         # 수동 점검 목적의 direct collect_by_id 호출은 최대한 허용적으로 유지한다.
         if has_source_hint and not domain_decision["is_candidate"]:
+            if playwright_keyword_failed and keyword_source == "none":
+                logger.warning(
+                    "Possible false negative: business %s (%s) skipped as non-rehearsal, "
+                    "but keyword extraction failed — may have rehearsal keywords on place page",
+                    business_id,
+                    (source_hint or {}).get("name", "unknown"),
+                )
             logger.warning(
-                "Skipping non-rehearsal business %s (pos=%s, neg=%s)",
+                "Skipping non-rehearsal business %s (pos=%s, neg=%s, kw_source=%s)",
                 business_id,
                 domain_decision["positive_hits"],
                 domain_decision["negative_hits"],
+                keyword_source,
             )
             return {
                 "status": "skipped_non_rehearsal",
@@ -428,6 +448,8 @@ class RoomCollectionService:
                 "positive_hits": domain_decision["positive_hits"],
                 "negative_hits": domain_decision["negative_hits"],
                 "representative_keywords": domain_decision["representative_keywords"],
+                "keyword_source": keyword_source,
+                "playwright_keyword_failed": playwright_keyword_failed,
             }
 
         if not rooms:

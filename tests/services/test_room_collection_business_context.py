@@ -404,3 +404,47 @@ async def test_collect_by_id_uses_place_page_representative_keywords_for_domain_
     assert "합주실" in result["representative_keywords"]
     service.map_crawler.reveal_representative_keywords.assert_awaited_once_with("244676732")
     service._save_to_db.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_skipped_non_rehearsal_includes_keyword_source_fields():
+    """합주 필터에서 탈락한 결과에 keyword_source, playwright_keyword_failed 필드가 포함된다."""
+    with patch("app.services.room_collection_service.NaverMapCrawler"), patch(
+        "app.services.room_collection_service.NaverRoomFetcher"
+    ), patch("app.services.room_collection_service.RoomParserService"), patch(
+        "app.services.room_collection_service.get_supabase_client"
+    ):
+        from app.services.room_collection_service import RoomCollectionService
+
+        service = RoomCollectionService()
+
+    service._source_item_hints["nondomain-2"] = {
+        "id": "nondomain-2",
+        "name": "Art Workshop",
+        "category": "공방",
+    }
+    service.room_fetcher.fetch_full_info = AsyncMock(
+        return_value={
+            "business": {
+                "businessId": "nondomain-2",
+                "businessDisplayName": "Art Workshop",
+                "desc": "도자기 공방",
+                "coordinates": {"latitude": 37.0, "longitude": 127.0},
+            },
+            "rooms": [
+                {
+                    "bizItemId": "room-1",
+                    "name": "Studio A",
+                    "desc": "공방",
+                    "minMaxPrice": {"minPrice": 20000},
+                }
+            ],
+            "subway": None,
+        }
+    )
+
+    result = await service.collect_by_id("nondomain-2")
+
+    assert result["status"] == "skipped_non_rehearsal"
+    assert "keyword_source" in result
+    assert "playwright_keyword_failed" in result
