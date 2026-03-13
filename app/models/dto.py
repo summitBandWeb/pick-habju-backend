@@ -144,8 +144,8 @@ class AvailabilityRequest(BaseModel):
     """Request for checking availability"""
     date: str = Field(..., description="Reservation date (YYYY-MM-DD)")
     capacity: int = Field(..., description="Number of users")
-    start_hour: str = Field(..., description="시작 시간 (HH:MM)")
-    end_hour: str = Field(..., description="종료 시간 (HH:MM). 시작 시간보다 빠를 경우 익일로 간주하며, 최대 5시간 제한이 적용됩니다.")
+    start_hour: str = Field(..., description="Start time (HH:MM)")
+    end_hour: str = Field(..., description="End time (HH:MM). If earlier than start, treated as next day. Max 5-hour limit applies.")
     
     # 지도 영역 좌표 (필수)
     swLat: float = Field(..., description="South-West Latitude")
@@ -248,7 +248,7 @@ class AvailabilityRequest(BaseModel):
             end_minutes += 1440
                 
         if (end_minutes - start_minutes) > 300:
-            raise ValueError("최대 5시간까지만 예약할 수 있습니다.")
+            raise ValueError("최대 5시간까지만 예약할 수 있습니다.")    
 
         input_date = datetime.strptime(self.date, "%Y-%m-%d").date()
         if input_date == date.today():
