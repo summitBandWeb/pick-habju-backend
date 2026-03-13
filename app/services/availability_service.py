@@ -102,8 +102,7 @@ class AvailabilityService:
         start_min = self._slot_to_minutes(start_str)
         end_min = self._slot_to_minutes(end_str)
 
-        # 예외 검증(시작=종료, 최대 5시간)은 이미 DTO 계층에서 처리 완료됨
-        # 여기서는 오직 슬롯 배열 생성 로직에만 집중
+        # DTO 우회(단위 테스트, 내부 직접 호출 등) 대비 방어적 보정
         if start_min > end_min:
             end_min += 1440
 
