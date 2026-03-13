@@ -19,32 +19,32 @@ def test_availability_request_validation_error():
     """AvailabilityRequest DTO 검증 실패 시 422 에러 반환 테스트"""
     url = "/api/rooms/availability"
     
-    # 1. Invalid Date Format (YYYY/MM/DD)
+    # Invalid Date Format (YYYY/MM/DD)
     response = client.get(f"{url}?date=2024/01/01&capacity=3&start_hour=18:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
     assert response.status_code == 422
     assert "date" in response.text
     
-    # 2. Invalid Time Format (HH-MM)
+    # Invalid Time Format (HH-MM)
     response = client.get(f"{url}?date=2024-01-01&capacity=3&start_hour=18-00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
     assert response.status_code == 422
     assert "start_hour" in response.text
 
-    # 3. Invalid Time Range (25:00)
+    # Invalid Time Range (25:00)
     response = client.get(f"{url}?date=2024-01-01&capacity=3&start_hour=25:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
     assert response.status_code == 422
     assert "start_hour" in response.text
 
-    # 4. Invalid Capacity (0)
+    # Invalid Capacity (0)
     response = client.get(f"{url}?date=2024-01-01&capacity=0&start_hour=18:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
     assert response.status_code == 422
     assert "capacity" in response.text
 
-    # 5. Invalid Capacity (101 - Exceeds 100)
+    # Invalid Capacity (101 - Exceeds 100)
     response = client.get(f"{url}?date=2024-01-01&capacity=101&start_hour=18:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
     assert response.status_code == 422
     assert "capacity" in response.text
 
-    # 6. Past Date (Logic Check)    
+    # Past Date (Logic Check)    
     # Deterministic base time: Jan 1st, 2025 at 12:00 PM (Midday)
     now = datetime(2025, 1, 1, 12, 0)
     today_str = now.strftime("%Y-%m-%d")
@@ -57,19 +57,19 @@ def test_availability_request_validation_error():
         # datetime.strptime은 실제 함수를 사용하도록 설정
         mock_datetime.strptime.side_effect = datetime.strptime
         
-        # 6. Past Date
+        # Past Date
         past_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
         response = client.get(f"{url}?date={past_date}&capacity=3&start_hour=18:00&end_hour=21:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "date" in response.text or "과거 날짜" in response.text
 
-        # 7. Start > End Time (Logic Check) -> This now falls into the > 5 hours check
+        # Start > End Time (Logic Check) -> This now falls into the > 5 hours check
         future_date = (now + timedelta(days=1)).strftime("%Y-%m-%d")
         response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=21:00&end_hour=18:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "5시간" in response.text
 
-        # 9. Past Time (Today)
+        # Past Time (Today)
         # 현재 시간(12:00)보다 1시간 전으로 요청 (11:00)
         past_hour = (now - timedelta(hours=1)).strftime("%H:%M")
         # end_hour는 14:00
@@ -79,7 +79,7 @@ def test_availability_request_validation_error():
         assert response.status_code == 422
         assert "지나간 시간" in response.text or "past" in response.text.lower()
 
-        # 10. Valid Overnight (23:00 ~ 02:00) -> 3 hours, should PASS validation
+        # Valid Overnight (23:00 ~ 02:00) -> 3 hours, should PASS validation
         # Note: Using app.dependency_overrides to mock the service for a clean test
         from app.api.dependencies import get_availability_service
         
@@ -105,12 +105,12 @@ def test_availability_request_validation_error():
             finally:
                 app.dependency_overrides.clear()
 
-        # 11. Boundary Case: Exactly 5 hours (00:00 ~ 05:00) -> Should PASS
+        # Boundary Case: Exactly 5 hours (00:00 ~ 05:00) -> Should PASS
         response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 200
         assert response.json()["isSuccess"] is True
 
-        # 12. Boundary Case: 5 hours 1 minute (00:00 ~ 05:01) -> Should FAIL
+        # Boundary Case: 5 hours 1 minute (00:00 ~ 05:01) -> Should FAIL
         response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:01&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "5시간" in response.text
