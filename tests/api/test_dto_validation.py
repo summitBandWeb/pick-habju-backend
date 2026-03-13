@@ -114,3 +114,8 @@ def test_availability_request_validation_error():
         response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=00:00&end_hour=05:01&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
         assert response.status_code == 422
         assert "5시간" in response.text
+
+        # 13. Same Hour (0-hour booking) -> Should FAIL
+        response = client.get(f"{url}?date={future_date}&capacity=3&start_hour=14:00&end_hour=14:00&swLat=37.0&swLng=127.0&neLat=38.0&neLng=128.0")
+        assert response.status_code == 422
+        assert "같을 수 없습니다" in response.text
