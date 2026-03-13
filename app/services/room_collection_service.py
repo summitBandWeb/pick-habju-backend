@@ -42,6 +42,14 @@ class RoomCollectionService:
     # recommend < 9 → ±1, recommend >= 9 → ±2
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
         {
+            "name": "5k_10k",
+            "min_price": 5000,
+            "max_price": 9999,
+            "max_capacity": 6,
+            "recommend_capacity": 3,
+            "recommend_range": [2, 4],
+        },
+        {
             "name": "10k_15k",
             "min_price": 10000,
             "max_price": 14999,
@@ -106,13 +114,15 @@ class RoomCollectionService:
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         # 교육/레슨
         "레슨", "lesson", "수업", "클래스", "원데이",
-        # 악기 대여
+        # 피아노/악기 전용
+        "피아노", "야마하", "영창",
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
-        "피아노 대여", "피아노스튜디오",
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
         # 결제/상품 (비합주 상품)
         "쿠폰", "선불권", "이용권", "월대여",
+        # 안내성/견적/비룸 상품
+        "견적", "예약금", "셀프견적",
         # 기타
         "파티룸", "촬영", "세미나",
     )
@@ -1641,6 +1651,9 @@ class RoomCollectionService:
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
+        # 안내성/프로모션 상품 패턴: 이벤트+예약, 할인+예약 조합 → 비룸 상품
+        if re.search(r"(이벤트|할인).*(예약|결제)", normalized):
+            return True
         # Hard 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
