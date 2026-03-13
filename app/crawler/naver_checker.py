@@ -1,6 +1,7 @@
 import httpx
 from typing import List, Dict, Union
 import asyncio
+import os
 
 from app.models.dto import RoomDetail, RoomAvailability
 from app.exception.crawler.naver_exception import NaverAvailabilityError, NaverRequestError
@@ -33,8 +34,9 @@ class NaverCrawler(BaseCrawler):
             List[RoomResult]: 방별 RoomAvailability 또는 에러 Exception 객체 배열.
         """
 
-        # 동시 API 요청 수를 50개로 제한하여 소켓 고갈/네이버 Rate Limit 방지 및 응답시간 스파이크 해소
-        semaphore = asyncio.Semaphore(50)
+        # 네이버 RATE LIMIT 대응을 고려하여 동시 API 요청 수를 30으로 조정 (안전 마진 확보)
+        # 높은 부하의 경우 환경 변수를 통해 조정 가능하도록 지원.
+        semaphore = asyncio.Semaphore(int(os.getenv("NAVER_CRAWLER_SEMAPHORE", "30")))
 
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
