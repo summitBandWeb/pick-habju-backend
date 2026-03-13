@@ -38,6 +38,7 @@ def test_get_rooms_by_criteria_filters_by_service_area(monkeypatch):
     mock_query = MagicMock()
     mock_query.select.return_value = mock_query
     mock_query.gte.return_value = mock_query
+    mock_query.lte.return_value = mock_query
     mock_query.execute.return_value = SimpleNamespace(
         data=[out_of_area_row, in_area_row]
     )

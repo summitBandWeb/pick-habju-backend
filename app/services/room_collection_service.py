@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import asyncio
 import json
 import os
@@ -918,15 +918,6 @@ class RoomCollectionService:
                         place_id,
                         e,
                     )
-        # standby_days 추출: 지점 단위 속성이므로 전체 룸의 파싱 결과 중 첫 번째로 존재하는 값을 사용
-        # Rationale: 파서는 룸 단위로 결과를 반환하지만 standbyDays는 사업장(Branch) 단위임.
-        branch_standby_days = None
-        for room in rooms:
-            rid = room.get("bizItemId")
-            parsed = parsed_results.get(rid)
-            if parsed and parsed.get("standby_days") is not None:
-                branch_standby_days = parsed.get("standby_days")
-                break
 
         clean_display_name = self._sanitize_display_name(display_name)
         branch_data = {
@@ -957,8 +948,7 @@ class RoomCollectionService:
             branch_data["lat"] = lat_val
         if lng_val is not None:
             branch_data["lng"] = lng_val
-        if branch_standby_days is not None:
-            branch_data["standby_days"] = branch_standby_days
+
         if branch_phone_number:
             branch_data["phone_number"] = branch_phone_number
         

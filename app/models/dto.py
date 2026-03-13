@@ -51,7 +51,6 @@ class RoomDetail(BaseModel):
     phoneNumber: Optional[str] = Field(None, alias="phone_number", description="Branch phone number (if null, use chat)")
     displayName: Optional[str] = Field(None, alias="display_name", description="Branch display name")
     openWaitRule: Dict[str, Any] = Field(default_factory=dict, alias="open_wait_rule", description="Branch open wait rule (JSON)")
-    standbyDays: Optional[int] = Field(None, alias="standby_days", description="오픈대기일수 (현재일 기준 N일 이후 오픈 대기 여부 판단용)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
     # NOTE: 아래 두 필드는 내부 정책 판별 로직에서만 사용하며, 프론트엔드 응답에서는 policy_warnings로 대체됨

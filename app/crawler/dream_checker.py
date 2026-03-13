@@ -55,7 +55,6 @@ class DreamCrawler(BaseCrawler):
             # Rationale:
             #   드림합주실 예약 폼이 최대 121일 이내 날짜만 지원함.
             #   초과 날짜는 예약 시스템 자체가 해당 날짜를 제공하지 않으므로 예약 불가(False)로 처리.
-            #   standby_days(오픈 대기) 개념과 다름 — 이는 시스템 한계로 인한 완전 불가임.
             return [
                 RoomAvailability(
                     room_detail=room,
@@ -64,6 +63,9 @@ class DreamCrawler(BaseCrawler):
                 )
                 for room in target_rooms
             ]
+
+        # 드림합주실 서버 부하 방지를 위해 동시 요청 수를 15개로 제한
+        semaphore = asyncio.Semaphore(15)
 
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
@@ -74,13 +76,14 @@ class DreamCrawler(BaseCrawler):
             Returns:
                 RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
             """
-            try:
-                return await self._fetch_dream_availability_room(date, hour_slots, room)
-            except BaseCustomException as e:
-                return e
-            except Exception as e:
-                # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
-                return Exception(f"[{room.name}] Unexpected error: {str(e)}")
+            async with semaphore:
+                try:
+                    return await self._fetch_dream_availability_room(date, hour_slots, room)
+                except BaseCustomException as e:
+                    return e
+                except Exception as e:
+                    # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
+                    return Exception(f"[{room.name}] Unexpected error: {str(e)}")
 
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 
