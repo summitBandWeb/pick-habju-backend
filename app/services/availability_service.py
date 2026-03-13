@@ -302,30 +302,11 @@ class AvailabilityService:
             neLat=request.neLat,
             neLng=request.neLng
         )
-        
+
         validate_availability_request(request.date, hour_slots, target_rooms)
 
-        # 2.5. 오픈 대기 상태 검증 (standby_days 기준 예약 불가능한 방 선제 제외)
-        # Rationale:
-        #   UI가 지도 마커 방식으로 변경되면서 'unknown(오픈 대기)' 상태 마커를 클릭하면
-        #   예약 대기 모달이 뜨는 UX 문제가 발생. 즉시 예약 가능한 룸이 없는 지점은
-        #   지도에 노출하지 않는 정책으로 변경함에 따라 unknown 결과를 생성하지 않고
-        #   해당 룸을 조회 대상에서 아예 배제함.
-        today = datetime.now().date()
-        target_date_obj = datetime.strptime(request.date, "%Y-%m-%d").date()
-        days_diff = (target_date_obj - today).days
-
-        crawling_rooms = []
-        for room in target_rooms:
-            if room.standbyDays is not None and days_diff < room.standbyDays:
-                logger.info(
-                    "[standby_filter] biz_item_id=%s excluded from response: standby_days=%s > days_diff=%s",
-                    room.biz_item_id, room.standbyDays, days_diff,
-                )
-            else:
-                crawling_rooms.append(room)
-
         # 3. 크롤러 비동기 작업 준비 및 실행
+        crawling_rooms = target_rooms
         tasks = []
         task_dates = []
 
