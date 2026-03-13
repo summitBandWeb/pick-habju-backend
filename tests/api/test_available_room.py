@@ -119,7 +119,7 @@ def test_get_availability_api():
             "recommend_capacity_range": [4, 6],
             "price_per_hour": 15000,
             "can_reserve_one_hour": True,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         },
         {
             "name": "B룸",
@@ -131,7 +131,7 @@ def test_get_availability_api():
             "recommend_capacity_range": [3, 5],
             "price_per_hour": 12000,
             "can_reserve_one_hour": True,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         },
     ]
 
@@ -250,7 +250,7 @@ def test_get_availability_api_with_crawler_error():
             "recommend_capacity_range": [4, 6],
             "price_per_hour": 10000,
             "can_reserve_one_hour": True,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         },
         # 2. Dream Room (NormalCrawler) - business_id == "dream_sadang"
         {
@@ -263,7 +263,7 @@ def test_get_availability_api_with_crawler_error():
             "recommend_capacity_range": [2, 4],
             "price_per_hour": 10000,
             "can_reserve_one_hour": True,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
         },
     ]
 

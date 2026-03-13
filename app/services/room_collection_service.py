@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import asyncio
 import json
 import os
@@ -31,6 +31,8 @@ class RoomCollectionService:
     MANUAL_REVIEW_FLAG = 100
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
+    # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
+    MIN_REHEARSAL_PRICE = 5000
     # Global fallback when room-level basic capacity info is missing.
     # Rule from ops:
     # - 10,000~14,999 KRW -> 4~5 people
@@ -39,6 +41,14 @@ class RoomCollectionService:
     # max_capacity 규칙: recommend_range 상한 + 3 이상
     # recommend < 9 → ±1, recommend >= 9 → ±2
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
+        {
+            "name": "5k_10k",
+            "min_price": 5000,
+            "max_price": 9999,
+            "max_capacity": 6,
+            "recommend_capacity": 3,
+            "recommend_range": [2, 4],
+        },
         {
             "name": "10k_15k",
             "min_price": 10000,
@@ -89,9 +99,6 @@ class RoomCollectionService:
         "합주실",
         "합주",
         "밴드합주",
-        "음악연습실",
-        "악기연습실",
-        "드럼연습실",
     )
     REPRESENTATIVE_KEYWORD_FIELDS: Tuple[str, ...] = (
         "representativeKeyword",
@@ -105,16 +112,43 @@ class RoomCollectionService:
     NON_REHEARSAL_ROOM_NAME_KEYWORDS: Tuple[str, ...] = (
         # 교육/레슨
         "레슨", "lesson", "수업", "클래스", "원데이",
-        # 악기 대여
+        # 피아노/악기 전용
+        "피아노", "야마하", "영창",
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
+        "악기연습실", "드럼연습실",
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
+        # 결제/상품 (비합주 상품)
+        "쿠폰", "선불권", "이용권", "월대여",
+        # 안내성/견적/비룸 상품
+        "견적", "예약금", "셀프견적",
         # 기타
         "파티룸", "촬영", "세미나",
     )
+    # Business 이름에 포함 시 합주실이 아닐 가능성이 높은 키워드.
+    # 단, REHEARSAL_KEYWORDS 중 "합주"/"밴드"가 이름에 함께 있으면 보존.
+    NON_REHEARSAL_BUSINESS_NAME_KEYWORDS: Tuple[str, ...] = (
+        "피아노", "무용", "파티룸",
+    )
+    # 수동 차단 사업체 ID (합주실 사칭, 비합주 업종 등)
+    BLACKLISTED_BUSINESS_IDS: frozenset = frozenset({
+        "570236",        # 타수 음악연습실 (합주실 사칭)
+        "1708894171",    # 타수음악연습실 2호점 (합주실 사칭)
+    })
+    # 크롤링에서 항상 보호되는 사업체 ID (별도 크롤링 경로)
+    PROTECTED_BUSINESS_IDS: frozenset = frozenset({
+        "dream_sadang", "hongdae_dream", "sadang",
+    })
     # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
     NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
         "레코딩", "recording", "녹음", "믹싱", "마스터링",
+    )
+    # Individual: 개인/전용 연습실 — business 여부 무관, 룸 이름에 합주/밴드 키워드 공존 시만 보존
+    NON_REHEARSAL_INDIVIDUAL_ROOM_KEYWORDS: Tuple[str, ...] = (
+        "개인연습", "개인 연습",
+        "보컬",
+        "악기연습", "악기 연습",
+        "드럼전용", "드럼 전용",
     )
 
     def __init__(self):
@@ -210,7 +244,7 @@ class RoomCollectionService:
         if isinstance(max_targets, int) and max_targets > 0:
             target_items = target_items[:max_targets]
 
-        success_count, failed_count, failures, skipped = await self._collect_items(target_items)
+        success_count, failed_count, failures, skipped, collected_business_ids = await self._collect_items(target_items)
         skipped_no_rooms = [row for row in skipped if row.get("status") == "skipped_no_rooms"]
         skipped_non_rehearsal = [row for row in skipped if row.get("status") == "skipped_non_rehearsal"]
         skipped_filtered_rooms = [row for row in skipped if row.get("status") == "skipped_all_rooms_filtered"]
@@ -229,6 +263,7 @@ class RoomCollectionService:
             "skipped_non_rehearsal": len(skipped_non_rehearsal),
             "skipped_all_rooms_filtered": len(skipped_filtered_rooms),
             "skipped_details": skipped,
+            "collected_business_ids": collected_business_ids,
         }
 
     async def collect_by_query(self, query: str) -> Dict[str, Any]:
@@ -271,12 +306,17 @@ class RoomCollectionService:
     async def _collect_items(
         self,
         items: List[Dict[str, Any]],
-    ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Collect by business id for each item and aggregate success/failure stats."""
+    ) -> Tuple[int, int, List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
+        """Collect by business id for each item and aggregate success/failure stats.
+
+        Returns:
+            (success_count, failed_count, failures, skipped, collected_business_ids)
+        """
         success_count = 0
         failed_count = 0
         failures: List[Dict[str, Any]] = []
         skipped: List[Dict[str, Any]] = []
+        collected_business_ids: List[str] = []
         total_items = len(items)
 
         for idx, item in enumerate(items):
@@ -306,6 +346,7 @@ class RoomCollectionService:
                         )
                         continue
                 success_count += 1
+                collected_business_ids.append(str(business_id))
             except Exception as e:
                 logger.exception("Failed to collect item=%s", item)
                 failed_count += 1
@@ -316,11 +357,17 @@ class RoomCollectionService:
                     "reason": str(e),
                 })
 
-        return success_count, failed_count, failures, skipped
+        return success_count, failed_count, failures, skipped, collected_business_ids
 
     async def collect_by_id(self, business_id: str) -> Dict[str, Any]:
         """특정 Business ID의 룸 정보를 수집하고 저장한다."""
         logger.info(f"Collecting business_id: {business_id}")
+
+        # 블랙리스트 체크
+        if business_id in self.BLACKLISTED_BUSINESS_IDS:
+            logger.warning("Skipping blacklisted business: %s", business_id)
+            return {"status": "skipped_blacklisted", "business_id": business_id}
+
         source_hint = self._source_item_hints.get(str(business_id))
 
         # 1. 상세 정보 조회
@@ -334,8 +381,7 @@ class RoomCollectionService:
         business = data["business"]
         rooms = data["rooms"]
 
-        # 대표 키워드 수집: place 페이지에서 직접 가져오는 것이 기본 경로.
-        # GraphQL API는 키워드를 내려주지 않으므로 source_hint 유무와 관계없이 실행한다.
+        # 대표 키워드 수집: Apollo State(검색 단계)에서 1차 확보, 부족 시 place 페이지 방문.
         has_source_hint = source_hint is not None
         place_id = (
             (source_hint or {}).get("placeId")
@@ -344,6 +390,8 @@ class RoomCollectionService:
         has_representative_keywords = source_hint and any(
             source_hint.get(field) for field in self.REPRESENTATIVE_KEYWORD_FIELDS
         )
+        keyword_source = "apollo_state" if has_representative_keywords else "none"
+        playwright_keyword_failed = False
         if not has_representative_keywords and place_id:
             reveal_keywords = getattr(self.map_crawler, "reveal_representative_keywords", None)
             if callable(reveal_keywords):
@@ -360,16 +408,20 @@ class RoomCollectionService:
                         enriched["representativeKeywords"] = normalized
                         source_hint = enriched
                         self._source_item_hints[str(business_id)] = enriched
+                        keyword_source = "playwright"
                         logger.info(
                             "Fetched representative keywords from place page: business_id=%s place_id=%s",
                             business_id,
                             place_id,
                         )
                 except Exception as e:
+                    playwright_keyword_failed = True
                     logger.warning(
-                        "Representative keyword fetch failed: business_id=%s place_id=%s err=%s",
+                        "Representative keyword fetch failed (keyword data may be incomplete): "
+                        "business_id=%s place_id=%s name=%s err=%s",
                         business_id,
                         place_id,
+                        (source_hint or {}).get("name", "unknown"),
                         e,
                     )
 
@@ -382,11 +434,19 @@ class RoomCollectionService:
         # 도메인 필터는 지도 검색으로 유입된 항목(source_hint 존재)에만 강제 적용한다.
         # 수동 점검 목적의 direct collect_by_id 호출은 최대한 허용적으로 유지한다.
         if has_source_hint and not domain_decision["is_candidate"]:
+            if playwright_keyword_failed and keyword_source == "none":
+                logger.warning(
+                    "Possible false negative: business %s (%s) skipped as non-rehearsal, "
+                    "but keyword extraction failed — may have rehearsal keywords on place page",
+                    business_id,
+                    (source_hint or {}).get("name", "unknown"),
+                )
             logger.warning(
-                "Skipping non-rehearsal business %s (pos=%s, neg=%s)",
+                "Skipping non-rehearsal business %s (pos=%s, neg=%s, kw_source=%s)",
                 business_id,
                 domain_decision["positive_hits"],
                 domain_decision["negative_hits"],
+                keyword_source,
             )
             return {
                 "status": "skipped_non_rehearsal",
@@ -394,6 +454,8 @@ class RoomCollectionService:
                 "positive_hits": domain_decision["positive_hits"],
                 "negative_hits": domain_decision["negative_hits"],
                 "representative_keywords": domain_decision["representative_keywords"],
+                "keyword_source": keyword_source,
+                "playwright_keyword_failed": playwright_keyword_failed,
             }
 
         if not rooms:
@@ -410,7 +472,9 @@ class RoomCollectionService:
                 "representative_keywords": domain_decision["representative_keywords"],
             }
 
-        target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(rooms)
+        target_rooms, filtered_stats = self._filter_rooms_for_regex_parsing(
+            rooms, business_is_rehearsal=domain_decision["is_candidate"],
+        )
         if not target_rooms:
             if (
                 filtered_stats["non_rehearsal_keyword"] > 0
@@ -632,11 +696,26 @@ class RoomCollectionService:
         is_candidate = bool(positive_hits)
         reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
 
+        # Business 이름 기반 네거티브 필터: "피아노" 등 비합주 키워드가 이름에 있고
+        # "합주"/"밴드" 등 강한 긍정 키워드가 이름에 없으면 후보에서 제외
+        negative_hits: List[str] = []
+        if is_candidate:
+            name_lower = raw_name.lower()
+            neg_matched = [kw for kw in cls.NON_REHEARSAL_BUSINESS_NAME_KEYWORDS if kw in name_lower]
+            if neg_matched:
+                strong_positive_in_name = any(
+                    kw in name_lower for kw in ("합주", "밴드")
+                )
+                if not strong_positive_in_name:
+                    is_candidate = False
+                    reason = "business_name_negative_keyword"
+                    negative_hits = neg_matched
+
         return {
             "is_candidate": is_candidate,
             "reason": reason,
             "positive_hits": positive_hits,
-            "negative_hits": [],
+            "negative_hits": negative_hits,
             "representative_keywords": representative_candidates,
         }
 
@@ -849,10 +928,11 @@ class RoomCollectionService:
                 branch_standby_days = parsed.get("standby_days")
                 break
 
+        clean_display_name = self._sanitize_display_name(display_name)
         branch_data = {
             "business_id": business_id,
-            "name": display_name,
-            "display_name": display_name,
+            "name": clean_display_name,
+            "display_name": clean_display_name,
         }
 
         # Do not overwrite existing coordinates with null when business payload is missing.
@@ -864,6 +944,14 @@ class RoomCollectionService:
         elif isinstance(coords, list) and len(coords) >= 2:
             lng_val = self._coerce_float(coords[0])
             lat_val = self._coerce_float(coords[1])
+
+        # 위경도 뒤바뀜 자동 보정: 한국 좌표 기준 lat < 100, lng > 100
+        if lat_val is not None and lng_val is not None and lat_val > 100 and lng_val < 100:
+            lat_val, lng_val = lng_val, lat_val
+            logger.warning(
+                "Swapped lat/lng for business_id=%s (detected reversed coordinates)",
+                business_id,
+            )
 
         if lat_val is not None:
             branch_data["lat"] = lat_val
@@ -985,19 +1073,9 @@ class RoomCollectionService:
             
             existing_requires_call = False
             if existing:
-                existing_requires_call = existing.get("requires_contact_on_sameday")
-                if existing_requires_call is None:
-                    existing_requires_call = existing.get("requires_contact_same_day")
-                if existing_requires_call is None:
-                    existing_requires_call = existing.get("requires_call_on_sameday", False)
+                existing_requires_call = existing.get("requires_call_on_sameday", False)
 
-            parsed_requires_call = parsed.get("requires_contact_on_sameday")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_same_day_contact")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_contact_same_day")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_call_on_same_day")
+            parsed_requires_call = parsed.get("requires_call_on_sameday")
 
             structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
             if structured_requires_call is not None:
@@ -1033,6 +1111,14 @@ class RoomCollectionService:
                 # DB constraint requires non-null numeric price.
                 final_price_int = 0
 
+            # 이중 방어: 최소 가격 미만 룸은 저장하지 않는다.
+            if final_price_int < self.MIN_REHEARSAL_PRICE:
+                logger.info(
+                    "Skipping room with price=%s (< MIN_REHEARSAL_PRICE=%s): business_id=%s biz_item_id=%s name=%s",
+                    final_price_int, self.MIN_REHEARSAL_PRICE, business_id, rid, room.get("name"),
+                )
+                continue
+
             room_data = {
                 "business_id": business_id,
                 "biz_item_id": rid,
@@ -1058,9 +1144,7 @@ class RoomCollectionService:
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap_int,
                 "extra_charge": final_extra_charge_int,
-                # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
-                "requires_contact_on_sameday": final_requires_call,
-                "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
+                "requires_call_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }
@@ -1161,8 +1245,8 @@ class RoomCollectionService:
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
         """Upsert room row and retry if payload contains unknown columns.
 
-        During rolling migrations, some environments may still miss one of the
-        alias columns (e.g., requires_contact_on_sameday vs requires_contact_same_day).
+        During rolling migrations, some environments may still miss certain
+        optional columns (e.g., image_urls).
         """
         payload = dict(room_data)
         for col in list(self._unsupported_room_columns):
@@ -1553,11 +1637,16 @@ class RoomCollectionService:
 
         return max_cap, rec_cap, rec_range
 
-    def _filter_rooms_for_regex_parsing(self, rooms: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    def _filter_rooms_for_regex_parsing(
+        self, rooms: List[Dict[str, Any]], *, business_is_rehearsal: bool = False,
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
         """Exclude non-rehearsal labels and rooms lacking reservation metadata.
 
         Inquiry-required rooms are still included because they can be reservable
         via phone/chat/manual confirmation flows.
+
+        Args:
+            business_is_rehearsal: Stage 1 도메인 필터 통과 여부. Soft 키워드 판정에 사용.
         """
         selected: List[Dict[str, Any]] = []
         filtered_stats = {
@@ -1567,7 +1656,7 @@ class RoomCollectionService:
         }
 
         for room in rooms:
-            if self._is_non_rehearsal_room_name(room):
+            if self._is_non_rehearsal_room_name(room, business_is_rehearsal=business_is_rehearsal):
                 filtered_stats["non_rehearsal_keyword"] += 1
                 continue
             if self._requires_inquiry(room):
@@ -1579,17 +1668,31 @@ class RoomCollectionService:
 
         return selected, filtered_stats
 
-    def _is_non_rehearsal_room_name(self, room: Dict[str, Any]) -> bool:
-        """Detect lesson/recording labels in room name."""
+    def _is_non_rehearsal_room_name(self, room: Dict[str, Any], *, business_is_rehearsal: bool = False) -> bool:
+        """Detect lesson/recording labels in room name.
+
+        Args:
+            business_is_rehearsal: True이면 Business가 Stage 1 도메인 필터를 통과한 상태.
+                Soft 키워드 룸은 합주실 사업장 소속이므로 보존한다.
+        """
         name = room.get("name")
         if not isinstance(name, str) or not name.strip():
             return False
         normalized = name.lower()
+        # 안내성/프로모션 상품 패턴: 이벤트+예약, 할인+예약 조합 → 비룸 상품
+        if re.search(r"(이벤트|할인).*(예약|결제)", normalized):
+            return True
         # Hard 키워드: 다른 장르/용도 → 무조건 필터링
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_ROOM_NAME_KEYWORDS):
             return True
-        # Soft 키워드: 음악 후반작업 → 합주 키워드 공존 시 보존
+        # Individual 키워드: 개인/전용 연습실 → 룸 이름에 합주/밴드 키워드 있을 때만 보존
+        if any(keyword in normalized for keyword in self.NON_REHEARSAL_INDIVIDUAL_ROOM_KEYWORDS):
+            has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
+            return not has_positive
+        # Soft 키워드: 음악 후반작업 → Business가 합주실이거나 룸 이름에 합주 키워드 있으면 보존
         if any(keyword in normalized for keyword in self.NON_REHEARSAL_SOFT_KEYWORDS):
+            if business_is_rehearsal:
+                return False
             has_positive = any(keyword in normalized for keyword in self.REHEARSAL_KEYWORDS)
             return not has_positive
         return False
@@ -1630,15 +1733,15 @@ class RoomCollectionService:
     def _has_reservation_metadata(self, room: Dict[str, Any]) -> bool:
         """Check if room has enough reservation-related metadata to parse.
 
-        가격 정보는 필수: 가격이 없는 룸은 사용자에게 유효한 예약 정보를
-        제공할 수 없으므로 수집 대상에서 제외한다.
+        가격이 MIN_REHEARSAL_PRICE 미만이면 개인연습실로 간주하여 제외한다.
+        가격 정보가 아예 없는 룸도 제외한다.
         """
         base_price = self._extract_price(room)
-        if isinstance(base_price, int) and base_price > 0:
+        if isinstance(base_price, int) and base_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         raw_price = self._coerce_int(room.get("price"))
-        if raw_price is not None and raw_price > 0:
+        if raw_price is not None and raw_price >= self.MIN_REHEARSAL_PRICE:
             return True
 
         return False
@@ -1812,6 +1915,15 @@ class RoomCollectionService:
                 if candidate is not None and candidate >= 1000:
                     return candidate
         return None
+
+    @staticmethod
+    def _sanitize_display_name(name: str) -> str:
+        """지점명에서 대괄호 태그와 예약/안내성 접미어를 제거한다."""
+        if not name:
+            return name
+        cleaned = re.sub(r"\[.*?\]", "", name).strip()
+        cleaned = re.sub(r"\s*(예약|방문\s*상담|문의|안내)$", "", cleaned).strip()
+        return cleaned if cleaned else name
 
     def _calculate_capacity_range(
         self,

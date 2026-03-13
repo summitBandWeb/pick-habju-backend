@@ -394,60 +394,74 @@ class NaverMapCrawler:
                 self._open_info_tab(target_frame)
                 page.wait_for_timeout(self._wait_with_jitter(self.INFO_TAB_RENDER_WAIT_MS))
 
-                apollo_keywords: List[str] = []
-                try:
-                    raw = target_frame.evaluate(
-                        """() => {
-                            const state = window.__APOLLO_STATE__;
-                            if (!state || typeof state !== 'object') return [];
-                            const out = [];
-                            const seen = new Set();
-                            const keyMatched = (k) => /keyword|hashtag|tag|키워드|해시태그|태그/i.test(String(k || ""));
-                            const push = (v) => {
-                                if (typeof v !== 'string') return;
-                                const t = v.trim();
-                                if (!t || seen.has(t)) return;
-                                seen.add(t);
-                                out.push(t);
-                            };
-                            const walk = (obj, depth = 0, key = "") => {
-                                if (depth > 6 || obj == null) return;
-                                if (typeof obj === 'string') {
-                                    if (keyMatched(key)) push(obj);
-                                    return;
-                                }
-                                if (Array.isArray(obj)) {
-                                    for (const item of obj) walk(item, depth + 1, key);
-                                    return;
-                                }
-                                if (typeof obj === 'object') {
-                                    for (const [k, v] of Object.entries(obj)) {
-                                        walk(v, depth + 1, k);
-                                    }
-                                }
-                            };
-                            walk(state);
-                            return out.slice(0, 40);
-                        }"""
+                keywords = self._extract_keywords_from_frame(target_frame)
+
+                if not keywords:
+                    logger.info(
+                        "Keyword extraction empty for place_id=%s, retrying after additional wait",
+                        place_id,
                     )
-                    if isinstance(raw, list):
-                        apollo_keywords = [str(x).strip() for x in raw if isinstance(x, str) and str(x).strip()]
-                except Exception:
-                    apollo_keywords = []
+                    page.wait_for_timeout(self._wait_with_jitter(self.INFO_TAB_RENDER_WAIT_MS))
+                    keywords = self._extract_keywords_from_frame(target_frame)
 
-                text_keywords: List[str] = []
-                try:
-                    body_text = target_frame.locator("body").inner_text(timeout=5000)
-                    text_keywords = self._extract_representative_keywords_from_text(body_text)
-                except Exception:
-                    text_keywords = []
-
-                return self._normalize_representative_keywords(apollo_keywords + text_keywords)
+                return keywords
             except Exception as e:
                 logger.warning("Failed to reveal representative keywords for place_id=%s: %s", place_id, e)
                 return []
             finally:
                 browser.close()
+
+    def _extract_keywords_from_frame(self, target_frame) -> List[str]:
+        """상세 페이지 iframe에서 Apollo State + DOM 텍스트로 키워드를 추출한다."""
+        apollo_keywords: List[str] = []
+        try:
+            raw = target_frame.evaluate(
+                """() => {
+                    const state = window.__APOLLO_STATE__;
+                    if (!state || typeof state !== 'object') return [];
+                    const out = [];
+                    const seen = new Set();
+                    const keyMatched = (k) => /keyword|hashtag|tag|키워드|해시태그|태그/i.test(String(k || ""));
+                    const push = (v) => {
+                        if (typeof v !== 'string') return;
+                        const t = v.trim();
+                        if (!t || seen.has(t)) return;
+                        seen.add(t);
+                        out.push(t);
+                    };
+                    const walk = (obj, depth = 0, key = "") => {
+                        if (depth > 6 || obj == null) return;
+                        if (typeof obj === 'string') {
+                            if (keyMatched(key)) push(obj);
+                            return;
+                        }
+                        if (Array.isArray(obj)) {
+                            for (const item of obj) walk(item, depth + 1, key);
+                            return;
+                        }
+                        if (typeof obj === 'object') {
+                            for (const [k, v] of Object.entries(obj)) {
+                                walk(v, depth + 1, k);
+                            }
+                        }
+                    };
+                    walk(state);
+                    return out.slice(0, 40);
+                }"""
+            )
+            if isinstance(raw, list):
+                apollo_keywords = [str(x).strip() for x in raw if isinstance(x, str) and str(x).strip()]
+        except Exception:
+            apollo_keywords = []
+
+        text_keywords: List[str] = []
+        try:
+            body_text = target_frame.locator("body").inner_text(timeout=5000)
+            text_keywords = self._extract_representative_keywords_from_text(body_text)
+        except Exception:
+            text_keywords = []
+
+        return self._normalize_representative_keywords(apollo_keywords + text_keywords)
 
     def _open_info_tab(self, target_frame) -> None:
         """정보 탭 클릭을 시도한다. 실패해도 다음 추출 로직은 계속 진행한다."""
@@ -482,7 +496,7 @@ class NaverMapCrawler:
         tail = text[marker_idx + len(cls.REPRESENTATIVE_KEYWORDS_LABEL):]
         lines = [ln.strip() for ln in tail.splitlines()]
         candidates: List[str] = []
-        section_break_markers = {
+        section_break_markers = (
             "이용안내",
             "안내",
             "소개",
@@ -490,13 +504,14 @@ class NaverMapCrawler:
             "가격",
             "찾아오시는 길",
             "편의",
-        }
+            "SNS",
+        )
 
         for line in lines:
             if not line:
                 continue
 
-            if line in section_break_markers and candidates:
+            if candidates and any(line.startswith(m) for m in section_break_markers):
                 break
 
             if line in {"홈", "소식", "예약", "리뷰", "사진", "정보", "문의", cls.REPRESENTATIVE_KEYWORDS_LABEL}:
@@ -507,7 +522,7 @@ class NaverMapCrawler:
                 token = part.strip("[](){}-•· ")
                 if not token:
                     continue
-                if len(token) > 20:
+                if len(token) > 60:
                     continue
                 if re.search(r"\d{2,}", token):
                     continue
@@ -633,7 +648,7 @@ class NaverMapCrawler:
                 if (!state) {
                      return ["NO_APOLLO_STATE", "URL:" + window.location.href, "BODY_HIDDEN_FOR_SECURITY"];
                 }
-                
+
                 const places = [];
                 const details = {};    // placeId -> PlaceDetail fields
                 const bookings = {};   // placeId -> BookingBusiness fields
@@ -646,7 +661,7 @@ class NaverMapCrawler:
                     }
                 };
                 const keys = Object.keys(state);
-                
+
                 for (const key of keys) {
                     if (key.startsWith('PlaceSummary:')) {
                         const place = state[key];
@@ -682,7 +697,7 @@ class NaverMapCrawler:
                         };
                     }
                 }
-                
+
                 // Merge PlaceDetail/BookingBusiness into PlaceSummary (enrichment)
                 for (const place of places) {
                     const pid = place.placeId;
@@ -694,11 +709,11 @@ class NaverMapCrawler:
                         mergeNonNull(place, bookings[place.id]);
                     }
                 }
-                
+
                 if (places.length === 0) {
                     return ["NO_PLACES_FOUND_IN_APOLLO_STATE"];
                 }
-                
+
                 return places;
             }
         """)
