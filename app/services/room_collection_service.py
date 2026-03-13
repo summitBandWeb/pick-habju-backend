@@ -91,7 +91,6 @@ class RoomCollectionService:
         "합주실",
         "합주",
         "밴드합주",
-        "음악연습실",
         "악기연습실",
         "드럼연습실",
     )
@@ -109,11 +108,28 @@ class RoomCollectionService:
         "레슨", "lesson", "수업", "클래스", "원데이",
         # 악기 대여
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
+        "피아노 대여", "피아노스튜디오",
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
+        # 결제/상품 (비합주 상품)
+        "쿠폰", "선불권", "이용권", "월대여",
         # 기타
         "파티룸", "촬영", "세미나",
     )
+    # Business 이름에 포함 시 합주실이 아닐 가능성이 높은 키워드.
+    # 단, REHEARSAL_KEYWORDS 중 "합주"/"밴드"가 이름에 함께 있으면 보존.
+    NON_REHEARSAL_BUSINESS_NAME_KEYWORDS: Tuple[str, ...] = (
+        "피아노",
+    )
+    # 수동 차단 사업체 ID (합주실 사칭, 비합주 업종 등)
+    BLACKLISTED_BUSINESS_IDS: frozenset = frozenset({
+        "570236",        # 타수 음악연습실 (합주실 사칭)
+        "1708894171",    # 타수음악연습실 2호점 (합주실 사칭)
+    })
+    # 크롤링에서 항상 보호되는 사업체 ID (별도 크롤링 경로)
+    PROTECTED_BUSINESS_IDS: frozenset = frozenset({
+        "dream_sadang", "hongdae_dream", "sadang",
+    })
     # Soft: 음악 후반작업 — 합주실에서 흔히 제공하므로 합주 키워드 공존 시 보존
     NON_REHEARSAL_SOFT_KEYWORDS: Tuple[str, ...] = (
         "레코딩", "recording", "녹음", "믹싱", "마스터링",
@@ -323,6 +339,12 @@ class RoomCollectionService:
     async def collect_by_id(self, business_id: str) -> Dict[str, Any]:
         """특정 Business ID의 룸 정보를 수집하고 저장한다."""
         logger.info(f"Collecting business_id: {business_id}")
+
+        # 블랙리스트 체크
+        if business_id in self.BLACKLISTED_BUSINESS_IDS:
+            logger.warning("Skipping blacklisted business: %s", business_id)
+            return {"status": "skipped_blacklisted", "business_id": business_id}
+
         source_hint = self._source_item_hints.get(str(business_id))
 
         # 1. 상세 정보 조회
@@ -636,11 +658,26 @@ class RoomCollectionService:
         is_candidate = bool(positive_hits)
         reason = "matched_representative_or_name_keywords" if is_candidate else "no_rehearsal_keyword_match"
 
+        # Business 이름 기반 네거티브 필터: "피아노" 등 비합주 키워드가 이름에 있고
+        # "합주"/"밴드" 등 강한 긍정 키워드가 이름에 없으면 후보에서 제외
+        negative_hits: List[str] = []
+        if is_candidate:
+            name_lower = raw_name.lower()
+            neg_matched = [kw for kw in cls.NON_REHEARSAL_BUSINESS_NAME_KEYWORDS if kw in name_lower]
+            if neg_matched:
+                strong_positive_in_name = any(
+                    kw in name_lower for kw in ("합주", "밴드")
+                )
+                if not strong_positive_in_name:
+                    is_candidate = False
+                    reason = "business_name_negative_keyword"
+                    negative_hits = neg_matched
+
         return {
             "is_candidate": is_candidate,
             "reason": reason,
             "positive_hits": positive_hits,
-            "negative_hits": [],
+            "negative_hits": negative_hits,
             "representative_keywords": representative_candidates,
         }
 
