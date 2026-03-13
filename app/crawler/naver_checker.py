@@ -33,6 +33,9 @@ class NaverCrawler(BaseCrawler):
             List[RoomResult]: 방별 RoomAvailability 또는 에러 Exception 객체 배열.
         """
 
+        # 동시 API 요청 수를 50개로 제한하여 소켓 고갈/네이버 Rate Limit 방지 및 응답시간 스파이크 해소
+        semaphore = asyncio.Semaphore(50)
+
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
 
@@ -42,13 +45,14 @@ class NaverCrawler(BaseCrawler):
             Returns:
                 RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
             """
-            try:
-                return await self._fetch_naver_availability_room(date, hour_slots, room)
-            except BaseCustomException as e:
-                return e
-            except Exception as e:
-                # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
-                return Exception(f"[{room.name}] Unexpected error: {str(e)}")
+            async with semaphore:
+                try:
+                    return await self._fetch_naver_availability_room(date, hour_slots, room)
+                except BaseCustomException as e:
+                    return e
+                except Exception as e:
+                    # 예상치 못한 에러는 룸 정보를 포함하여 새로운 예외로 반환
+                    return Exception(f"[{room.name}] Unexpected error: {str(e)}")
 
         return await asyncio.gather(*[safe_fetch(room) for room in target_rooms])
 

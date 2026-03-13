@@ -26,11 +26,11 @@ def get_rooms_by_criteria(
     """
     try:
         # Deploy 환경마다 branch 컬럼 반영 시점이 다를 수 있어 select를 순차 fallback.
+        # !inner 조인으로 branch 테이블 조건을 room 조회에 반영.
         select_candidates = [
-            "*, branch(name, lat, lng, phone_number, display_name, open_wait_rule, standby_days)",
-            "*, branch(name, lat, lng, phone_number, display_name, open_wait_rule)",
-            "*, branch(name, lat, lng, phone_number, display_name)",
-            "*, branch(name, lat, lng)",
+            "*, branch!inner(name, lat, lng, phone_number, display_name, open_wait_rule)",
+            "*, branch!inner(name, lat, lng, phone_number, display_name)",
+            "*, branch!inner(name, lat, lng)",
         ]
 
         response = None
@@ -38,6 +38,12 @@ def get_rooms_by_criteria(
         for select_expr in select_candidates:
             try:
                 query = supabase.table("room").select(select_expr).gte("max_capacity", capacity)
+                
+                # DB 레벨 필터링 (위경도 지도 경계 조건) - 병목 해소
+                if all(v is not None for v in [swLat, swLng, neLat, neLng]):
+                    # 포스트그레스트에서 외래키 필터링 시 테이블명.컬럼명 형식 사용
+                    query = query.gte("branch.lat", swLat).lte("branch.lat", neLat).gte("branch.lng", swLng).lte("branch.lng", neLng)
+
                 response = query.execute()
                 break
             except APIError as e:
@@ -59,7 +65,6 @@ def get_rooms_by_criteria(
                 row["phone_number"] = branch.get("phone_number")
                 row["display_name"] = branch.get("display_name")
                 row["open_wait_rule"] = branch.get("open_wait_rule")
-                row["standby_days"] = branch.get("standby_days")
             else:
                 row["branch"] = RoomDetail.BRANCH_FALLBACK_NAME
                 row["lat"] = None
@@ -67,16 +72,9 @@ def get_rooms_by_criteria(
                 row["phone_number"] = None
                 row["display_name"] = None
                 row["open_wait_rule"] = {}
-                row["standby_days"] = None
 
             lat = row.get("lat")
             lng = row.get("lng")
-
-            # 위경도 뒤바뀜 보정
-            if lat is not None and lng is not None and lat > 100 and lng < 100:
-                lat, lng = lng, lat
-                row["lat"] = lat
-                row["lng"] = lng
 
             # 서비스 지역 필터: 좌표가 없거나 반경 밖이면 제외
             if lat is None or lng is None or not is_in_service_area(lat, lng):
