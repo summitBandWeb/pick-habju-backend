@@ -36,7 +36,7 @@ def mock_room_detail_factory():
             "extra_charge": None,
             "price_per_hour": price,
             "can_reserve_one_hour": True,
-            "requires_contact_on_sameday": False,
+            "requires_call_on_sameday": False,
             "lat": lat,
             "lng": lng
         }

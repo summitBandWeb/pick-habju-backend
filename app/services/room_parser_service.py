@@ -176,7 +176,7 @@ class RoomParserService:
             "base_capacity": base_cap,
             "extra_charge": extra_charge,
             "price_config": price_config,
-            "requires_contact_on_sameday": requires_call,
+            "requires_call_on_sameday": requires_call,
             "can_reserve_one_hour": can_reserve_1h,
         }
 

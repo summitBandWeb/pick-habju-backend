@@ -998,19 +998,9 @@ class RoomCollectionService:
             
             existing_requires_call = False
             if existing:
-                existing_requires_call = existing.get("requires_contact_on_sameday")
-                if existing_requires_call is None:
-                    existing_requires_call = existing.get("requires_contact_same_day")
-                if existing_requires_call is None:
-                    existing_requires_call = existing.get("requires_call_on_sameday", False)
+                existing_requires_call = existing.get("requires_call_on_sameday", False)
 
-            parsed_requires_call = parsed.get("requires_contact_on_sameday")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_same_day_contact")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_contact_same_day")
-            if parsed_requires_call is None:
-                parsed_requires_call = parsed.get("requires_call_on_same_day")
+            parsed_requires_call = parsed.get("requires_call_on_sameday")
 
             structured_requires_call = self._extract_structured_requires_call_on_same_day(room)
             if structured_requires_call is not None:
@@ -1079,9 +1069,7 @@ class RoomCollectionService:
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap_int,
                 "extra_charge": final_extra_charge_int,
-                # NOTE: upsert 키는 실제 DB 컬럼명과 반드시 일치해야 함. AliasChoices는 SELECT에만 효과 있음.
-                "requires_contact_on_sameday": final_requires_call,
-                "requires_contact_same_day": final_requires_call, # TODO: schema migration 완료 후 old column 제거
+                "requires_call_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column
             }
@@ -1182,8 +1170,8 @@ class RoomCollectionService:
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
         """Upsert room row and retry if payload contains unknown columns.
 
-        During rolling migrations, some environments may still miss one of the
-        alias columns (e.g., requires_contact_on_sameday vs requires_contact_same_day).
+        During rolling migrations, some environments may still miss certain
+        optional columns (e.g., image_urls).
         """
         payload = dict(room_data)
         for col in list(self._unsupported_room_columns):
