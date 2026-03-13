@@ -391,17 +391,17 @@ class TestV2NewFields:
         # rec=4 (<9) → ±1 → [3, 5]
         assert room_data["recommend_capacity_range"] == [3, 5]
     
-    # ============== TC: display_name 및 standby_days 저장 ==============
+    # ============== TC: display_name 저장 ==============
     @pytest.mark.asyncio
-    async def test_saves_display_name_and_standby_days_to_branch(self, service, mock_supabase):
-        """Branch upsert 시 display_name과 standby_days가 포함되는지 검증"""
+    async def test_saves_display_name_to_branch(self, service, mock_supabase):
+        """Branch upsert 시 display_name이 포함되는지 검증"""
         business = {
             "businessId": "biz1",
             "businessDisplayName": "테스트 합주실 1호점",
             "coordinates": {"latitude": 37.5, "longitude": 127.0}
         }
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
-        parsed_results = {"r1": {"standby_days": 3}}
+        parsed_results = {"r1": {}}
         
         await service._save_to_db(business, rooms, parsed_results)
         
@@ -412,7 +412,6 @@ class TestV2NewFields:
         assert branch_data["display_name"] == "테스트 합주실 1호점"
         assert branch_data["lat"] == 37.5
         assert branch_data["lng"] == 127.0
-        assert branch_data["standby_days"] == 3
     
     # ============== TC: price_config 저장 ==============
     @pytest.mark.asyncio

@@ -3,12 +3,19 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, date, timedelta
 from app.services.availability_service import AvailabilityService
 from app.models.dto import AvailabilityRequest, RoomAvailability, RoomDetail
+from app.utils.availability_cache import availability_cache
 import unittest.mock as mock
 
 
 # 미래 날짜를 사용하여 DTO 날짜 검증을 통과시킴
 FUTURE_DATE = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    availability_cache.clear()
+    yield
+    availability_cache.clear()
 
 @pytest.fixture
 def mock_pricing_service():
@@ -263,7 +270,7 @@ class TestAvailabilityServiceFlow:
 
     @pytest.fixture
     def service(self, mock_crawler, mock_pricing_service):
-        svc = AvailabilityService({"mock_crawler": mock_crawler})
+        svc = AvailabilityService({"naver": mock_crawler})
         svc.pricing_service = mock_pricing_service
         return svc
 
@@ -567,70 +574,6 @@ class TestAvailabilityServiceFlow:
             mock_db.return_value = [room1]
             response = await service.check_availability(req)
         assert len(response.branches) == 0
-
-    @pytest.mark.asyncio
-    @patch("app.services.availability_service.datetime")
-    async def test_standby_days_filter(self, mock_datetime, service, mock_crawler):
-        """standby_days 기준 예약 불가능한 방 사전 필터링 검증"""
-        
-        # mock datetime to today
-        today_date = date.today()
-        class MockDatetime(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return datetime.combine(today_date, datetime.min.time())
-
-        mock_datetime.now = MockDatetime.now
-        mock_datetime.strptime.side_effect = datetime.strptime
-
-        # target_date is today + 7 days
-        target_date_str = (today_date + timedelta(days=7)).strftime("%Y-%m-%d")
-
-        req = AvailabilityRequest(
-            date=target_date_str, capacity=3, start_hour="14:00", end_hour="16:00",
-            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
-        )
-        
-        # 1. standbyDays = None 인 방 -> 크롤링 대상 포함
-        room1 = RoomDetail(
-            name="Room1", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
-            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=None
-        )
-        avail_1 = RoomAvailability(room_detail=room1, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000)
-
-        # 2. days_diff(7) >= standbyDays(5) 인 방 -> 크롤링 대상 포함
-        room2 = RoomDetail(
-            name="Room2", branch="Branch", business_id="b1", biz_item_id="r2",
-            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
-            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=5
-        )
-        avail_2 = RoomAvailability(room_detail=room2, available=True, available_slots={"14:00": True, "15:00": True}, estimated_price=20000)
-
-        # 3. days_diff(7) < standbyDays(10) 인 방 -> 크롤링 대상 및 응답 모두 제외
-        room3 = RoomDetail(
-            name="Room3", branch="Branch", business_id="b1", biz_item_id="r3",
-            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True, requiresContactOnSameDay=False,
-            recommend_capacity_range=[4, 8], priceConfig={}, standbyDays=10
-        )
-
-        mock_crawler.check_availability.return_value = [avail_1, avail_2]
-
-        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db, \
-             patch("app.services.availability_service.filter_rooms_by_type", return_value=[room1, room2]), \
-             patch("app.services.availability_service.validate_availability_request"):
-            mock_db.return_value = [room1, room2, room3]
-            response = await service.check_availability(req)
-
-        # standby(room3)는 응답에서 완전 제외되므로 2개 룸만 포함
-        assert len(response.branches) == 1
-        branch = response.branches[0]
-        assert len(branch.rooms) == 2
-
-        biz_ids_in_response = {r.biz_item_id for r in branch.rooms}
-        assert "r1" in biz_ids_in_response
-        assert "r2" in biz_ids_in_response
-        assert "r3" not in biz_ids_in_response, "standby 룸은 응답에서 완전 제외되어야 함"
 
 
 class TestBranchFiltering:

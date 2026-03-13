@@ -353,21 +353,7 @@ class AvailabilityService:
                     tasks.append(crawler.check_availability(request.date, day1_slots, filtered_rooms))
                     task_dates.append(request.date)
 
-        if not tasks:
-            excluded = len(target_rooms) - len(crawling_rooms)
-            logger.info(
-                "[check_availability] 크롤링 가능한 룸 없음. date=%s capacity=%s "
-                "total_rooms=%d standby_excluded=%d → 빈 응답 반환",
-                request.date, request.capacity, len(target_rooms), excluded,
-            )
-            return AvailabilityResponse(
-                date=request.date,
-                start_hour=request.start_hour,
-                end_hour=request.end_hour,
-                hour_slots=hour_slots,
-                available_biz_item_ids=[],
-                branches=[]
-            )
+        # tasks가 비어있더라도(모든 룸 캐시 히트) 아래 로직에서 cached_results를 처리하므로 조기 리턴하지 않음
 
         results_of_lists = await asyncio.gather(*tasks) if tasks else []
         
@@ -388,9 +374,27 @@ class AvailabilityService:
         # 캐시 데이터와 신규 조회 데이터 통합
         total_results = cached_results + successful_results
 
+        # 3.6. Standby(대기) 기간 필터링
+        # Rationale: 지점별로 설정된 standby_days(예: 3일) 내의 예약은 필터링함.
+        filtered_results = []
+        today_dt = datetime.strptime(datetime.now().strftime("%Y-%m-%d"), "%Y-%m-%d")
+        request_dt = datetime.strptime(request.date, "%Y-%m-%d")
+        days_diff = (request_dt - today_dt).days
+
+        for r in total_results:
+            standby_days = 0
+            # branch 정보 또는 open_wait_rule에서 standby_days 추출
+            if hasattr(r.room_detail, 'openWaitRule') and isinstance(r.room_detail.openWaitRule, dict):
+                standby_days = r.room_detail.openWaitRule.get("standby_days", 0)
+            
+            if days_diff < standby_days:
+                logger.info(f"[standby_filter] Skipping {r.room_detail.biz_item_id}: request_days={days_diff} < standby_days={standby_days}")
+                continue
+            filtered_results.append(r)
+
         # 4. 결과 집계 및 정책/가격 적용
         merged_dict = {}
-        for r in total_results:
+        for r in filtered_results:
             biz_id = r.room_detail.biz_item_id
             if biz_id in merged_dict:
                 existing = merged_dict[biz_id]
