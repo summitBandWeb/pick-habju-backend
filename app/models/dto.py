@@ -241,7 +241,7 @@ class AvailabilityRequest(BaseModel):
         end_minutes = 1440 if self.end_hour == "24:00" else int(self.end_hour[:2]) * 60 + int(self.end_hour[3:])
         
         if start_minutes == end_minutes:
-            raise ValueError("시작 시간과 종료 시간은 같을 수 없습니다. (최소 1시간 이상)")
+            raise ValueError("시작 시간과 종료 시간은 같을 수 없습니다.")
 
         # 자정을 넘기는 케이스 처리 (예: 23:00 -> 02:00)
         if start_minutes > end_minutes:
