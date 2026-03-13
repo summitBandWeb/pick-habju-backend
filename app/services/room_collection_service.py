@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import asyncio
 import json
 import os
@@ -99,8 +99,6 @@ class RoomCollectionService:
         "합주실",
         "합주",
         "밴드합주",
-        "악기연습실",
-        "드럼연습실",
     )
     REPRESENTATIVE_KEYWORD_FIELDS: Tuple[str, ...] = (
         "representativeKeyword",
@@ -117,6 +115,7 @@ class RoomCollectionService:
         # 피아노/악기 전용
         "피아노", "야마하", "영창",
         "기타 대여", "베이스 대여", "앰프 대여", "드럼스틱", "악기 대여",
+        "악기연습실", "드럼연습실"
         # 비음악 용도
         "무용", "댄스", "요가", "필라테스",
         # 결제/상품 (비합주 상품)
