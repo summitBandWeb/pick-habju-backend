@@ -88,7 +88,7 @@ def test_soft_keyword_preserved_when_room_name_has_rehearsal_keyword(service):
 def test_filter_rooms_excludes_below_min_price(service):
     """MIN_REHEARSAL_PRICE(5000원) 미만 룸은 필터링된다."""
     rooms = [
-        {"bizItemId": "room-cheap", "name": "피아노 연습실", "minMaxPrice": {"minPrice": 3000}},
+        {"bizItemId": "room-cheap", "name": "저렴한 연습실", "minMaxPrice": {"minPrice": 3000}},
         {"bizItemId": "room-ok", "name": "A Room", "minMaxPrice": {"minPrice": 15000}},
         {"bizItemId": "room-boundary", "name": "B Room", "minMaxPrice": {"minPrice": 5000}},
     ]

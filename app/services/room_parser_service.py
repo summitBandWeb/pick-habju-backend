@@ -277,6 +277,18 @@ class RoomParserService:
                 continue
             break
 
+        # Remove trailing promotional/pricing noise in plain text.
+        # e.g. "합주실A 가격인하 10%~20% 평일,주말 차등요금" → "합주실A"
+        # e.g. "브라운룸 야간할인" → "브라운룸 야간"
+        clean = re.sub(
+            r"\s+가격인하.*$"
+            r"|\s+\d+%\s*~?\s*\d*%?\s*(?:할인|인하).*$"
+            r"|\s+(?:평일|주말)[,\s]*(?:주말|평일)?\s*차등요금.*$",
+            "",
+            clean,
+        )
+        clean = re.sub(r"할인\s*$", "", clean).strip()
+
         # Guard against dangling parenthesis after partial tag stripping.
         if clean.count("(") > clean.count(")"):
             clean = re.sub(r"\([^)]*$", "", clean).strip()
@@ -284,6 +296,12 @@ class RoomParserService:
             clean = clean.replace(")", " ")
 
         clean = re.sub(r"\s+", " ", clean).strip(" -_/")
+
+        # 정제 후 결과가 단독 대괄호 태그면 대괄호 벗기기: "[합주실A]" → "합주실A"
+        solo_bracket = re.match(r"^\[([^\]]+)\]$", clean)
+        if solo_bracket:
+            clean = solo_bracket.group(1).strip()
+
         clean = clean or (name or "").strip()
 
         # 시간대 레이블이 추출되었으면 이름 뒤에 붙인다.
