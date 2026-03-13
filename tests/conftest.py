@@ -61,7 +61,6 @@ def mock_room_response_factory():
             "recommend_capacity": 5,
             "min_capacity": 1,
             "min_hours": 1,
-            "standby_days": None,
             "policy_warnings": []
         }
         defaults.update(kwargs)

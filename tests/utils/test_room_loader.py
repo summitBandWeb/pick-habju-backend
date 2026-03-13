@@ -51,6 +51,18 @@ def test_get_rooms_by_criteria_filters_by_service_area(monkeypatch):
         capacity=3, swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
     )
 
+    # 쿼리가 올바른 인자와 함께 호출되었는지 검증 (P2 리뷰 반영)
+    # 1. select 호출 확인
+    assert any("branch!inner(" in str(call) for call in mock_query.select.call_args_list)
+    # 2. 좌표 범위 필터(gte, lte) 호출 확인
+    assert mock_query.gte.call_count >= 2
+    assert mock_query.lte.call_count >= 2
+    
+    # 호출된 인자 중 일부 확인
+    gte_args = [call.args[0] for call in mock_query.gte.call_args_list]
+    assert "branch.lat" in gte_args
+    assert "branch.lng" in gte_args
+
     assert len(rooms) == 1
     assert rooms[0].biz_item_id == "item-3"
 
@@ -71,3 +83,48 @@ def test_get_rooms_by_criteria_returns_service_area_room(monkeypatch):
     rooms = room_loader.get_rooms_by_criteria(capacity=1)
 
     assert len(rooms) == 1
+
+def test_get_rooms_by_criteria_boundary_coordinates(monkeypatch):
+    """경계값 테스트: swLat, swLng, neLat, neLng 경계선에 위치한 지점 포함 검증"""
+    # 사당역 위치
+    sw_edge_row = _room_row(
+        biz_item_id="item-sw",
+        branch={"name": "Sadang", "lat": 37.4766, "lng": 126.9816},
+    )
+    # 이수역 위치
+    ne_edge_row = _room_row(
+        biz_item_id="item-ne",
+        branch={"name": "Isu", "lat": 37.4856, "lng": 126.9823},
+    )
+    # 경계선 밖
+    outside_row = _room_row(
+        biz_item_id="item-out",
+        branch={"name": "Out Branch", "lat": 37.4765, "lng": 126.9815},
+    )
+
+    mock_query = MagicMock()
+    mock_query.select.return_value = mock_query
+    mock_query.gte.return_value = mock_query
+    mock_query.lte.return_value = mock_query    
+    mock_query.execute.return_value = SimpleNamespace(
+        data=[sw_edge_row, ne_edge_row, outside_row]
+    )
+
+    mock_supabase = MagicMock()
+    mock_supabase.table.return_value = mock_query
+    monkeypatch.setattr(room_loader, "supabase", mock_supabase)
+    
+    # is_in_service_area를 항상 True로 모킹하여 bounding box 로직만 순수하게 검증
+    monkeypatch.setattr(room_loader, "is_in_service_area", lambda lat, lng: True)
+
+    rooms = room_loader.get_rooms_by_criteria(
+        capacity=1, 
+        swLat=37.4766, swLng=126.9816, 
+        neLat=37.4856, neLng=126.9823
+    )
+    
+    # 디버깅을 위해 결과 출력 (실패 시 보임)
+    print(f"Debug - Found rooms: {[r.biz_item_id for r in rooms]}")
+    
+    assert len(rooms) == 2
+    assert {r.biz_item_id for r in rooms} == {"item-sw", "item-ne"}

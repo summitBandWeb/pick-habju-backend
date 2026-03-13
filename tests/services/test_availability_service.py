@@ -696,3 +696,50 @@ class TestBranchFiltering:
         assert response.branches[0].available_count == 1
         room_ids = {r.biz_item_id for r in response.branches[0].rooms}
         assert "r2" in room_ids, "부분 가능 룸은 응답에는 포함되어야 함"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_regression(self, service, mock_crawler):
+        """동일한 요청을 두 번 보낼 때, 크롤러는 한 번만 호출되고 두 번째는 캐시를 사용하는지 검증."""
+        service.crawlers_map = {"naver": mock_crawler}
+        
+        req = AvailabilityRequest(
+            date=FUTURE_DATE, capacity=2, start_hour="14:00", end_hour="16:00",
+            swLat=37.0, swLng=126.0, neLat=38.0, neLng=127.0
+        )
+        room = RoomDetail(
+            name="CacheTest", branch="Branch", business_id="b1", biz_item_id="r1",
+            pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True,
+            requiresContactOnSameDay=False, recommend_capacity_range=[4, 8]
+        )
+        avail = RoomAvailability(
+            room_detail=room, available=True,
+            available_slots={"14:00": True, "15:00": True}, estimated_price=20000
+        )
+        
+        # 첫 번째 호출에서는 크롤러가 결과를 반환하도록 설정
+        mock_crawler.check_availability.return_value = [avail]
+        
+        with patch("app.services.availability_service.get_rooms_by_criteria", return_value=[room]), \
+             patch("app.services.availability_service.validate_availability_request"):
+            
+            # 1. 첫 번째 호출 (Cache Miss)
+            resp1 = await service.check_availability(req)
+            assert mock_crawler.check_availability.call_count == 1, "첫 번째 호출에서 크롤러가 호출되어야 함"
+            
+            # 2. 두 번째 호출 (Cache Hit)
+            resp2 = await service.check_availability(req)
+            
+            # 크롤러 호출 횟수가 여전히 1이어야 함 (두 번째는 캐시 사용)
+            assert mock_crawler.check_availability.call_count == 1, "두 번째 호출에서 캐시가 사용되어 크롤러 호출이 늘어나지 않아야 함"
+            
+            assert resp2.is_cached is True
+            assert resp1.available_biz_item_ids == resp2.available_biz_item_ids
+            assert len(resp1.branches) == len(resp2.branches)
+            assert resp1.branches[0].rooms[0].name == resp2.branches[0].rooms[0].name
+            
+            # 결과가 동일한지 확인 (is_cached 필드 제외하고 비교하거나 is_cached가 True인지 확인)
+            assert resp2.is_cached is True
+            assert resp1.available_biz_item_ids == resp2.available_biz_item_ids
+            assert len(resp1.branches) == len(resp2.branches)
+            assert resp1.branches[0].rooms[0].name == resp2.branches[0].rooms[0].name
+
