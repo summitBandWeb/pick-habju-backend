@@ -38,6 +38,7 @@ from fastapi import HTTPException
 from app.services.pricing_service import PricingService
 from app.validate.request_validator import validate_availability_request
 from app.validate.room_detail_validator import validate_room_detail_list
+from app.utils.availability_cache import availability_cache
 
 logger = logging.getLogger("app")
 
@@ -305,8 +306,22 @@ class AvailabilityService:
 
         validate_availability_request(request.date, hour_slots, target_rooms)
 
+        # 2.5. 캐시 확인 및 크롤링 대상 필터링
+        # Rationale: 이미 캐싱된 룸은 크롤러 호출을 생략하여 응답 속도를 높이고 외부 API 부하를 줄임.
+        cached_results = []
+        crawling_rooms = []
+        
+        for room in target_rooms:
+            cached = availability_cache.get(request.date, request.start_hour, request.end_hour, room.biz_item_id)
+            if cached:
+                cached_results.append(cached)
+            else:
+                crawling_rooms.append(room)
+
+        if cached_results:
+            logger.info(f"[check_availability] Cache hit: {len(cached_results)} rooms")
+
         # 3. 크롤러 비동기 작업 준비 및 실행
-        crawling_rooms = target_rooms
         tasks = []
         task_dates = []
 
@@ -365,11 +380,17 @@ class AvailabilityService:
 
         self._log_errors(all_results, request.date)
 
-        # 4. 결과 집계 및 정책/가격 적용
+        # 3.5. 크롤링 성공 결과물 캐시 저장 및 기존 캐시와 병합
         successful_results = [r for r in all_results if not isinstance(r, Exception)]
-                # 심야 예약 분할 조회로 인한 동일 합주실(biz_item_id) 중복 데이터 병합
-        merged_dict = {}
         for r in successful_results:
+            availability_cache.set(request.date, request.start_hour, request.end_hour, r.room_detail.biz_item_id, r)
+        
+        # 캐시 데이터와 신규 조회 데이터 통합
+        total_results = cached_results + successful_results
+
+        # 4. 결과 집계 및 정책/가격 적용
+        merged_dict = {}
+        for r in total_results:
             biz_id = r.room_detail.biz_item_id
             if biz_id in merged_dict:
                 existing = merged_dict[biz_id]
