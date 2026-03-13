@@ -50,7 +50,6 @@ class RoomDetail(BaseModel):
     lng: Optional[float] = Field(None, description="Branch longitude")
     phoneNumber: Optional[str] = Field(None, alias="phone_number", description="Branch phone number (if null, use chat)")
     displayName: Optional[str] = Field(None, alias="display_name", description="Branch display name")
-    openWaitRule: Dict[str, Any] = Field(default_factory=dict, alias="open_wait_rule", description="Branch open wait rule (JSON)")
 
     pricePerHour: int = Field(alias="price_per_hour", description="Price per hour (KRW)")
     # NOTE: 아래 두 필드는 내부 정책 판별 로직에서만 사용하며, 프론트엔드 응답에서는 policy_warnings로 대체됨
@@ -87,7 +86,7 @@ class RoomDetail(BaseModel):
             return []
         return v
 
-    @field_validator('priceConfig', 'openWaitRule', mode='before')
+    @field_validator('priceConfig', mode='before')
     @classmethod
     def handle_null_json(cls, v: Any) -> Dict[str, Any]:
         """DB에서 null로 오는 JSON 필드를 빈 딕셔너리로 변환"""
@@ -325,3 +324,4 @@ class AvailabilityResponse(BaseModel):
     available_biz_item_ids: List[str] = Field(default_factory=list, description="List of available biz_item_ids")
     
     branches: List[BranchResponse] = Field(..., description="List of branches with their available rooms")
+    is_cached: bool = Field(False, description="Whether the response was served from cache")
