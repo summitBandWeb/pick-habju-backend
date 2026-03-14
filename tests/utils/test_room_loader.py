@@ -52,8 +52,8 @@ def test_get_rooms_by_criteria_filters_by_service_area(monkeypatch):
     )
 
     # 쿼리가 올바른 인자와 함께 호출되었는지 검증 (P2 리뷰 반영)
-    # 1. select 호출 확인
-    assert any("branch!inner(" in str(call) for call in mock_query.select.call_args_list)
+    # 1. select 호출 확인 (call.args로 직접 인자 검사하여 str() 기반의 취약한 비교 방지)
+    assert any(call.args and "branch!inner(" in call.args[0] for call in mock_query.select.call_args_list)
     # 2. 좌표 범위 필터(gte, lte) 호출 확인
     assert mock_query.gte.call_count >= 2
     assert mock_query.lte.call_count >= 2
@@ -122,9 +122,6 @@ def test_get_rooms_by_criteria_boundary_coordinates(monkeypatch):
         swLat=37.4766, swLng=126.9816, 
         neLat=37.4856, neLng=126.9823
     )
-    
-    # 디버깅을 위해 결과 출력 (실패 시 보임)
-    print(f"Debug - Found rooms: {[r.biz_item_id for r in rooms]}")
     
     assert len(rooms) == 2
     assert {r.biz_item_id for r in rooms} == {"item-sw", "item-ne"}
