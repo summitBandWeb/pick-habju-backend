@@ -732,13 +732,7 @@ class TestBranchFiltering:
             # 크롤러 호출 횟수가 여전히 1이어야 함 (두 번째는 캐시 사용)
             assert mock_crawler.check_availability.call_count == 1, "두 번째 호출에서 캐시가 사용되어 크롤러 호출이 늘어나지 않아야 함"
             
-            assert resp2.is_cached is True
-            assert resp1.available_biz_item_ids == resp2.available_biz_item_ids
-            assert len(resp1.branches) == len(resp2.branches)
-            assert resp1.branches[0].rooms[0].name == resp2.branches[0].rooms[0].name
-            
-            # 결과가 동일한지 확인 (is_cached 필드 제외하고 비교하거나 is_cached가 True인지 확인)
-            assert resp2.is_cached is True
+            assert resp2.has_cached_data is True
             assert resp1.available_biz_item_ids == resp2.available_biz_item_ids
             assert len(resp1.branches) == len(resp2.branches)
             assert resp1.branches[0].rooms[0].name == resp2.branches[0].rooms[0].name

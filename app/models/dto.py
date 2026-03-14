@@ -324,4 +324,4 @@ class AvailabilityResponse(BaseModel):
     available_biz_item_ids: List[str] = Field(default_factory=list, description="List of available biz_item_ids")
     
     branches: List[BranchResponse] = Field(..., description="List of branches with their available rooms")
-    is_cached: bool = Field(False, description="Whether the response was served from cache")
+    has_cached_data: bool = Field(False, description="True when at least one room result was served from cache")
