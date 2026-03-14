@@ -44,6 +44,14 @@ from app.utils.availability_cache import availability_cache
 logger = logging.getLogger("app")
 
 
+class FailedCrawl:
+    """크롤링 실패 센티넬.
+
+    배치 크롤링에서 예외가 발생한 룸을 batch_results_map에 기록하는 데 사용합니다.
+    None 대신 이 객체를 저장하면 availability_cache가 이를 유효한 캐시 히트로 인식해
+    TTL 동안 재크롤링을 방지합니다.
+    """
+
 
 class AvailabilityService:
     """합주실 예약 가능 여부 조회 서비스
@@ -417,6 +425,11 @@ class AvailabilityService:
                 
                 # 배치 결과 맵 업데이트 및 이벤트 세팅
                 batch_results_map.update(merge_temp)
+                # 크롤링 대상 룸 중 merge_temp에 없는 룸은 예외로 실패한 것이므로
+                # 센티넬을 기록하여 TTL 동안 재크롤링을 방지함
+                failed_ids = {r.biz_item_id for r in crawling_rooms} - set(merge_temp.keys())
+                for fid in failed_ids:
+                    batch_results_map[fid] = FailedCrawl()
                 batch_finished.set()
             finally:
                 if not batch_finished.is_set():
@@ -427,7 +440,7 @@ class AvailabilityService:
 
         # 전체 결과 (캐시 히트 + 방금 크롤링 완료된 결과) 취합
         merged_results = await asyncio.gather(*availability_tasks)
-        merged_results = [r for r in merged_results if r is not None]
+        merged_results = [r for r in merged_results if r is not None and not isinstance(r, FailedCrawl)]
 
         processed_results = self._apply_policies(merged_results, request, hour_slots)
         
