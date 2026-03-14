@@ -294,9 +294,8 @@ class AvailabilityService:
             전체 합주실 조회 서비스의 실패(500 서버 장애)로 이어지지 않도록 방어 로직을 구성함.
         """
 
-        # 0. 확률적 캐시 정리 (1% 확률)
-        if random.random() < 0.01:
-            availability_cache.cleanup()
+        # 0. 점진적 캐시 정리 (매 요청 시 소량 수행)
+        availability_cache.incremental_cleanup(5)
 
         # 1. 시간 범위(Range) -> 시간 슬롯 리스트(List) 변환
         # 예: 14:00 ~ 16:00 -> ["14:00", "15:00", "16:00"]
@@ -338,13 +337,14 @@ class AvailabilityService:
             if not availability_cache.is_pending(request.date, request.start_hour, request.end_hour, room.biz_item_id)
         ]
         
-        # 모든 룸에 대해 get_or_compute 태스크 생성
-        # (이미 캐싱되었거나 타 요청에서 크롤링 중인 경우 해당 결과를 기다림)
+        # 모든 룸에 대해 get_or_compute 태스크 생성 (즉시 예약하여 _inflight 등록)
         # factory 패턴을 사용하여 캐시 미스 시에만 코루틴이 생성되도록 함
         availability_tasks = [
-            availability_cache.get_or_compute(
-                request.date, request.start_hour, request.end_hour, room.biz_item_id,
-                lambda biz_id=room.biz_item_id: room_compute_wrapper(biz_id)
+            asyncio.create_task(
+                availability_cache.get_or_compute(
+                    request.date, request.start_hour, request.end_hour, room.biz_item_id,
+                    lambda biz_id=room.biz_item_id: room_compute_wrapper(biz_id)
+                )
             )
             for room in target_rooms
         ]
@@ -393,10 +393,16 @@ class AvailabilityService:
 
         if tasks:
             try:
-                results_of_lists = await asyncio.gather(*tasks)
+                # return_exceptions=True를 사용하여 일부 크롤러 실패가 전체 실패로 이어지지 않게 함
+                results_of_lists = await asyncio.gather(*tasks, return_exceptions=True)
                 
                 all_results = []
                 for res_list, t_date in zip(results_of_lists, task_dates, strict=True):
+                    # gather 결과가 Exception 객체인 경우 (크롤러 자체의 치명적 실패) 처리
+                    if isinstance(res_list, Exception):
+                        logger.error(f"[AvailabilityService] Crawler task failed: {res_list}")
+                        continue
+                        
                     for item in res_list:
                         if isinstance(item, Exception):
                             item.date_context = t_date
