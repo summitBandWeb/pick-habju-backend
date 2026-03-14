@@ -327,16 +327,16 @@ class AvailabilityService:
         #       배치 크롤러 호출 범위를 결정하기 위해 여기서 사전 필터링함.
         crawling_rooms = [
             room for room in target_rooms
-            if availability_cache.get(request.date, request.start_hour, request.end_hour, room.biz_item_id) is None
-            and availability_cache._inflight.get(availability_cache._get_key(request.date, request.start_hour, request.end_hour, room.biz_item_id)) is None
+            if not availability_cache.is_pending(request.date, request.start_hour, request.end_hour, room.biz_item_id)
         ]
         
         # 모든 룸에 대해 get_or_compute 태스크 생성
         # (이미 캐싱되었거나 타 요청에서 크롤링 중인 경우 해당 결과를 기다림)
+        # factory 패턴을 사용하여 캐시 미스 시에만 코루틴이 생성되도록 함
         availability_tasks = [
             availability_cache.get_or_compute(
                 request.date, request.start_hour, request.end_hour, room.biz_item_id,
-                room_compute_wrapper(room.biz_item_id)
+                lambda biz_id=room.biz_item_id: room_compute_wrapper(biz_id)
             )
             for room in target_rooms
         ]
@@ -543,7 +543,7 @@ class AvailabilityService:
             hour_slots=hour_slots,
             available_biz_item_ids=available_ids,
             branches=bookable_branches,
-            is_cached=cached_count > 0
+            has_cached_data=cached_count > 0
         )
 
     @staticmethod
