@@ -27,6 +27,12 @@ class AvailabilityCache:
         """캐시 키 생성: 날짜, 시간대, 특정 룸 ID 조합"""
         return f"{date}|{start_hour}-{end_hour}|{biz_item_id}"
 
+    def is_pending(self, date: str, start_hour: str, end_hour: str, biz_item_id: str) -> bool:
+        """캐시가 유효하거나 현재 진행 중인 요청이 있으면 True를 반환합니다."""
+        if self.get(date, start_hour, end_hour, biz_item_id) is not None:
+            return True
+        return self._get_key(date, start_hour, end_hour, biz_item_id) in self._inflight
+
     def get(self, date: str, start_hour: str, end_hour: str, biz_item_id: str) -> Optional[Any]:
         """캐시에서 결과를 조회합니다. 만료된 경우 삭제하고 None을 반환합니다."""
         key = self._get_key(date, start_hour, end_hour, biz_item_id)
@@ -40,35 +46,36 @@ class AvailabilityCache:
             
         return copy.deepcopy(data)
 
-    async def get_or_compute(self, date: str, start_hour: str, end_hour: str, biz_item_id: str, compute_coro):
-        """캐시를 조회하거나, 없으면 계산(compute_coro)을 수행하고 결과를 캐싱합니다.
+    async def get_or_compute(self, date: str, start_hour: str, end_hour: str, biz_item_id: str, compute_factory):
+        """캐시를 조회하거나, 없으면 factory를 호출하여 계산하고 결과를 캐싱합니다.
         동시 요청 시 첫 번째 요청만 수행하고 나머지는 그 결과를 대기합니다. (Cache Stampede 방어)
+
+        Args:
+            compute_factory: 캐시 미스 시에만 호출되는 zero-arg callable.
+                             코루틴을 반환해야 한다 (예: lambda: room_compute_wrapper(biz_id)).
+                             캐시 히트/인플라이트 시에는 호출되지 않으므로 불필요한 코루틴 생성이 없다.
         """
         key = self._get_key(date, start_hour, end_hour, biz_item_id)
-        
+
         # 1. 캐시 확인
         data = self.get(date, start_hour, end_hour, biz_item_id)
         if data is not None:
-            # Rationale: 이미 결과가 존재하여 전달받은 코루틴을 실행할 필요가 없음.
-            #            파이썬은 생성된 코루틴이 한번도 await되지 않으면 경고를 발생시키므로 명시적으로 닫아줌.
-            if asyncio.iscoroutine(compute_coro):
-                compute_coro.close()
             return data
-            
+
         # 2. In-flight(진행 중) 요청 확인
         if key in self._inflight:
             logger.debug(f"[AvailabilityCache] Hit inflight: {key}")
             return await self._inflight[key]
-            
+
         # 3. 내가 수행 담당
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
         self._inflight[key] = future
-        
+
         try:
             logger.debug(f"[AvailabilityCache] Miss - starting computation: {key}")
-            # Compute (호출자가 전달한 코루틴 실행)
-            result = await compute_coro
+            # factory를 캐시 미스 시점에만 호출하여 코루틴 생성
+            result = await compute_factory()
             # 캐시 저장 (Future 완료 전 저장하여 후속 get()도 즉시 성공하도록 함)
             self.set(date, start_hour, end_hour, biz_item_id, result)
             if not future.done():
