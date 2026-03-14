@@ -104,6 +104,41 @@ class AvailabilityCache:
                 fut.set_exception(Exception("Cache cleared"))
         self._inflight.clear()
         
+    def incremental_cleanup(self, batch_size: int):
+        """매칭된 batch_size만큼의 키를 검사하여 만료된 항목을 제거합니다.
+        
+        Rationale: 전체 캐시를 한 번에 정리하는 것은 O(N) 비용이 발생하여 
+                  요청 응답 시간에 영향을 줄 수 있습니다. 점진적 정리를 통해 
+                  비용을 여러 요청에 분산시킵니다.
+        """
+        if not self._cache:
+            return
+
+        now = time.time()
+        keys = list(self._cache.keys())
+        
+        # NOTE: 인스턴스 변수로 현재 인덱스를 관리하여 매 호출마다 다른 범위를 검사할 수도 있으나,
+        #       여기서는 단순하게 랜덤 샘플링하거나 앞에서부터 batch_size만큼 확인하는 방식을 취함.
+        #       순차적 순회를 위해 간단한 필드를 추가함.
+        if not hasattr(self, "_cleanup_idx"):
+            self._cleanup_idx = 0
+            
+        start_idx = self._cleanup_idx % len(keys)
+        targets = [keys[(start_idx + i) % len(keys)] for i in range(min(batch_size, len(keys)))]
+        
+        removed_count = 0
+        for k in targets:
+            if k in self._cache:
+                expiry, _ = self._cache[k]
+                if now > expiry:
+                    del self._cache[k]
+                    removed_count += 1
+        
+        self._cleanup_idx = (start_idx + len(targets)) % len(keys)
+        
+        if removed_count > 0:
+            logger.debug(f"[AvailabilityCache] incremental cleanup removed {removed_count} items")
+
     def cleanup(self):
         """만료된 항목들을 일괄 정리합니다. (메모리 관리용)"""
         now = time.time()
