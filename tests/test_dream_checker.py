@@ -46,16 +46,26 @@ def _make_mock_response(available_times: list[str], date: str):
 
     Args:
         available_times: 예약 가능한 시간 목록 (예: ["13시00분", "14시00분"])
-        date: 대상 날짜 (예: "2026-02-14")
+        date: 대상 날짜 (예: "2026-02-14", 현재는 title에 사용되지 않음)
 
     Rationale:
         실제 드림 연습실 API는 JSON 내 'items' 키에 HTML 문자열을 반환함.
         BeautifulSoup 파싱 로직까지 검증하기 위해 실제 응답 구조를 모방.
+
+        실제 title 형식: "22시00분 ~ 23시00분  최대 15명 예약가능"
+        파싱 로직은 t.startswith(target_time)으로 시작 시간을 기준으로 매칭하므로
+        title이 반드시 해당 시간으로 시작해야 함.
     """
+    def _next_hour(time_str: str) -> str:
+        """"13시00분" -> "14시00분" (24시 -> "00시00분")"""
+        hour = int(time_str.replace("시00분", ""))
+        return f"{(hour + 1) % 24:02d}시00분"
+
     labels = ""
     for time_str in available_times:
+        next_time = _next_hour(time_str)
         labels += (
-            f'<label class="active" title="{date} {time_str} (월)">'
+            f'<label class="btn-time active" title="{time_str} ~ {next_time}  최대 15명 예약가능">'
             f'{time_str}</label>\n'
         )
     mock_resp = MagicMock()

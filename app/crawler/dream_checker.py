@@ -124,9 +124,11 @@ class DreamCrawler(BaseCrawler):
         for time in hour_slots:
             target_time = time.split(":")[0] + "시00분"  # 예: "14:00" -> "14시00분"
 
-            # title 속성에 target_time이 포함된 label 태그 찾기
-            # 예: title="2024-05-20 14시00분 (월)"
-            label = soup.find('label', title=lambda t: t and isinstance(t, str) and target_time in t)
+            # title 속성이 target_time으로 시작하는 label 태그 찾기
+            # 실제 드림 API title 형식: "22시00분 ~ 23시00분  최대 15명 예약가능"
+            # 주의: `target_time in t` 사용 시 이전 슬롯의 종료 시간에도 매칭됨
+            # (예: "21시00분 ~ 22시00분 예약마감" 에서 "22시00분" 검색 시 잘못 매칭)
+            label = soup.find('label', title=lambda t: t and isinstance(t, str) and t.startswith(target_time))
 
             if label:
                 # class 속성에 'active'가 있으면 예약 가능
