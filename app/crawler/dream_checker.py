@@ -1,10 +1,10 @@
-from app.exception.crawler.dream_exception import DreamRequestError
-from bs4 import BeautifulSoup
 import html
-import sys
 import asyncio
+import logging
 from datetime import datetime
 from typing import List
+
+from bs4 import BeautifulSoup
 
 from app.models.dto import RoomDetail, RoomAvailability
 from app.utils.client_loader import load_client
@@ -14,12 +14,15 @@ from app.exception.crawler.dream_exception import DreamAvailabilityError
 from app.crawler.base import BaseCrawler, RoomResult
 from app.crawler.registry import registry
 
+logger = logging.getLogger("app")
+
+
 class DreamCrawler(BaseCrawler):
     """드림 합주실의 예약 가능 여부를 확인하는 전용 크롤러.
-    
-    드림 합주실은 네이버 예약을 사용하지 않고 자체 웹사이트 예약 폼(wz.bookingT1)을 
+
+    드림 합주실은 네이버 예약을 사용하지 않고 자체 웹사이트 예약 폼(wz.bookingT1)을
     사용하므로, 직접 HTTP POST 요청을 통해 예약 정보를 스크래핑합니다.
-    
+
     Rationale (의도):
         - 네이버 크롤러와 동일한 BaseCrawler 인터페이스를 구현하여, AvailabilityService에서
           합주실 타입(지점)을 몰라도 다형성으로 일괄 처리할 수 있게 함.
@@ -32,20 +35,31 @@ class DreamCrawler(BaseCrawler):
     }
     DATE_LIMIT_DAYS = 121  # Reservation window limit per Dream policy.
 
+    @staticmethod
+    def _to_dream_time_str(hour_slot: str) -> str:
+        """'14:00' → '14시00분' (드림 API title prefix 형식)
+
+        Rationale:
+            f"{int(...):02d}" 로 제로패딩을 명시적으로 보장함.
+            hour_slots가 항상 두 자리("09:00")로 전달되더라도, 변환 책임을 한 곳에서 관리해
+            API 포맷 변경 시 수정 지점이 분산되지 않도록 함.
+        """
+        return f"{int(hour_slot.split(':')[0]):02d}시00분"
+
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
         """드림 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회합니다.
-        
+
         Args:
             date (str): 조회할 날짜 (예: '2026-05-20')
             hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00'])
             target_rooms (List[RoomDetail]): 합주실 방 정보 리스트 (용량/지점 필터링이 완료된 상태)
-            
+
         Returns:
             List[RoomResult]: 방별 예약 가능 여부(RoomAvailability) 또는 에러(Exception) 객체 배열
-            
+
         Rationale (의도):
             - 여러 방에 대한 조회를 순차로 하면 I/O 대기시간이 길어지므로 asyncio.gather로 병렬 처리.
-            - 개별 방 조회가 500 에러를 뿜더라도, 안전하게 Exception 객체로 잡아내어 
+            - 개별 방 조회가 500 에러를 뿜더라도, 안전하게 Exception 객체로 잡아내어
               살아남은 다른 방의 조회 결과를 프론트로 전달할 수 있도록 safe_fetch 처리.
         """
         today = datetime.strptime(datetime.now().strftime('%Y-%m-%d'), '%Y-%m-%d').date()
@@ -117,27 +131,37 @@ class DreamCrawler(BaseCrawler):
         )
 
     def _parse_html_content(self, items_html: str, hour_slots: List[str]) -> dict:
-        """BeautifulSoup을 사용하여 HTML에서 시간대별 예약 가능 여부를 파싱합니다."""
+        """BeautifulSoup을 사용하여 HTML에서 시간대별 예약 가능 여부를 파싱합니다.
+
+        드림 API title 형식: "22시00분 ~ 23시00분  최대 15명 예약가능" (예약 가능)
+                             "21시00분 ~ 22시00분 예약마감"            (예약 마감)
+        title은 항상 시작 시간으로 시작하므로 startswith으로 매칭함.
+        """
         soup = BeautifulSoup(items_html, "lxml")
         available_slots = {}
 
         for time in hour_slots:
-            target_time = time.split(":")[0] + "시00분"  # 예: "14:00" -> "14시00분"
+            # P0: 제로패딩 보장 + P1: 변환 책임을 _to_dream_time_str에 위임
+            target_time = self._to_dream_time_str(time)
 
-            # title 속성이 target_time으로 시작하는 label 태그 찾기
-            # 실제 드림 API title 형식: "22시00분 ~ 23시00분  최대 15명 예약가능"
-            # 주의: `target_time in t` 사용 시 이전 슬롯의 종료 시간에도 매칭됨
-            # (예: "21시00분 ~ 22시00분 예약마감" 에서 "22시00분" 검색 시 잘못 매칭)
-            label = soup.find('label', title=lambda t: t and isinstance(t, str) and t.startswith(target_time))
+            # P0 lambda loop-capture 방지: default argument binding으로 target_time을 즉시 고정
+            # (현재는 soup.find가 즉시 평가하므로 실질적 버그 없으나, 리팩토링 안전성을 위해 선제 적용)
+            label = soup.find(
+                'label',
+                title=lambda t, tt=target_time: isinstance(t, str) and t.startswith(tt)
+            )
 
             if label:
-                # class 속성에 'active'가 있으면 예약 가능
                 classes = label.get("class", [])
                 available_slots[time] = "active" in classes
             else:
+                logger.warning(
+                    f"[DreamCrawler] {time} 슬롯 label 미발견 — API 응답 HTML에 해당 시간 없음"
+                )
                 available_slots[time] = False
 
         return available_slots
+
 
 # Register the crawler
 registry.register("dream", DreamCrawler())
