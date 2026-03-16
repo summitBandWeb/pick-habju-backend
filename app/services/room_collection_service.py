@@ -963,6 +963,14 @@ class RoomCollectionService:
             logger.warning(f"Failed to fetch existing rooms: {e}")
             existing_map = {}
 
+        # 2-a. 영업시간 병렬 수집 (N+1 방지)
+        import asyncio as _asyncio
+        oh_tasks = {
+            room["bizItemId"]: self._fetch_operating_hours(business_id, room["bizItemId"])
+            for room in rooms
+        }
+        oh_results = dict(zip(oh_tasks.keys(), await _asyncio.gather(*oh_tasks.values())))
+
         # 2. Save Room (including images)
         for room in rooms:
             rid = room["bizItemId"]
@@ -1042,6 +1050,15 @@ class RoomCollectionService:
             final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
             if not final_price_config and existing_price_config:
                 final_price_config = existing_price_config
+
+            # 영업시간(operating_hours): 병렬 수집 결과 사용
+            operating_hours = oh_results.get(rid)
+            if operating_hours:
+                if isinstance(final_price_config, dict):
+                    final_price_config["operating_hours"] = operating_hours
+                elif not final_price_config or final_price_config == []:
+                    final_price_config = {"operating_hours": operating_hours}
+
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
             if structured_extra_charge is not None:
                 final_extra_charge = structured_extra_charge
@@ -1143,6 +1160,28 @@ class RoomCollectionService:
             self._upsert_room_with_schema_fallback(room_data)
 
         return True
+
+    async def _fetch_operating_hours(
+        self,
+        business_id: str,
+        biz_item_id: str,
+    ) -> Optional[Dict[str, str]]:
+        """schedule API를 호출하여 룸의 영업시간을 추출한다.
+
+        Returns:
+            ``{"start": "09:00", "end": "23:00"}`` 또는 None.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        try:
+            return await self.room_fetcher.fetch_room_operating_hours(
+                business_id, biz_item_id, today
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch operating hours: business_id=%s biz_item_id=%s err=%s",
+                business_id, biz_item_id, e,
+            )
+            return None
 
     def _infer_capacity_from_price(
         self,

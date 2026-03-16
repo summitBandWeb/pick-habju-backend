@@ -189,3 +189,7 @@ logs/
 nul
 
 cloud-functions/health-check-reporter/.env.yaml
+
+# skill-pack runtime
+.claude/context/
+.claude/settings.local.json

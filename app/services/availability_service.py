@@ -43,6 +43,14 @@ from app.utils.availability_cache import availability_cache
 
 logger = logging.getLogger("app")
 
+# room_parser_service._TIME_SLOT_KEYWORDS 가 생성하는 " (평일 낮)" 등의 접미어를 제거하여
+# base room name을 추출하기 위한 정규식. 긴 패턴부터 매칭되도록 정렬.
+_TIME_QUALIFIER_RE = re.compile(
+    r"\s*\("
+    r"(?:평일\s*낮|평일\s*오전|평일\s*야간|주말/공휴일|평일|주말|공휴일|심야|야간|주간)"
+    r"\)\s*$"
+)
+
 
 class FailedCrawl:
     """크롤링 실패 센티넬.
@@ -448,8 +456,15 @@ class AvailabilityService:
         merged_results = await asyncio.gather(*availability_tasks)
         merged_results = [r for r in merged_results if r is not None and not isinstance(r, FailedCrawl)]
 
+        # 영업시간 필터: operating_hours 밖의 슬롯을 False로 변경
+        for res in merged_results:
+            self._filter_by_operating_hours(res)
+
         processed_results = self._apply_policies(merged_results, request, hour_slots)
-        
+
+        # 시간대별 variant room 병합: '블랙룸(평일 낮)', '블랙룸(심야)' 등을 '블랙룸' 1개로 통합
+        processed_results = self._merge_time_variant_rooms(processed_results)
+
         branch_dict: Dict[str, BranchResponse] = {}
         available_ids: List[str] = []
 
@@ -621,6 +636,148 @@ class AvailabilityService:
                     "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
                     "message": str(err),
                 })
+
+    @staticmethod
+    def _is_within_operating_hours(slot: str, operating_hours: Dict[str, str]) -> bool:
+        """슬롯이 영업시간 내에 있는지 판별한다.
+
+        Args:
+            slot: "HH:MM" 형식의 시간 슬롯.
+            operating_hours: ``{"start": "09:00", "end": "23:00"}``.
+
+        Returns:
+            영업시간 내이면 True.
+        """
+        start = operating_hours["start"]
+        end = operating_hours["end"]
+        if start < end:
+            # 일반 영업: 09:00~23:00
+            return start <= slot < end
+        else:
+            # 심야 영업: 22:00~06:00 (자정 넘김)
+            return slot >= start or slot < end
+
+    def _filter_by_operating_hours(self, res: "RoomAvailability") -> None:
+        """영업시간 외 슬롯을 False로 변경한다. operating_hours 미설정 시 아무 작업도 하지 않는다."""
+        oh = res.room_detail.operatingHours
+        if oh is None:
+            return
+        if not isinstance(res.available_slots, dict):
+            return
+        for slot in res.available_slots:
+            if not self._is_within_operating_hours(slot, oh):
+                res.available_slots[slot] = False
+        # available 상태 재판정
+        values = list(res.available_slots.values())
+        res.available = all(values) if values else False
+
+    @staticmethod
+    def _get_base_room_name(name: str) -> str:
+        """시간 한정어를 제거하여 base room name을 추출한다.
+
+        예: '블랙룸 (평일 낮)' → '블랙룸', 'A룸' → 'A룸'
+        """
+        return _TIME_QUALIFIER_RE.sub("", name).strip()
+
+    def _merge_time_variant_rooms(
+        self,
+        results: List[RoomAvailability],
+    ) -> List[RoomAvailability]:
+        """같은 branch 내 시간대별 variant room들을 하나로 병합한다.
+
+        예: '블랙룸', '블랙룸 (평일 낮)', '블랙룸 (심야)' → '블랙룸' 1개
+
+        병합 조건:
+          - 같은 business_id + 같은 base_name (시간 한정어 제거 후)
+          - 그룹 내 최소 1개 room에 시간 한정어가 있어야 함 (안전장치)
+
+        병합 규칙:
+          - available_slots: 모든 variant의 union (어느 하나라도 True면 True)
+          - biz_item_id: available slot이 가장 많은 variant의 ID
+          - estimated_price: 각 variant의 가격 합산
+          - name: base name 사용
+        """
+        # 1. (business_id, base_name) 기준으로 그루핑 (삽입 순서 보존)
+        groups: Dict[tuple, List[RoomAvailability]] = {}
+        for res in results:
+            base_name = self._get_base_room_name(res.room_detail.name)
+            key = (res.room_detail.business_id, base_name)
+            groups.setdefault(key, []).append(res)
+
+        merged: List[RoomAvailability] = []
+        for (biz_id, base_name), group in groups.items():
+            if len(group) == 1:
+                merged.append(group[0])
+                continue
+
+            # 안전장치: 시간 한정어가 포함된 room이 하나도 없으면 병합하지 않음
+            has_qualifier = any(
+                res.room_detail.name != base_name for res in group
+            )
+            if not has_qualifier:
+                merged.extend(group)
+                continue
+
+            # 2. available_slots 병합 (union — 하나라도 True면 True)
+            merged_slots: Dict[str, bool] = {}
+            for res in group:
+                if isinstance(res.available_slots, dict):
+                    for slot, val in res.available_slots.items():
+                        if val is True:
+                            merged_slots[slot] = True
+                        elif slot not in merged_slots:
+                            merged_slots[slot] = False
+
+            # 3. primary variant 선택 (available slot이 가장 많은 것)
+            primary = max(
+                group,
+                key=lambda r: sum(
+                    1 for v in (r.available_slots or {}).values() if v is True
+                ),
+            )
+
+            # 4. estimated_price 합산 (각 variant가 기여한 가격)
+            total_price = 0
+            has_price = False
+            for res in group:
+                if res.estimated_price is not None:
+                    total_price += res.estimated_price
+                    has_price = True
+
+            # 5. available 상태 재판정
+            slot_values = list(merged_slots.values())
+            new_available = all(slot_values) if slot_values else False
+
+            # 6. policy_warnings 병합 (type 기준 중복 제거)
+            seen_types: set[str] = set()
+            merged_warnings: List[PolicyWarning] = []
+            for res in group:
+                for pw in res.policy_warnings or []:
+                    if pw.type not in seen_types:
+                        seen_types.add(pw.type)
+                        merged_warnings.append(pw)
+
+            # 7. primary에 병합 결과 반영
+            primary.available_slots = merged_slots
+            primary.available = new_available
+            primary.estimated_price = total_price if has_price else None
+            primary.policy_warnings = merged_warnings
+            primary.room_detail.name = base_name
+
+            variant_ids = [r.room_detail.biz_item_id for r in group]
+            logger.info(
+                "[room_merge] Merged %d time variants into '%s' "
+                "(business_id=%s, primary_biz_item_id=%s, variant_ids=%s)",
+                len(group),
+                base_name,
+                biz_id,
+                primary.room_detail.biz_item_id,
+                variant_ids,
+            )
+
+            merged.append(primary)
+
+        return merged
 
     def _apply_policies(
         self,

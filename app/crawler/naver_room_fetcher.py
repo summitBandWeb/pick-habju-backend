@@ -404,6 +404,96 @@ class NaverRoomFetcher:
             return None
         return "; ".join(pairs)
 
+    async def fetch_room_operating_hours(
+        self,
+        business_id: str,
+        biz_item_id: str,
+        date: str,
+    ) -> Optional[Dict[str, str]]:
+        """schedule API의 isUnitBusinessDay 필드로 룸의 실제 영업시간을 추출한다.
+
+        Args:
+            business_id: 네이버 예약 business ID.
+            biz_item_id: 룸(BizItem) ID.
+            date: 조회 기준 날짜 (YYYY-MM-DD).
+
+        Returns:
+            ``{"start": "09:00", "end": "18:00"}`` 형태의 딕셔너리.
+            전 시간대가 영업일이거나 데이터가 없으면 None (= 제한 없음).
+        """
+        query = """
+        query schedule($scheduleParams: ScheduleParams) {
+          schedule(input: $scheduleParams) {
+            bizItemSchedule {
+              hourly {
+                unitStartTime
+                isUnitBusinessDay
+              }
+            }
+          }
+        }"""
+        payload = {
+            "operationName": "schedule",
+            "variables": {
+                "scheduleParams": {
+                    "businessTypeId": 10,
+                    "businessId": business_id,
+                    "bizItemId": biz_item_id,
+                    "startDateTime": f"{date}T00:00:00",
+                    "endDateTime": f"{date}T23:59:59",
+                    "fixedTime": True,
+                    "includesHolidaySchedules": True,
+                }
+            },
+            "query": query,
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await self._post_graphql(client, payload, operation_name="schedule")
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Schedule API failed for %s/%s: status=%s",
+                        business_id, biz_item_id, resp.status_code,
+                    )
+                    return None
+                data = resp.json()
+        except Exception as e:
+            logger.warning(
+                "Schedule API error for %s/%s: %s",
+                business_id, biz_item_id, e,
+            )
+            return None
+
+        hourly = (
+            data.get("data", {})
+            .get("schedule", {})
+            .get("bizItemSchedule", {})
+            .get("hourly")
+        ) or []
+
+        # isUnitBusinessDay=True인 시간대만 추출
+        open_hours: List[str] = []
+        for slot in hourly:
+            if slot.get("isUnitBusinessDay") is True:
+                time_str = slot["unitStartTime"][-8:]  # "HH:MM:SS"
+                open_hours.append(time_str[:5])         # "HH:MM"
+
+        if not open_hours:
+            return None
+
+        # 전 시간대가 영업이면 제한 없음 → None
+        if len(open_hours) == len(hourly):
+            return None
+
+        open_hours.sort()
+        start = open_hours[0]
+        # end = 마지막 슬롯 + 1시간 (예: 17:00 → 18:00)
+        last_hour = int(open_hours[-1][:2])
+        end = f"{(last_hour + 1) % 24:02d}:00"
+
+        return {"start": start, "end": end}
+
     @staticmethod
     def _is_allowed_naver_cookie_domain(domain: str) -> bool:
         """주어진 도메인이 네이버 쿠키 허용 도메인인지 판별한다."""
