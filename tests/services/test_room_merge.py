@@ -5,7 +5,7 @@
 """
 
 import pytest
-from app.services.availability_service import AvailabilityService, _TIME_QUALIFIER_RE
+from app.services.availability_service import AvailabilityService
 from app.models.dto import RoomAvailability, RoomDetail, PolicyWarning
 
 
@@ -100,6 +100,27 @@ class TestGetBaseRoomName:
     def test_empty_string(self):
         assert AvailabilityService._get_base_room_name("") == ""
 
+    # 괄호 없는 suffix 패턴
+    def test_suffix_late_night(self):
+        assert AvailabilityService._get_base_room_name("A룸 심야") == "A룸"
+
+    def test_suffix_night(self):
+        assert AvailabilityService._get_base_room_name("그린룸 야간") == "그린룸"
+
+    def test_suffix_chained_keywords(self):
+        """키워드가 연속된 경우 반복 strip"""
+        assert AvailabilityService._get_base_room_name("그린룸 평일 주간") == "그린룸"
+
+    def test_suffix_weekday(self):
+        assert AvailabilityService._get_base_room_name("브라운룸 평일") == "브라운룸"
+
+    def test_suffix_does_not_strip_mid_name(self):
+        """이름 중간의 키워드는 제거하지 않음"""
+        assert AvailabilityService._get_base_room_name("심야 전용룸") == "심야 전용룸"
+
+    def test_suffix_non_keyword_unchanged(self):
+        assert AvailabilityService._get_base_room_name("A룸 프리미엄") == "A룸 프리미엄"
+
 
 # ──────────────────────────────────────────────
 # Phase 2: 병합 로직
@@ -109,7 +130,7 @@ class TestGetBaseRoomName:
 class TestMergeTimeVariantRooms:
 
     def test_single_room_passthrough(self, service):
-        """variant가 1개면 병합 없이 통과"""
+        """variant가 1개면 병합 없이 통과, slot_biz_item_ids는 None"""
         room = _make_room_detail("A룸", biz_item_id="item1")
         avail = _make_avail(room, {"14:00": True, "15:00": True}, estimated_price=20000)
 
@@ -118,6 +139,7 @@ class TestMergeTimeVariantRooms:
         assert len(result) == 1
         assert result[0].room_detail.name == "A룸"
         assert result[0].estimated_price == 20000
+        assert result[0].slot_biz_item_ids is None
 
     def test_merge_two_variants(self, service):
         """같은 branch + base name의 2개 variant → 1개로 병합"""
@@ -144,10 +166,15 @@ class TestMergeTimeVariantRooms:
         assert merged.available_slots["14:00"] is True
         assert merged.available_slots["15:00"] is True
         assert merged.available_slots["22:00"] is True
-        # price 합산
-        assert merged.estimated_price == 35000
+        # primary(day1)의 가격 사용 (사용자는 1개 variant만 예약)
+        assert merged.estimated_price == 20000
         # all slots True → available=True
         assert merged.available is True
+        # slot_biz_item_ids: 각 슬롯이 어떤 variant에 속하는지
+        assert merged.slot_biz_item_ids is not None
+        assert merged.slot_biz_item_ids["14:00"] == "day1"
+        assert merged.slot_biz_item_ids["15:00"] == "day1"
+        assert merged.slot_biz_item_ids["22:00"] == "night1"
 
     def test_merge_three_variants(self, service):
         """3개 variant (기본 + 평일 낮 + 심야) → 1개로 병합"""
@@ -180,6 +207,9 @@ class TestMergeTimeVariantRooms:
         assert merged.room_detail.name == "블랙룸"
         assert merged.room_detail.biz_item_id == "base1"  # base가 available slots 최다
         assert merged.estimated_price == 30000
+        # 모든 슬롯이 base1에서 True
+        assert merged.slot_biz_item_ids["18:00"] == "base1"
+        assert merged.slot_biz_item_ids["19:00"] == "base1"
 
     def test_primary_picks_most_available(self, service):
         """available slot이 가장 많은 variant의 biz_item_id를 사용"""
@@ -315,3 +345,88 @@ class TestMergeTimeVariantRooms:
         result = service._merge_time_variant_rooms([avail_day, avail_night])
 
         assert result[0].estimated_price is None
+
+    def test_merge_suffix_variants(self, service):
+        """괄호 없는 suffix 패턴 ('A룸 심야')도 병합"""
+        room_base = _make_room_detail("A룸", biz_item_id="base1")
+        room_night = _make_room_detail("A룸 심야", biz_item_id="night1")
+
+        avail_base = _make_avail(
+            room_base, {"18:00": True, "19:00": True}, estimated_price=24000
+        )
+        avail_night = _make_avail(
+            room_night, {"02:00": True, "03:00": True}, estimated_price=14000
+        )
+
+        result = service._merge_time_variant_rooms([avail_base, avail_night])
+
+        assert len(result) == 1
+        merged = result[0]
+        assert merged.room_detail.name == "A룸"
+        assert merged.available_slots["18:00"] is True
+        assert merged.available_slots["02:00"] is True
+        # slot_biz_item_ids 매핑 확인
+        assert merged.slot_biz_item_ids["18:00"] == "base1"
+        assert merged.slot_biz_item_ids["19:00"] == "base1"
+        assert merged.slot_biz_item_ids["02:00"] == "night1"
+        assert merged.slot_biz_item_ids["03:00"] == "night1"
+
+    def test_merge_chained_suffix_variants(self, service):
+        """'그린룸 평일 주간'처럼 연속 키워드도 병합"""
+        room_base = _make_room_detail("그린룸", biz_item_id="base1")
+        room_night = _make_room_detail("그린룸 야간", biz_item_id="night1")
+        room_weekday = _make_room_detail("그린룸 평일 주간", biz_item_id="day1")
+
+        avail_base = _make_avail(
+            room_base, {"18:00": True}, estimated_price=20000
+        )
+        avail_night = _make_avail(
+            room_night, {"22:00": True}, estimated_price=15000
+        )
+        avail_weekday = _make_avail(
+            room_weekday, {"10:00": True}, estimated_price=10000
+        )
+
+        result = service._merge_time_variant_rooms(
+            [avail_base, avail_night, avail_weekday]
+        )
+
+        assert len(result) == 1
+        merged = result[0]
+        assert merged.room_detail.name == "그린룸"
+        assert merged.available_slots["18:00"] is True
+        assert merged.available_slots["22:00"] is True
+        assert merged.available_slots["10:00"] is True
+        # slot_biz_item_ids: 각 슬롯이 올바른 variant에 매핑
+        assert merged.slot_biz_item_ids["18:00"] == "base1"
+        assert merged.slot_biz_item_ids["22:00"] == "night1"
+        assert merged.slot_biz_item_ids["10:00"] == "day1"
+
+    def test_slot_biz_item_ids_cross_boundary(self, service):
+        """variant 경계를 넘는 예약 시 서로 다른 biz_item_id가 매핑됨"""
+        room_base = _make_room_detail("블랙룸", biz_item_id="base1")
+        room_night = _make_room_detail("블랙룸 (심야)", biz_item_id="night1")
+
+        avail_base = _make_avail(
+            room_base,
+            {"21:00": True, "22:00": False},
+            estimated_price=19000,
+        )
+        avail_night = _make_avail(
+            room_night,
+            {"21:00": False, "22:00": True},
+            estimated_price=15000,
+        )
+
+        result = service._merge_time_variant_rooms([avail_base, avail_night])
+
+        assert len(result) == 1
+        mapping = result[0].slot_biz_item_ids
+        assert mapping is not None
+        # 21:00은 base에서 True → base1
+        assert mapping["21:00"] == "base1"
+        # 22:00은 night에서 True → night1
+        assert mapping["22:00"] == "night1"
+        # 2건 예약 필요 판별 가능
+        unique_ids = set(mapping[s] for s in ["21:00", "22:00"])
+        assert len(unique_ids) == 2

@@ -43,13 +43,17 @@ from app.utils.availability_cache import availability_cache
 
 logger = logging.getLogger("app")
 
-# room_parser_service._TIME_SLOT_KEYWORDS 가 생성하는 " (평일 낮)" 등의 접미어를 제거하여
-# base room name을 추출하기 위한 정규식. 긴 패턴부터 매칭되도록 정렬.
-_TIME_QUALIFIER_RE = re.compile(
-    r"\s*\("
-    r"(?:평일\s*낮|평일\s*오전|평일\s*야간|주말/공휴일|평일|주말|공휴일|심야|야간|주간)"
-    r"\)\s*$"
+# 시간 한정어 키워드 목록 (긴 패턴 우선)
+_TIME_QUALIFIER_KEYWORDS = (
+    "평일\\s*낮", "평일\\s*오전", "평일\\s*야간", "주말/공휴일",
+    "평일", "주말", "공휴일", "심야", "야간", "주간",
 )
+_KW_ALT = "|".join(_TIME_QUALIFIER_KEYWORDS)
+
+# 괄호 안 시간 한정어: "블랙룸 (평일 낮)" → "블랙룸"
+_PAREN_QUALIFIER_RE = re.compile(rf"\s*\((?:{_KW_ALT})\)\s*$")
+# 괄호 없는 suffix: "A룸 심야" → "A룸"
+_SUFFIX_QUALIFIER_RE = re.compile(rf"\s+(?:{_KW_ALT})\s*$")
 
 
 class FailedCrawl:
@@ -517,7 +521,8 @@ class AvailabilityService:
                     min_capacity=room_detail.minCapacity,
                     min_hours=room_detail.minHours,
                     max_hours=room_detail.maxHours,
-                    policy_warnings=res.policy_warnings
+                    policy_warnings=res.policy_warnings,
+                    slot_biz_item_ids=res.slot_biz_item_ids,
                 )
 
                 if res.available is True:
@@ -675,9 +680,24 @@ class AvailabilityService:
     def _get_base_room_name(name: str) -> str:
         """시간 한정어를 제거하여 base room name을 추출한다.
 
-        예: '블랙룸 (평일 낮)' → '블랙룸', 'A룸' → 'A룸'
+        괄호 안 패턴과 suffix 패턴을 모두 처리하며,
+        '그린룸 평일 주간'처럼 키워드가 연속된 경우 반복 strip한다.
+
+        예: '블랙룸 (평일 낮)' → '블랙룸'
+            'A룸 심야' → 'A룸'
+            '그린룸 평일 주간' → '그린룸'
         """
-        return _TIME_QUALIFIER_RE.sub("", name).strip()
+        # 1) 괄호 안 패턴 (파서가 붙인 것)
+        result = _PAREN_QUALIFIER_RE.sub("", name).strip()
+        if result != name:
+            return result
+        # 2) 괄호 없는 suffix — 반복 strip (최대 3회)
+        for _ in range(3):
+            stripped = _SUFFIX_QUALIFIER_RE.sub("", result).strip()
+            if stripped == result:
+                break
+            result = stripped
+        return result
 
     def _merge_time_variant_rooms(
         self,
@@ -694,7 +714,7 @@ class AvailabilityService:
         병합 규칙:
           - available_slots: 모든 variant의 union (어느 하나라도 True면 True)
           - biz_item_id: available slot이 가장 많은 variant의 ID
-          - estimated_price: 각 variant의 가격 합산
+          - estimated_price: primary variant의 가격 사용 (사용자는 1개 variant만 예약)
           - name: base name 사용
         """
         # 1. (business_id, base_name) 기준으로 그루핑 (삽입 순서 보존)
@@ -719,14 +739,19 @@ class AvailabilityService:
                 continue
 
             # 2. available_slots 병합 (union — 하나라도 True면 True)
+            #    + slot별 소유 variant의 biz_item_id 기록
             merged_slots: Dict[str, bool] = {}
+            slot_biz_item_ids: Dict[str, str] = {}
             for res in group:
                 if isinstance(res.available_slots, dict):
                     for slot, val in res.available_slots.items():
                         if val is True:
                             merged_slots[slot] = True
+                            slot_biz_item_ids[slot] = res.room_detail.biz_item_id
                         elif slot not in merged_slots:
                             merged_slots[slot] = False
+                            if slot not in slot_biz_item_ids:
+                                slot_biz_item_ids[slot] = res.room_detail.biz_item_id
 
             # 3. primary variant 선택 (available slot이 가장 많은 것)
             primary = max(
@@ -736,19 +761,11 @@ class AvailabilityService:
                 ),
             )
 
-            # 4. estimated_price 합산 (각 variant가 기여한 가격)
-            total_price = 0
-            has_price = False
-            for res in group:
-                if res.estimated_price is not None:
-                    total_price += res.estimated_price
-                    has_price = True
-
-            # 5. available 상태 재판정
+            # 4. available 상태 재판정
             slot_values = list(merged_slots.values())
             new_available = all(slot_values) if slot_values else False
 
-            # 6. policy_warnings 병합 (type 기준 중복 제거)
+            # 5. policy_warnings 병합 (type 기준 중복 제거)
             seen_types: set[str] = set()
             merged_warnings: List[PolicyWarning] = []
             for res in group:
@@ -757,12 +774,12 @@ class AvailabilityService:
                         seen_types.add(pw.type)
                         merged_warnings.append(pw)
 
-            # 7. primary에 병합 결과 반영
+            # 6. primary에 병합 결과 반영 (estimated_price는 primary 것 유지)
             primary.available_slots = merged_slots
             primary.available = new_available
-            primary.estimated_price = total_price if has_price else None
             primary.policy_warnings = merged_warnings
             primary.room_detail.name = base_name
+            primary.slot_biz_item_ids = slot_biz_item_ids
 
             variant_ids = [r.room_detail.biz_item_id for r in group]
             logger.info(
