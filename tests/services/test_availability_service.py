@@ -237,25 +237,31 @@ class TestApplyPolicies:
         total_price = service.calculate_total_price(room, "2099-01-06", hour_slots, available_slots)
         assert total_price == 20000
 
-    def test_calculate_total_price_overnight_weekday(self, service):
-        """심야 예약 시 자정을 넘기는 슬롯의 익일 날짜 반영 로직 검증(평일)"""
-        room = RoomDetail(
+    @pytest.fixture
+    def overnight_room(self):
+        """평일/주말 day_type 전환 테스트용 공통 RoomDetail.
+
+        priceConfig: weekday 새벽(00~06시) override(15000원) + default(10000원)
+        """
+        return RoomDetail(
             name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10, 
+            pricePerHour=10000, max_capacity=10,
             priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
             can_reserve_one_hour=True, requiresContactOnSameDay=False
         )
+
+    def test_calculate_total_price_overnight_weekday(self, service, overnight_room):
+        """심야 예약 시 자정을 넘기는 슬롯의 익일 날짜 반영 로직 검증(평일)"""
         # 평일 시나리오: 2099-01-05(월요일) overnight → 2099-01-06(화요일)도 평일
         # NOTE: 2099-01-05: weekday() == 0 → "weekday"
-        # hour_slots: 23:00 ~ 02:00 (총 3슬롯)
         hour_slots = ["23:00", "00:00", "01:00", "02:00"]
-        
+
         # 23:00(월) → 10000, 00:00(화) → 15000, 01:00(화) → 15000
         # 10000 + 15000 + 15000 = 40000원
-        total_price = service.calculate_total_price(room, "2099-01-05", hour_slots, available_slots=None)
+        total_price = service.calculate_total_price(overnight_room, "2099-01-05", hour_slots, available_slots=None)
         assert total_price == 40000
 
-    def test_calculate_total_price_overnight_weekend(self, service):
+    def test_calculate_total_price_overnight_weekend(self, service, overnight_room):
         """주말 overnight 예약 시 weekday override가 적용되지 않음을 검증.
 
         Rationale:
@@ -264,13 +270,6 @@ class TestApplyPolicies:
             익일 새벽 슬롯(00:00, 01:00)이 default 요금을 유지하는지 검증함.
             _get_day_type()이 weekday/weekend를 실제로 구분하는지 확인하는 유일한 테스트.
         """
-        room = RoomDetail(
-            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10,
-            # NOTE: weekday override만 존재 → 주말에는 모든 슬롯이 default(10000원)여야 함
-            priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
-            can_reserve_one_hour=True, requiresContactOnSameDay=False
-        )
         # 주말 시나리오: 2099-01-03(토요일) overnight → 2099-01-04(일요일)
         # NOTE: 기준일·익일 모두 주말이므로 weekday override는 한 슬롯도 적용되지 않음.
         #       2099-01-03: weekday() == 5 → "weekend"
@@ -278,10 +277,10 @@ class TestApplyPolicies:
 
         # 23:00(토) → 10000, 00:00(일) → 10000, 01:00(일) → 10000
         # 10000 + 10000 + 10000 = 30000원
-        total_price = service.calculate_total_price(room, "2099-01-03", hour_slots, available_slots=None)
+        total_price = service.calculate_total_price(overnight_room, "2099-01-03", hour_slots, available_slots=None)
         assert total_price == 30000
 
-    def test_calculate_total_price_overnight_boundary_weekend_to_weekday(self, service):
+    def test_calculate_total_price_overnight_boundary_weekend_to_weekday(self, service, overnight_room):
         """일요일 overnight → 월요일 새벽: 자정 기준으로 day_type이 전환되는 경계 케이스 검증.
 
         Rationale:
@@ -290,12 +289,6 @@ class TestApplyPolicies:
             23:00 슬롯은 weekend(override 미적용), 00:00·01:00 슬롯은 weekday(override 적용)가 되어야 함.
             이 경계 전환이 _get_day_type()의 current_date 갱신과 맞물려 정확히 동작하는지 확인함.
         """
-        room = RoomDetail(
-            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10,
-            priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
-            can_reserve_one_hour=True, requiresContactOnSameDay=False
-        )
         # 2099-01-04(일요일) overnight → 2099-01-05(월요일)
         # NOTE: 2099-01-04: weekday() == 6 → "weekend", 2099-01-05: weekday() == 0 → "weekday"
         hour_slots = ["23:00", "00:00", "01:00", "02:00"]
@@ -304,10 +297,10 @@ class TestApplyPolicies:
         # 00:00(월, weekday) → 15000
         # 01:00(월, weekday) → 15000
         # 10000 + 15000 + 15000 = 40000원
-        total_price = service.calculate_total_price(room, "2099-01-04", hour_slots, available_slots=None)
+        total_price = service.calculate_total_price(overnight_room, "2099-01-04", hour_slots, available_slots=None)
         assert total_price == 40000
 
-    def test_calculate_total_price_overnight_boundary_weekday_to_weekend(self, service):
+    def test_calculate_total_price_overnight_boundary_weekday_to_weekend(self, service, overnight_room):
         """금요일 overnight → 토요일 새벽: 자정 기준으로 weekday→weekend 전환 케이스 검증.
 
         Rationale:
@@ -316,12 +309,6 @@ class TestApplyPolicies:
             토요일(weekend, override 미적용)이 되어야 함.
             이 비대칭 결과를 통해 _get_day_type()의 current_date 반영이 정확한지 검증함.
         """
-        room = RoomDetail(
-            name="TestRoom", branch="Branch", business_id="b1", biz_item_id="r1",
-            pricePerHour=10000, max_capacity=10,
-            priceConfig={"default": 10000, "overrides": [{"day_type": "weekday", "start_hour": "00:00", "end_hour": "06:00", "price": 15000}]},
-            can_reserve_one_hour=True, requiresContactOnSameDay=False
-        )
         # 2099-01-02(금요일) overnight → 2099-01-03(토요일)
         # NOTE: 2099-01-02: weekday() == 4 → "weekday", 2099-01-03: weekday() == 5 → "weekend"
         hour_slots = ["23:00", "00:00", "01:00", "02:00"]
@@ -330,7 +317,7 @@ class TestApplyPolicies:
         # 00:00(토, weekend) → 10000  (override 미적용)
         # 01:00(토, weekend) → 10000
         # 10000 + 10000 + 10000 = 30000원
-        total_price = service.calculate_total_price(room, "2099-01-02", hour_slots, available_slots=None)
+        total_price = service.calculate_total_price(overnight_room, "2099-01-02", hour_slots, available_slots=None)
         assert total_price == 30000
 
 
