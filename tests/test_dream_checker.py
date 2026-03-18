@@ -41,21 +41,44 @@ def sample_dream_rooms():
     return rooms
 
 
-def _make_mock_response(available_times: list[str], date: str):
+def _make_mock_response(
+    available_times: list[str],
+    date: str,
+    inactive_times: list[str] | None = None,
+):
     """드림 연습실 API 응답을 모방하는 Mock Response 생성 헬퍼
 
     Args:
         available_times: 예약 가능한 시간 목록 (예: ["13시00분", "14시00분"])
-        date: 대상 날짜 (예: "2026-02-14")
+        date: 대상 날짜 (예: "2026-02-14", 현재는 title에 사용되지 않음)
+        inactive_times: 예약 마감으로 렌더링할 시간 목록 (예: ["14시00분"])
+            None이면 마감 label을 생성하지 않음 (label 자체가 없는 경우를 재현).
+            실제 API는 예약 마감 시간도 btn-time(active 없음) label로 포함하므로,
+            파싱 로직의 "label 있음 + active 없음 → False" 경로를 테스트하려면 전달.
 
     Rationale:
         실제 드림 연습실 API는 JSON 내 'items' 키에 HTML 문자열을 반환함.
         BeautifulSoup 파싱 로직까지 검증하기 위해 실제 응답 구조를 모방.
+
+        실제 title 형식: "22시00분 ~ 23시00분  최대 15명 예약가능" (active)
+                         "21시00분 ~ 22시00분 예약마감"            (inactive)
     """
+    def _next_hour(time_str: str) -> str:
+        """"13시00분" -> "14시00분" (24시 -> "00시00분")"""
+        hour = int(time_str.replace("시00분", ""))
+        return f"{(hour + 1) % 24:02d}시00분"
+
     labels = ""
     for time_str in available_times:
+        next_time = _next_hour(time_str)
         labels += (
-            f'<label class="active" title="{date} {time_str} (월)">'
+            f'<label class="btn-time active" title="{time_str} ~ {next_time}  최대 15명 예약가능">'
+            f'{time_str}</label>\n'
+        )
+    for time_str in (inactive_times or []):
+        next_time = _next_hour(time_str)
+        labels += (
+            f'<label class="btn-time " title="{time_str} ~ {next_time} 예약마감">'
             f'{time_str}</label>\n'
         )
     mock_resp = MagicMock()
@@ -93,8 +116,9 @@ async def test_dream_partial_availability(sample_dream_rooms):
     hour_slots = ["13:00", "14:00"]
     crawler = DreamCrawler()
 
-    # NOTE: 13시만 가능, 14시는 불가능한 응답
-    mock_response = _make_mock_response(["13시00분"], date)
+    # NOTE: 13시만 가능, 14시는 마감 — 실제 API처럼 inactive label도 포함하여
+    #       "label 있음 + active 없음 → False" 경로를 검증
+    mock_response = _make_mock_response(["13시00분"], date, inactive_times=["14시00분"])
 
     with patch("app.crawler.dream_checker.load_client", new_callable=AsyncMock, return_value=mock_response):
         result = await crawler.check_availability(date, hour_slots, sample_dream_rooms[:1])
