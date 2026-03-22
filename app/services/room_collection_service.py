@@ -1977,8 +1977,8 @@ class RoomCollectionService:
             return [base_cap, real_max]
             
         # 3. 추가 요금 없는 경우 (기본)
-        # recommend < 9 → ±1, recommend >= 9 → ±2
-        delta = 2 if rec_cap >= 9 else 1
+        # ±1 고정: rec_cap >= 9 시 ±2 분기는 max_cap에 걸려 단일값([x,x])이 되는 역효과가 있어 제거 (#258)
+        delta = 1
         min_c = max(rec_cap - delta, 1)
         max_c = min(rec_cap + delta, max_cap) if max_cap > 0 else rec_cap + delta
 
