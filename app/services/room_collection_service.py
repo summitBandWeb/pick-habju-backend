@@ -537,6 +537,9 @@ class RoomCollectionService:
         # 병렬 처리를 위한 청크 분할
         parsed_results = await self._parse_with_concurrency(parse_items)
 
+        # 2.5 요일 variant 병합: 동일 지점 내 평일/주말 분리 룸을 단일 룸으로 통합 (#259)
+        target_rooms, parsed_results = self._merge_day_variant_rooms(target_rooms, parsed_results)
+
         # 3. DB 저장 (Branch -> Room(이미지 포함))
         saved = await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
         if not saved:
@@ -1914,6 +1917,136 @@ class RoomCollectionService:
         cleaned = re.sub(r"\[.*?\]", "", name).strip()
         cleaned = re.sub(r"\s*(예약|방문\s*상담|문의|안내)$", "", cleaned).strip()
         return cleaned if cleaned else name
+
+    # 시간대/요일 suffix 패턴 (clean_name 뒤에 붙는 형태)
+    _DAY_VARIANT_SUFFIX_RE = re.compile(
+        r"\s*\((?:평일\s*낮|평일\s*오전|평일\s*야간|주말/공휴일|평일|주말|공휴일|심야|야간|주간)\)\s*$"
+    )
+
+    @classmethod
+    def _get_base_room_name(cls, clean_name: str) -> str:
+        """clean_name에서 시간대/요일 suffix를 제거한 기본 룸 이름을 반환한다.
+
+        예: "1번룸 (평일 낮)" → "1번룸", "1번룸 (주말)" → "1번룸"
+        """
+        return cls._DAY_VARIANT_SUFFIX_RE.sub("", (clean_name or "")).strip()
+
+    @classmethod
+    def _classify_day_variant(cls, clean_name: str, day_type: Optional[str]) -> Optional[str]:
+        """clean_name suffix 또는 day_type으로 요일 분류를 반환한다.
+
+        Returns:
+            "weekday" | "weekend" | None
+        """
+        if day_type == "weekend":
+            return "weekend"
+        if day_type == "weekday":
+            return "weekday"
+        if re.search(r"\((?:평일|평일\s*낮|평일\s*오전|평일\s*야간)\)$", clean_name or ""):
+            return "weekday"
+        if re.search(r"\((?:주말|주말/공휴일|공휴일)\)$", clean_name or ""):
+            return "weekend"
+        return None
+
+    def _merge_day_variant_rooms(
+        self,
+        rooms: List[Dict],
+        parsed_results: Dict[str, Dict],
+    ) -> Tuple[List[Dict], Dict[str, Dict]]:
+        """평일/주말 요일 variant room을 병합한다. (#259)
+
+        같은 지점 내 동일 base_name을 공유하는 평일/주말 분리 룸을 단일 룸으로 합친다.
+        - capacity: 평일/주말 중 높은 값 사용
+        - price_config: 주말 가격이 다르면 weekend override 추가
+        - 병합된 주말 룸의 biz_item_id는 더 이상 크롤 대상이 되지 않으므로
+          DB에 잔존하는 해당 행은 별도 마이그레이션으로 정리 필요
+
+        병합 조건: 동일 base_name 그룹 내 weekday 1개 + weekend 1개 (기타 없음)
+        조건 미충족 시 모든 룸을 원형 그대로 유지한다.
+        """
+        groups: Dict[str, List[Dict]] = {}
+        for room in rooms:
+            rid = room["bizItemId"]
+            parsed = parsed_results.get(rid, {})
+            clean = parsed.get("clean_name") or room.get("name", "")
+            base = self._get_base_room_name(clean)
+            groups.setdefault(base, []).append(room)
+
+        merged_rooms: List[Dict] = []
+        merged_parsed: Dict[str, Dict] = {}
+
+        for base_name, group in groups.items():
+            if len(group) == 1:
+                r = group[0]
+                merged_rooms.append(r)
+                merged_parsed[r["bizItemId"]] = parsed_results.get(r["bizItemId"], {})
+                continue
+
+            weekday_rooms = []
+            weekend_rooms = []
+            other_rooms = []
+            for r in group:
+                rid = r["bizItemId"]
+                p = parsed_results.get(rid, {})
+                variant = self._classify_day_variant(
+                    p.get("clean_name") or r.get("name", ""),
+                    p.get("day_type"),
+                )
+                if variant == "weekday":
+                    weekday_rooms.append(r)
+                elif variant == "weekend":
+                    weekend_rooms.append(r)
+                else:
+                    other_rooms.append(r)
+
+            # 병합 가능 조건: weekday 1개 + weekend 1개, 나머지 없음
+            if len(weekday_rooms) == 1 and len(weekend_rooms) == 1 and not other_rooms:
+                wd_room, we_room = weekday_rooms[0], weekend_rooms[0]
+                wd_id, we_id = wd_room["bizItemId"], we_room["bizItemId"]
+                primary_parsed = dict(parsed_results.get(wd_id, {}))
+                secondary_parsed = parsed_results.get(we_id, {})
+
+                # capacity: 더 높은 값 사용
+                wd_max = primary_parsed.get("max_capacity")
+                we_max = secondary_parsed.get("max_capacity")
+                if isinstance(we_max, int) and isinstance(wd_max, int) and we_max > wd_max:
+                    primary_parsed["max_capacity"] = we_max
+                    primary_parsed["recommend_capacity"] = secondary_parsed.get("recommend_capacity")
+                    primary_parsed["recommend_capacity_range"] = secondary_parsed.get("recommend_capacity_range")
+
+                # price_config: 주말 가격이 다를 때 weekend override 추가
+                wd_price = self._extract_price(wd_room)
+                we_price = self._extract_price(we_room)
+                if wd_price and we_price and wd_price != we_price:
+                    primary_parsed["price_config"] = {
+                        "default": wd_price,
+                        "overrides": [
+                            {
+                                "day_type": "weekend",
+                                "start_hour": "00:00",
+                                "end_hour": "24:00",
+                                "price": we_price,
+                            }
+                        ],
+                        "surcharges": [],
+                    }
+
+                primary_parsed["clean_name"] = base_name
+                primary_parsed["day_type"] = None
+
+                merged_rooms.append(wd_room)
+                merged_parsed[wd_id] = primary_parsed
+                logger.info(
+                    "[variant_merge] 요일 variant 병합: base=%s wd_id=%s we_id=%s",
+                    base_name, wd_id, we_id,
+                )
+            else:
+                # 병합 불가: 모두 원형 유지
+                for r in group:
+                    merged_rooms.append(r)
+                    merged_parsed[r["bizItemId"]] = parsed_results.get(r["bizItemId"], {})
+
+        return merged_rooms, merged_parsed
 
     def _calculate_capacity_range(
         self,
