@@ -126,6 +126,16 @@ class RoomDetail(BaseModel):
         ):
             self.recommendCapacityRange = None
 
+        # [#257] 레거시 sentinel clamp(100→50) 잔재 및 상한 초과 방어
+        if self.recommendCapacityRange and len(self.recommendCapacityRange) == 2:
+            lo, hi = self.recommendCapacityRange
+            # [50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물
+            if lo == 50 and hi == 50:
+                self.recommendCapacityRange = None
+            # 상한이 max_capacity 초과: max_capacity 기준으로 clamp
+            elif self.maxCapacity > 0 and hi > self.maxCapacity:
+                self.recommendCapacityRange = [min(lo, self.maxCapacity), self.maxCapacity]
+
         if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
             self.maxCapacity = 0
 
