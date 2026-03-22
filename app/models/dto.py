@@ -276,6 +276,7 @@ class RoomAvailability(BaseModel):
     # [v2.0.0] 추가 정보
     estimated_price: Optional[int] = Field(None, description="Calculated total price")
     policy_warnings: List[PolicyWarning] = Field(default_factory=list, description="Policy violation warnings")
+    slot_biz_item_ids: Optional[Dict[str, str]] = Field(None, description="Slot-level biz_item_id mapping for merged rooms")
 
 # Branch-grouped Response DTOs
 class RoomResponse(BaseModel):
@@ -296,6 +297,7 @@ class RoomResponse(BaseModel):
     min_hours: int
     max_hours: Optional[int] = None
     policy_warnings: List[PolicyWarning] = Field(default_factory=list)
+    slot_biz_item_ids: Optional[Dict[str, str]] = Field(None, description="Slot-level biz_item_id mapping (non-null only for merged rooms)")
 
 class BranchResponse(BaseModel):
     """지점 단위 응답 (마커 및 리스트 표시용)"""

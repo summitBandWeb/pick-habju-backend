@@ -1042,6 +1042,7 @@ class RoomCollectionService:
             final_price_config = parsed["price_config"] if "price_config" in parsed else existing_price_config
             if not final_price_config and existing_price_config:
                 final_price_config = existing_price_config
+
             final_base_cap = parsed["base_capacity"] if "base_capacity" in parsed else existing_base_cap
             if structured_extra_charge is not None:
                 final_extra_charge = structured_extra_charge
