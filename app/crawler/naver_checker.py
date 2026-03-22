@@ -75,6 +75,7 @@ class NaverCrawler(BaseCrawler):
                     unitStartTime
                     unitStock
                     unitBookingCount
+                    isUnitBusinessDay
                   }
                 }
               }
@@ -112,7 +113,9 @@ class NaverCrawler(BaseCrawler):
                 time_str = slot_data["unitStartTime"][-8:]
                 hour_min = time_str[:5]
                 if hour_min in available_slots:
-                    available_slots[hour_min] = slot_data["unitBookingCount"] < slot_data["unitStock"]
+                    has_stock = slot_data["unitBookingCount"] < slot_data["unitStock"]
+                    is_open = slot_data.get("isUnitBusinessDay", True)
+                    available_slots[hour_min] = has_stock and is_open
 
         except Exception as e:
             raise NaverAvailabilityError(f"[{room.name}] 응답 파싱 오류: {e}")

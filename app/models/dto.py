@@ -137,20 +137,6 @@ class RoomDetail(BaseModel):
 
         return self
 
-    @property
-    def operatingHours(self) -> Optional[Dict[str, str]]:
-        """price_config에서 operating_hours를 추출하여 반환한다.
-
-        Returns:
-            ``{"start": "09:00", "end": "23:00"}`` 또는 None.
-        """
-        if not isinstance(self.priceConfig, dict):
-            return None
-        oh = self.priceConfig.get("operating_hours")
-        if isinstance(oh, dict) and "start" in oh and "end" in oh:
-            return oh
-        return None
-
 # Request DTO
 class AvailabilityRequest(BaseModel):
     """Request for checking availability"""

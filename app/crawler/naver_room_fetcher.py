@@ -486,13 +486,23 @@ class NaverRoomFetcher:
         if len(open_hours) == len(hourly):
             return None
 
-        open_hours.sort()
-        start = open_hours[0]
-        # end = 마지막 슬롯 + 1시간 (예: 17:00 → 18:00)
-        last_hour = int(open_hours[-1][:2])
-        end = f"{(last_hour + 1) % 24:02d}:00"
+        # 가장 큰 갭 = 비영업 시간대. 갭 양쪽이 start/end (자정 넘김 지원)
+        hours_sorted = sorted(int(h[:2]) for h in open_hours)
+        n = len(hours_sorted)
 
-        return {"start": start, "end": end}
+        max_gap = -1
+        gap_after_idx = 0
+        for i in range(n):
+            next_idx = (i + 1) % n
+            gap = (hours_sorted[next_idx] - hours_sorted[i]) % 24 or 24
+            if gap > max_gap:
+                max_gap = gap
+                gap_after_idx = next_idx
+
+        start_hour = hours_sorted[gap_after_idx]
+        end_hour = (hours_sorted[(gap_after_idx - 1) % n] + 1) % 24
+
+        return {"start": f"{start_hour:02d}:00", "end": f"{end_hour:02d}:00"}
 
     @staticmethod
     def _is_allowed_naver_cookie_domain(domain: str) -> bool:

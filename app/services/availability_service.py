@@ -460,10 +460,6 @@ class AvailabilityService:
         merged_results = await asyncio.gather(*availability_tasks)
         merged_results = [r for r in merged_results if r is not None and not isinstance(r, FailedCrawl)]
 
-        # 영업시간 필터: operating_hours 밖의 슬롯을 False로 변경
-        for res in merged_results:
-            self._filter_by_operating_hours(res)
-
         processed_results = self._apply_policies(merged_results, request, hour_slots)
 
         # 시간대별 variant room 병합: '블랙룸(평일 낮)', '블랙룸(심야)' 등을 '블랙룸' 1개로 통합
@@ -641,40 +637,6 @@ class AvailabilityService:
                     "errorCode": ErrorCode.COMMON_INTERNAL_ERROR,
                     "message": str(err),
                 })
-
-    @staticmethod
-    def _is_within_operating_hours(slot: str, operating_hours: Dict[str, str]) -> bool:
-        """슬롯이 영업시간 내에 있는지 판별한다.
-
-        Args:
-            slot: "HH:MM" 형식의 시간 슬롯.
-            operating_hours: ``{"start": "09:00", "end": "23:00"}``.
-
-        Returns:
-            영업시간 내이면 True.
-        """
-        start = operating_hours["start"]
-        end = operating_hours["end"]
-        if start < end:
-            # 일반 영업: 09:00~23:00
-            return start <= slot < end
-        else:
-            # 심야 영업: 22:00~06:00 (자정 넘김)
-            return slot >= start or slot < end
-
-    def _filter_by_operating_hours(self, res: "RoomAvailability") -> None:
-        """영업시간 외 슬롯을 False로 변경한다. operating_hours 미설정 시 아무 작업도 하지 않는다."""
-        oh = res.room_detail.operatingHours
-        if oh is None:
-            return
-        if not isinstance(res.available_slots, dict):
-            return
-        for slot in res.available_slots:
-            if not self._is_within_operating_hours(slot, oh):
-                res.available_slots[slot] = False
-        # available 상태 재판정
-        values = list(res.available_slots.values())
-        res.available = all(values) if values else False
 
     @staticmethod
     def _get_base_room_name(name: str) -> str:
