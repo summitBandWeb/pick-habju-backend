@@ -642,20 +642,18 @@ class AvailabilityService:
     def _get_base_room_name(name: str) -> str:
         """시간 한정어를 제거하여 base room name을 추출한다.
 
-        괄호 안 패턴과 suffix 패턴을 모두 처리하며,
-        '그린룸 평일 주간'처럼 키워드가 연속된 경우 반복 strip한다.
+        괄호·suffix 패턴을 통합 루프로 처리하여
+        '블랙룸 심야 (주말)' 같은 혼합형도 완전 정규화한다.
 
         예: '블랙룸 (평일 낮)' → '블랙룸'
             'A룸 심야' → 'A룸'
             '그린룸 평일 주간' → '그린룸'
+            '블랙룸 심야 (주말)' → '블랙룸'
         """
-        # 1) 괄호 안 패턴 (파서가 붙인 것)
-        result = _PAREN_QUALIFIER_RE.sub("", name).strip()
-        if result != name:
-            return result
-        # 2) 괄호 없는 suffix — 반복 strip (최대 3회)
-        for _ in range(3):
-            stripped = _SUFFIX_QUALIFIER_RE.sub("", result).strip()
+        result = name
+        for _ in range(4):
+            stripped = _PAREN_QUALIFIER_RE.sub("", result).strip()
+            stripped = _SUFFIX_QUALIFIER_RE.sub("", stripped).strip()
             if stripped == result:
                 break
             result = stripped
@@ -701,7 +699,7 @@ class AvailabilityService:
                 continue
 
             # 2. available_slots 병합 (union — 하나라도 True면 True)
-            #    + slot별 소유 variant의 biz_item_id 기록
+            #    + slot별 첫 True 소유 variant의 biz_item_id 기록 (True 슬롯만)
             merged_slots: Dict[str, bool] = {}
             slot_biz_item_ids: Dict[str, str] = {}
             for res in group:
@@ -709,11 +707,10 @@ class AvailabilityService:
                     for slot, val in res.available_slots.items():
                         if val is True:
                             merged_slots[slot] = True
-                            slot_biz_item_ids[slot] = res.room_detail.biz_item_id
-                        elif slot not in merged_slots:
-                            merged_slots[slot] = False
                             if slot not in slot_biz_item_ids:
                                 slot_biz_item_ids[slot] = res.room_detail.biz_item_id
+                        elif slot not in merged_slots:
+                            merged_slots[slot] = False
 
             # 3. primary variant 선택 (available slot이 가장 많은 것)
             primary = max(
@@ -736,7 +733,10 @@ class AvailabilityService:
                         seen_types.add(pw.type)
                         merged_warnings.append(pw)
 
-            # 6. primary에 병합 결과 반영 (estimated_price는 primary 것 유지)
+            # 6. primary에 병합 결과 반영
+            #    estimated_price는 primary 것 유지: 사용자는 1개 variant만 예약하며,
+            #    프론트엔드가 slot_biz_item_ids로 실제 예약 variant를 결정한 뒤
+            #    해당 variant의 가격을 별도 조회한다.
             primary.available_slots = merged_slots
             primary.available = new_available
             primary.policy_warnings = merged_warnings
