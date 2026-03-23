@@ -538,10 +538,16 @@ class RoomCollectionService:
         parsed_results = await self._parse_with_concurrency(parse_items)
 
         # 2.5 요일 variant 병합: 동일 지점 내 평일/주말 분리 룸을 단일 룸으로 통합 (#259)
-        target_rooms, parsed_results = self._merge_day_variant_rooms(target_rooms, parsed_results)
+        target_rooms, parsed_results, variant_orphan_ids = self._merge_day_variant_rooms(
+            target_rooms, parsed_results
+        )
 
         # 3. DB 저장 (Branch -> Room(이미지 포함))
         saved = await self._save_to_db(business, target_rooms, parsed_results, source_hint=source_hint)
+
+        # 3.5 병합으로 드롭된 주말 룸 고아 행 삭제 (저장 성공 시에만)
+        if saved and variant_orphan_ids:
+            self._delete_variant_orphans(variant_orphan_ids)
         if not saved:
             logger.warning(
                 "Skipped DB save for requested business_id=%s due to missing business_id in fetched payload",
@@ -1923,7 +1929,7 @@ class RoomCollectionService:
         r"\s*\((?:평일\s*낮|평일\s*오전|평일\s*야간|주말/공휴일|평일|주말|공휴일|심야|야간|주간)\)\s*$"
     )
     # 평일/주말 분류용 패턴 (P2-2: 매 호출 시 컴파일 방지)
-    _WEEKDAY_NAME_RE = re.compile(r"\((?:평일|평일\s*낮|평일\s*오전|평일\s*야간)\)$")
+    _WEEKDAY_NAME_RE = re.compile(r"\((?:평일\s*낮|평일\s*오전|평일\s*야간|평일)\)$")
     _WEEKEND_NAME_RE = re.compile(r"\((?:주말|주말/공휴일|공휴일)\)$")
     # 시간대 전용 suffix (평일/주말 없이 시간대만 명시) — 요일 병합 대상에서 제외
     _TIME_ONLY_NAME_RE = re.compile(r"\((?:심야|야간|주간)\)$")
@@ -1963,17 +1969,21 @@ class RoomCollectionService:
         self,
         rooms: List[Dict],
         parsed_results: Dict[str, Dict],
-    ) -> Tuple[List[Dict], Dict[str, Dict]]:
+    ) -> Tuple[List[Dict], Dict[str, Dict], List[str]]:
         """평일/주말 요일 variant room을 병합한다. (#259)
 
         같은 지점 내 동일 base_name을 공유하는 평일/주말 분리 룸을 단일 룸으로 합친다.
         - capacity: 평일/주말 중 높은 값 사용
-        - price_config: 주말 가격이 다르면 weekend override 추가
-        - 병합된 주말 룸의 biz_item_id는 더 이상 크롤 대상이 되지 않으므로
-          DB에 잔존하는 해당 행은 별도 마이그레이션으로 정리 필요
+        - price_config: 주말 가격이 다르면 weekend override dict 형식으로 추가
+          (dict 형식: {default, overrides, surcharges} — availability_service._resolve_slot_price 소비)
+        - 병합된 주말 룸(we_id)은 반환값 dropped_ids에 포함 → 호출자가 DB에서 삭제
 
         병합 조건: 동일 base_name 그룹 내 weekday 1개 + weekend 1개 (기타 없음)
         조건 미충족 시 모든 룸을 원형 그대로 유지한다.
+
+        Returns:
+            (merged_rooms, merged_parsed, dropped_ids)
+            dropped_ids: 병합으로 드롭된 주말 룸의 biz_item_id 목록 (DB cleanup 대상)
         """
         groups: Dict[str, List[Dict]] = {}
         for room in rooms:
@@ -1985,6 +1995,7 @@ class RoomCollectionService:
 
         merged_rooms: List[Dict] = []
         merged_parsed: Dict[str, Dict] = {}
+        dropped_ids: List[str] = []
 
         for base_name, group in groups.items():
             if len(group) == 1:
@@ -2053,8 +2064,8 @@ class RoomCollectionService:
                 primary_parsed["clean_name"] = base_name
                 primary_parsed["day_type"] = None
 
-                # we_id(주말 룸)는 병합 후 의도적으로 드롭됨 — DB 마이그레이션 시 별도 정리 필요
-                # TODO: 추후 DB cleanup 스크립트에서 we_id 행 삭제 처리
+                # we_id(주말 룸)는 병합 후 의도적으로 드롭됨 → dropped_ids에 수집하여 호출자가 DB 삭제
+                dropped_ids.append(we_id)
                 merged_rooms.append(wd_room)
                 merged_parsed[wd_id] = primary_parsed
                 logger.info(
@@ -2072,7 +2083,26 @@ class RoomCollectionService:
                     merged_rooms.append(r)
                     merged_parsed[r["bizItemId"]] = parsed_results.get(r["bizItemId"], {})
 
-        return merged_rooms, merged_parsed
+        return merged_rooms, merged_parsed, dropped_ids
+
+    def _delete_variant_orphans(self, orphan_ids: List[str]) -> None:
+        """병합으로 드롭된 주말 variant 룸 행을 DB에서 삭제한다. (#259)
+
+        _merge_day_variant_rooms에서 반환된 dropped_ids를 받아 처리한다.
+        삭제 실패는 warning 로그만 남기고 전체 크롤 플로우를 중단하지 않는다.
+        """
+        if not orphan_ids:
+            return
+        try:
+            self.supabase.table("room").delete().in_("biz_item_id", orphan_ids).execute()
+            logger.info(
+                "[variant_merge] 고아 variant 룸 %d건 DB 삭제: %s",
+                len(orphan_ids), orphan_ids,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[variant_merge] 고아 variant 룸 DB 삭제 실패 (크롤 중단 없음): %s", e,
+            )
 
     def _calculate_capacity_range(
         self,

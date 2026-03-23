@@ -97,12 +97,13 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, max_cap=5),
             "we-1": _parsed("1번룸", day_type="weekend", max_cap=5),
         }
-        merged_rooms, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        merged_rooms, merged_parsed, dropped_ids = service._merge_day_variant_rooms(rooms, parsed)
 
         assert len(merged_rooms) == 1
         assert merged_rooms[0]["bizItemId"] == "wd-1"
         assert merged_parsed["wd-1"]["clean_name"] == "1번룸"
         assert merged_parsed["wd-1"]["day_type"] is None
+        assert dropped_ids == ["we-1"]
 
     def test_price_config_weekend_override_added(self, service):
         """주말 가격이 다를 때 weekend override가 price_config에 추가됨"""
@@ -114,7 +115,7 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None),
             "we-1": _parsed("1번룸", day_type="weekend"),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
         cfg = merged_parsed["wd-1"]["price_config"]
 
         assert cfg["default"] == 10000
@@ -136,7 +137,7 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, price_config=existing_cfg),
             "we-1": _parsed("1번룸", day_type="weekend"),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
         cfg = merged_parsed["wd-1"]["price_config"]
 
         assert cfg["surcharges"] == [{"day_type": "weekday", "amount": 2000}]
@@ -151,7 +152,7 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, max_cap=5, rec_cap=3),
             "we-1": _parsed("1번룸", day_type="weekend", max_cap=8, rec_cap=5),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
 
         assert merged_parsed["wd-1"]["max_capacity"] == 8
         assert merged_parsed["wd-1"]["recommend_capacity"] == 5
@@ -173,7 +174,7 @@ class TestMergeDayVariantRooms:
                 "price_config": {},
             },
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
 
         # we_max(8) > wd_max(5)이지만 we_rec=None → recommend_capacity 유지 안 됨 확인
         assert merged_parsed["wd-1"]["max_capacity"] == 8
@@ -191,9 +192,10 @@ class TestMergeDayVariantRooms:
             "r-2": _parsed("1번룸", day_type="weekend"),
             "r-3": _parsed("1번룸", day_type=None),
         }
-        merged_rooms, _merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        merged_rooms, _merged_parsed, dropped_ids = service._merge_day_variant_rooms(rooms, parsed)
 
         assert len(merged_rooms) == 3
+        assert dropped_ids == []  # 병합 미발생 → 드롭 없음
 
     def test_no_price_config_when_equal_prices(self, service):
         """평일 == 주말 가격이면 weekend override 미생성"""
@@ -205,7 +207,7 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None),
             "we-1": _parsed("1번룸", day_type="weekend"),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
         cfg = merged_parsed["wd-1"]["price_config"]
 
         assert cfg == {}
@@ -225,7 +227,7 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, price_config=existing_cfg),
             "we-1": _parsed("1번룸", day_type="weekend"),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
         cfg = merged_parsed["wd-1"]["price_config"]
         overrides = cfg["overrides"]
 
@@ -247,7 +249,52 @@ class TestMergeDayVariantRooms:
             "wd-1": _parsed("1번룸 (평일 낮)", day_type=None),
             "we-1": _parsed("1번룸", day_type="weekend"),
         }
-        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
 
         # price_config은 원래 평일 값(빈 dict) 유지
         assert merged_parsed["wd-1"].get("price_config") == {}
+
+    def test_three_pairs_six_to_three_rooms(self, service):
+        """3개 base_name × (weekday + weekend) = 6룸 → 3룸 병합 (business_id=1227688 시나리오)"""
+        rooms = [
+            _room("wd-1", "[평일] 1번룸", price=10000),
+            _room("we-1", "[주말] 1번룸", price=15000),
+            _room("wd-2", "[평일] 2번룸", price=10000),
+            _room("we-2", "[주말] 2번룸", price=15000),
+            _room("wd-3", "[평일] 3번룸", price=10000),
+            _room("we-3", "[주말] 3번룸", price=15000),
+        ]
+        parsed = {
+            "wd-1": _parsed("1번룸 (평일 낮)", day_type=None),
+            "we-1": _parsed("1번룸", day_type="weekend"),
+            "wd-2": _parsed("2번룸 (평일 낮)", day_type=None),
+            "we-2": _parsed("2번룸", day_type="weekend"),
+            "wd-3": _parsed("3번룸 (평일 낮)", day_type=None),
+            "we-3": _parsed("3번룸", day_type="weekend"),
+        }
+        merged_rooms, _, dropped_ids = service._merge_day_variant_rooms(rooms, parsed)
+
+        assert len(merged_rooms) == 3
+        assert set(r["bizItemId"] for r in merged_rooms) == {"wd-1", "wd-2", "wd-3"}
+        assert set(dropped_ids) == {"we-1", "we-2", "we-3"}
+
+    def test_list_price_config_surcharges_not_carried(self, service):
+        """기존 price_config가 list 타입이면 surcharges는 [] 처리됨 (list 포맷에는 surcharges 키 없음)"""
+        existing_cfg = [
+            {"day_type": "weekday", "price_per_hour": 10000},
+        ]
+        rooms = [
+            _room("wd-1", "[평일 낮] 1번룸", price=10000),
+            _room("we-1", "[주말] 1번룸", price=15000),
+        ]
+        parsed = {
+            "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, price_config=existing_cfg),
+            "we-1": _parsed("1번룸", day_type="weekend"),
+        }
+        _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
+        cfg = merged_parsed["wd-1"]["price_config"]
+
+        # list 타입은 isinstance(existing_cfg, dict) = False → surcharges = []
+        assert cfg["surcharges"] == []
+        # weekend override는 정상 추가됨
+        assert any(o.get("day_type") == "weekend" for o in cfg["overrides"])
