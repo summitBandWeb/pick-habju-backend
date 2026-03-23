@@ -71,3 +71,29 @@ def test_alias_choices_precedence():
     room = RoomDetail.model_validate(payload)
     assert room.requiresContactOnSameDay is False
 
+
+# ── #257 capacity range 이상값 방어 테스트 ─────────────────────────────────────
+
+def test_recommend_capacity_range_sentinel_50_50_returns_none():
+    """[50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물 → None으로 정제"""
+    room = RoomDetail.model_validate(
+        _room_payload(max_capacity=8, recommend_capacity_range=[50, 50])
+    )
+    assert room.recommendCapacityRange is None
+
+
+def test_recommend_capacity_range_upper_exceeds_max_is_clamped():
+    """range 상한이 max_capacity 초과 → max_capacity 기준으로 clamp"""
+    room = RoomDetail.model_validate(
+        _room_payload(max_capacity=8, recommend_capacity_range=[4, 12])
+    )
+    assert room.recommendCapacityRange == [4, 8]
+
+
+def test_recommend_capacity_range_lower_zero_is_clamped_to_one():
+    """range 하한이 0 → clamp 후 하한 최솟값 1 보장"""
+    room = RoomDetail.model_validate(
+        _room_payload(max_capacity=8, recommend_capacity_range=[0, 12])
+    )
+    assert room.recommendCapacityRange == [1, 8]
+

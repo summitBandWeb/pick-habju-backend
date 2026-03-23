@@ -3,22 +3,27 @@
 -- 처리 항목:
 --   1. recommend_capacity_range = [50,50] (6건) → max_capacity 기준 역산
 --   2. recommend_capacity_range 상한 > max_capacity (8건) → max_capacity 기준 clamp
---   3. recommend_capacity_range = [x,x] 단일값 중 sadang/dream_sadang (9건) → 수동 보정
+--   3. recommend_capacity_range = [x,x] 단일값 중 sadang/dream_sadang → 158b로 분리
 --   4. extra_charge = 0 (5건) → NULL
 --
 -- NOTE: recommend_capacity_range 컬럼 타입은 integer[] (배열)
 --       int4range 함수 및 lower()/upper() 대신 배열 인덱스([1], [2]) 사용
+--
+-- sadang/dream_sadang 단일값 보정은 별도 파일로 분리:
+--   → migrations/158b_fix_sadang_capacity.sql
 
+
+BEGIN;
 
 -- ────────────────────────────────────────────────
 -- 1. recommend_capacity_range = [50,50] 수정 (6건)
---    max_capacity 기준으로 [max*0.4, max*0.8] 수준으로 역산
---    (정수 절삭, min >= 1 보장)
+--    max_capacity 기준으로 [max-1, max] 적용 (delta=1 정책과 동일)
+--    하한 최솟값 1 보장
 -- ────────────────────────────────────────────────
 UPDATE room
 SET recommend_capacity_range = ARRAY[
-    GREATEST(1, ROUND(max_capacity * 0.4)::int),
-    GREATEST(2, ROUND(max_capacity * 0.8)::int)
+    GREATEST(1, max_capacity - 1),
+    max_capacity
 ]
 WHERE recommend_capacity_range[1] = 50
   AND recommend_capacity_range[2] = 50
@@ -29,10 +34,11 @@ WHERE recommend_capacity_range[1] = 50
 -- ────────────────────────────────────────────────
 -- 2. recommend_capacity_range 상한 > max_capacity 수정 (8건)
 --    상한을 max_capacity로 clamp, 하한은 min(기존 하한, max_capacity)
+--    하한 최솟값 1 보장 (lo=0 방지)
 -- ────────────────────────────────────────────────
 UPDATE room
 SET recommend_capacity_range = ARRAY[
-    LEAST(recommend_capacity_range[1], max_capacity),
+    GREATEST(1, LEAST(recommend_capacity_range[1], max_capacity)),
     max_capacity
 ]
 WHERE recommend_capacity_range IS NOT NULL
@@ -43,37 +49,21 @@ WHERE recommend_capacity_range IS NOT NULL
 
 
 -- ────────────────────────────────────────────────
--- 3. sadang / dream_sadang 단일값 수동 보정 (9건)
---    business_id: sadang=해당값, dream_sadang=해당값
---    실제 business_id 확인 후 적용 필요 — 아래는 조회용 SELECT
--- ────────────────────────────────────────────────
--- 현황 확인용 (실행 전 조회):
--- SELECT business_id, name, max_capacity, base_capacity, recommend_capacity_range
--- FROM room
--- WHERE recommend_capacity_range[1] = recommend_capacity_range[2]
--- ORDER BY business_id, name;
-
--- sadang / dream_sadang: base_capacity 기반 정책 → [base_capacity, max_capacity]
--- TODO: 아래 WHERE 조건의 business_id 값을 실제 값으로 교체 후 실행
--- UPDATE room
--- SET recommend_capacity_range = ARRAY[base_capacity, max_capacity]
--- WHERE business_id IN (/* sadang business_id */, /* dream_sadang business_id */)
---   AND base_capacity IS NOT NULL
---   AND recommend_capacity_range[1] = recommend_capacity_range[2];
-
-
--- ────────────────────────────────────────────────
--- 4. extra_charge = 0 → NULL (5건)
+-- 3. extra_charge = 0 → NULL (5건)
 -- ────────────────────────────────────────────────
 UPDATE room
 SET extra_charge = NULL
 WHERE extra_charge = 0;
 
 
--- 결과 검증용
+COMMIT;
+
+
+-- 결과 검증용 (COMMIT 후 별도 실행)
 -- SELECT
 --     COUNT(*) FILTER (WHERE recommend_capacity_range[1] = 50 AND recommend_capacity_range[2] = 50) AS sentinel_50_50,
 --     COUNT(*) FILTER (WHERE recommend_capacity_range IS NOT NULL AND recommend_capacity_range[2] > max_capacity) AS range_exceeds_max,
---     COUNT(*) FILTER (WHERE recommend_capacity_range[1] = recommend_capacity_range[2]) AS single_value_range,
+--     COUNT(*) FILTER (WHERE recommend_capacity_range IS NOT NULL AND recommend_capacity_range[1] < 1) AS range_lo_zero,
 --     COUNT(*) FILTER (WHERE extra_charge = 0) AS extra_charge_zero
 -- FROM room;
+-- 기대값: 모든 컬럼 0
