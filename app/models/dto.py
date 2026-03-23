@@ -118,6 +118,11 @@ class RoomDetail(BaseModel):
     @model_validator(mode="after")
     def populate_v2_fields(self) -> "RoomDetail":
         """V2 호환 필드를 채우고 수동검토 플래그 값을 안전한 응답값으로 변환"""
+        # ① maxCapacity FLAG를 먼저 0으로 변환 — 이후 range clamp의 기준값으로 사용
+        if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
+            self.maxCapacity = 0
+
+        # ② [100,100] → None
         if (
             self.recommendCapacityRange
             and len(self.recommendCapacityRange) == 2
@@ -126,7 +131,7 @@ class RoomDetail(BaseModel):
         ):
             self.recommendCapacityRange = None
 
-        # [#257] 레거시 sentinel clamp(100→50) 잔재 및 상한 초과 방어
+        # ③ [#257] 레거시 sentinel clamp(100→50) 잔재 및 상한 초과 방어 (실제 maxCapacity 기준)
         if self.recommendCapacityRange and len(self.recommendCapacityRange) == 2:
             lo, hi = self.recommendCapacityRange
             # [50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물
@@ -135,9 +140,6 @@ class RoomDetail(BaseModel):
             # 상한이 max_capacity 초과: max_capacity 기준으로 clamp, 하한 최솟값 1 보장
             elif self.maxCapacity > 0 and hi > self.maxCapacity:
                 self.recommendCapacityRange = [max(1, min(lo, self.maxCapacity)), self.maxCapacity]
-
-        if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
-            self.maxCapacity = 0
 
         # [이슈 6] recommendCapacity(단일값) fallback 로직 제거.
         # recommendCapacityRange가 None이면 그대로 None. 파서/DB 보강으로 해결.

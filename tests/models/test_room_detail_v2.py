@@ -97,3 +97,13 @@ def test_recommend_capacity_range_lower_zero_is_clamped_to_one():
     )
     assert room.recommendCapacityRange == [1, 8]
 
+
+def test_recommend_capacity_range_not_clamped_when_max_is_flag():
+    """maxCapacity=100(MANUAL_REVIEW_FLAG)일 때 range clamp가 FLAG값(100) 기준으로 동작하면 안 됨"""
+    room = RoomDetail.model_validate(
+        _room_payload(max_capacity=100, recommend_capacity_range=[3, 150])
+    )
+    assert room.maxCapacity == 0
+    # maxCapacity=0이므로 clamp 조건(> 0) 미충족 → range는 그대로 유지
+    assert room.recommendCapacityRange == [3, 150]
+
