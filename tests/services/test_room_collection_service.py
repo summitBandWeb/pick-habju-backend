@@ -361,13 +361,13 @@ class TestV2NewFields:
         assert room_data["recommend_capacity_range"] == [4, 6]
         assert room_data["price_config"] == []
     
-    # ============== TC: range 없으면 ±1/±2 Fallback ==============
+    # ============== TC: range 없으면 ±1 Fallback ==============
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):
         """파서가 범위를 반환하지 않으면 규칙 기반으로 계산
 
         Rationale:
-            recommend < 9 → ±1, recommend >= 9 → ±2
+            모든 rec_cap에 대해 ±1 고정 (delta=1, #258)
             rec=4, price=10000 → price band(10k_15k) 적용 → rec=4, ±1 → [3, 5]
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
