@@ -35,7 +35,7 @@ def _parsed(clean_name: str, day_type=None, max_cap=5, rec_cap=3, price_config=N
         "max_capacity": max_cap,
         "recommend_capacity": rec_cap,
         "recommend_capacity_range": [rec_cap - 1, rec_cap + 1],
-        "price_config": price_config or {},
+        "price_config": price_config if price_config is not None else {},
     }
 
 
@@ -255,7 +255,7 @@ class TestMergeDayVariantRooms:
         assert merged_parsed["wd-1"].get("price_config") == {}
 
     def test_three_pairs_six_to_three_rooms(self, service):
-        """3개 base_name × (weekday + weekend) = 6룸 → 3룸 병합 (business_id=1227688 시나리오)"""
+        """3개 base_name x (weekday + weekend) = 6룸 → 3룸 병합 (business_id=1227688 시나리오)"""
         rooms = [
             _room("wd-1", "[평일] 1번룸", price=10000),
             _room("we-1", "[주말] 1번룸", price=15000),
