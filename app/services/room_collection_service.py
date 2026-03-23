@@ -39,7 +39,7 @@ class RoomCollectionService:
     # - 15,000~19,999 KRW -> 7~8 people
     # - 20,000+ KRW -> 10+ people
     # max_capacity 규칙: recommend_range 상한 + 3 이상
-    # recommend < 9 → ±1, recommend >= 9 → ±2
+    # recommend_capacity_range: 모든 rec_cap에 대해 ±1 고정 (delta=1, #258)
     PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
         {
             "name": "5k_10k",
@@ -1210,7 +1210,7 @@ class RoomCollectionService:
                 and len(default_range) == 2
                 and all(isinstance(v, int) for v in default_range)
             ):
-                delta = 2 if default_rec >= 9 else 1
+                delta = 1  # ±1 고정 (rec_cap >= 9 → ±2 분기 제거, #258)
                 default_range = [max(default_rec - delta, 1), min(default_rec + delta, default_max)]
 
             rec_cap = default_rec
