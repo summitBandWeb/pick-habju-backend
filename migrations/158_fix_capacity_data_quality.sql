@@ -13,12 +13,25 @@
 --   → migrations/158b_fix_sadang_capacity.sql
 
 
+-- ────────────────────────────────────────────────
+-- [P1 사전 검증] UPDATE 1 실행 전 반드시 아래 SELECT를 먼저 실행하세요.
+-- 0건이면 현재 조건(max_capacity < 50) 유지 가능.
+-- 1건 이상이면 조건 범위 재검토 필요.
+-- ────────────────────────────────────────────────
+-- SELECT id, name, max_capacity, recommend_capacity_range
+-- FROM room
+-- WHERE recommend_capacity_range[1] = 50
+--   AND recommend_capacity_range[2] = 50
+--   AND max_capacity >= 50;
+
+
 BEGIN;
 
 -- ────────────────────────────────────────────────
 -- 1. recommend_capacity_range = [50,50] 수정 (6건)
 --    max_capacity 기준으로 [max-1, max] 적용 (delta=1 정책과 동일)
 --    하한 최솟값 1 보장
+--    조건: max_capacity < 50 — [50,50]이 실제 범위인 케이스(max>=50) 보호
 -- ────────────────────────────────────────────────
 UPDATE room
 SET recommend_capacity_range = ARRAY[
