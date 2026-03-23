@@ -18,7 +18,7 @@
 -- 0건이면 현재 조건(max_capacity < 50) 유지 가능.
 -- 1건 이상이면 조건 범위 재검토 필요.
 -- ────────────────────────────────────────────────
--- SELECT id, name, max_capacity, recommend_capacity_range
+-- SELECT biz_item_id, name, max_capacity, recommend_capacity_range
 -- FROM room
 -- WHERE recommend_capacity_range[1] = 50
 --   AND recommend_capacity_range[2] = 50
