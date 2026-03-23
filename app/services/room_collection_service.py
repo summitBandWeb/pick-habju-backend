@@ -1134,7 +1134,7 @@ class RoomCollectionService:
                 ),
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap_int,
-                "extra_charge": final_extra_charge_int if final_extra_charge_int else None,
+                "extra_charge": final_extra_charge_int if final_extra_charge_int is not None and final_extra_charge_int > 0 else None,
                 "requires_call_on_sameday": final_requires_call,
                 "can_reserve_one_hour": final_can_reserve,
                 "image_urls": image_urls  # Save to JSONB column

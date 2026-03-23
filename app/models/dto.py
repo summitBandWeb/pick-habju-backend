@@ -132,9 +132,9 @@ class RoomDetail(BaseModel):
             # [50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물
             if lo == 50 and hi == 50:
                 self.recommendCapacityRange = None
-            # 상한이 max_capacity 초과: max_capacity 기준으로 clamp
+            # 상한이 max_capacity 초과: max_capacity 기준으로 clamp, 하한 최솟값 1 보장
             elif self.maxCapacity > 0 and hi > self.maxCapacity:
-                self.recommendCapacityRange = [min(lo, self.maxCapacity), self.maxCapacity]
+                self.recommendCapacityRange = [max(1, min(lo, self.maxCapacity)), self.maxCapacity]
 
         if self.maxCapacity == self.MANUAL_REVIEW_CAPACITY_FLAG:
             self.maxCapacity = 0
