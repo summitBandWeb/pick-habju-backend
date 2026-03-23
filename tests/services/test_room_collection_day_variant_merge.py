@@ -191,9 +191,50 @@ class TestMergeDayVariantRooms:
             "r-2": _parsed("1번룸", day_type="weekend"),
             "r-3": _parsed("1번룸", day_type=None),
         }
-        merged_rooms, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        merged_rooms, _merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
 
         assert len(merged_rooms) == 3
+
+    def test_no_price_config_when_equal_prices(self, service):
+        """평일 == 주말 가격이면 weekend override 미생성"""
+        rooms = [
+            _room("wd-1", "[평일 낮] 1번룸", price=10000),
+            _room("we-1", "[주말] 1번룸", price=10000),
+        ]
+        parsed = {
+            "wd-1": _parsed("1번룸 (평일 낮)", day_type=None),
+            "we-1": _parsed("1번룸", day_type="weekend"),
+        }
+        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        cfg = merged_parsed["wd-1"]["price_config"]
+
+        assert cfg == {}
+
+    def test_existing_weekday_override_preserved(self, service):
+        """기존 weekday override가 병합 후에도 보존됨"""
+        existing_cfg = {
+            "default": 10000,
+            "overrides": [{"day_type": "weekday", "start_hour": "18:00", "end_hour": "24:00", "price": 12000}],
+            "surcharges": [],
+        }
+        rooms = [
+            _room("wd-1", "[평일 낮] 1번룸", price=10000),
+            _room("we-1", "[주말] 1번룸", price=15000),
+        ]
+        parsed = {
+            "wd-1": _parsed("1번룸 (평일 낮)", day_type=None, price_config=existing_cfg),
+            "we-1": _parsed("1번룸", day_type="weekend"),
+        }
+        _, merged_parsed = service._merge_day_variant_rooms(rooms, parsed)
+        cfg = merged_parsed["wd-1"]["price_config"]
+        overrides = cfg["overrides"]
+
+        weekday_override = next((o for o in overrides if o["day_type"] == "weekday"), None)
+        assert weekday_override is not None
+        assert weekday_override["price"] == 12000
+        weekend_override = next((o for o in overrides if o["day_type"] == "weekend"), None)
+        assert weekend_override is not None
+        assert weekend_override["price"] == 15000
 
     def test_merge_skipped_when_price_missing(self, service):
         """wd_price 또는 we_price가 None이면 price_config 미생성"""

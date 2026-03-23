@@ -2025,7 +2025,9 @@ class RoomCollectionService:
                     we_rec = secondary_parsed.get("recommend_capacity")
                     if we_rec is not None:
                         primary_parsed["recommend_capacity"] = we_rec
-                        primary_parsed["recommend_capacity_range"] = secondary_parsed.get("recommend_capacity_range")
+                    we_range = secondary_parsed.get("recommend_capacity_range")
+                    if we_range is not None:
+                        primary_parsed["recommend_capacity_range"] = we_range
 
                 # price_config: 주말 가격이 다를 때 weekend override 추가
                 # 기존 surcharges 보존 후 overrides에 weekend 항목만 추가
@@ -2039,20 +2041,20 @@ class RoomCollectionService:
                     non_weekend = [o for o in existing_overrides if o.get("day_type") != "weekend"]
                     primary_parsed["price_config"] = {
                         "default": wd_price,
-                        "overrides": non_weekend + [
-                            {
-                                "day_type": "weekend",
-                                "start_hour": "00:00",
-                                "end_hour": "24:00",
-                                "price": we_price,
-                            }
-                        ],
+                        "overrides": [*non_weekend, {
+                            "day_type": "weekend",
+                            "start_hour": "00:00",
+                            "end_hour": "24:00",
+                            "price": we_price,
+                        }],
                         "surcharges": existing_surcharges,
                     }
 
                 primary_parsed["clean_name"] = base_name
                 primary_parsed["day_type"] = None
 
+                # we_id(주말 룸)는 병합 후 의도적으로 드롭됨 — DB 마이그레이션 시 별도 정리 필요
+                # TODO: 추후 DB cleanup 스크립트에서 we_id 행 삭제 처리
                 merged_rooms.append(wd_room)
                 merged_parsed[wd_id] = primary_parsed
                 logger.info(
@@ -2062,8 +2064,8 @@ class RoomCollectionService:
             else:
                 # 병합 불가: 모두 원형 유지
                 logger.info(
-                    "[variant_merge] 병합 조건 미충족 스킵: base=%s weekday=%d weekend=%d other=%d"
-                    " — DB 마이그레이션 대상 아님",
+                    "[variant_merge] 병합 조건 미충족으로 스킵: base=%s weekday=%d weekend=%d other=%d"
+                    " — DB 마이그레이션 해당 아님",
                     base_name, len(weekday_rooms), len(weekend_rooms), len(other_rooms),
                 )
                 for r in group:
