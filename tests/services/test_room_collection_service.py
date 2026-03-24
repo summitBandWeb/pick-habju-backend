@@ -361,6 +361,43 @@ class TestV2NewFields:
         assert room_data["recommend_capacity_range"] == [4, 6]
         assert room_data["price_config"] == []
     
+    # ============== TC: rec_cap/max_cap 모두 FLAG → None 반환 (#264) ==============
+    def test_capacity_range_is_none_when_both_flag(self, service):
+        """rec_cap, max_cap 모두 FLAG(100)이면 None 반환
+
+        AS-IS: sentinel clamp(100→50) 후 delta 적용 → [49, 50] 같은 허구 범위 생성
+        TO-BE: 근거 없음 → None 반환 (#264)
+
+        Rationale:
+            _save_to_db 경유 시 가격 밴드(5k~)가 항상 FLAG를 교체하므로
+            _calculate_capacity_range를 직접 호출해 단위 검증한다.
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=100,
+            max_cap=100,
+            base_cap=None,
+            extra_charge=None,
+        )
+        assert result is None
+
+    # ============== TC: rec_cap 유효, max_cap FLAG → range 정상 계산 (#264) ==============
+    def test_capacity_range_computed_without_flag_max_cap(self, service):
+        """rec_cap은 유효하나 max_cap이 FLAG(100)인 경우, 상한 제약 없이 range 계산
+
+        AS-IS: FLAG max_cap을 50으로 clamp 후 delta 적용
+        TO-BE: FLAG max_cap은 상한 제약 없음으로 처리 → [rec-1, rec+1]
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=4,
+            max_cap=100,
+            base_cap=None,
+            extra_charge=None,
+        )
+        # rec=4, max_cap=FLAG(상한 없음) → [3, 5]
+        assert result == [3, 5]
+
     # ============== TC: range 없으면 ±1 Fallback ==============
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):

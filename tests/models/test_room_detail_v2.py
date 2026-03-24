@@ -74,12 +74,17 @@ def test_alias_choices_precedence():
 
 # ── #257 capacity range 이상값 방어 테스트 ─────────────────────────────────────
 
-def test_recommend_capacity_range_sentinel_50_50_returns_none():
-    """[50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물 → None으로 정제"""
+def test_recommend_capacity_range_50_50_is_valid():
+    """[50,50]: #264 리팩터링 후 더 이상 생성되지 않는 값이나, DB 레거시로 남아있다면 유효 범위로 통과
+
+    AS-IS: FLAG(100)→50 sentinel clamp 잔재로 간주해 None 처리
+    TO-BE: _calculate_capacity_range에서 FLAG 입력 시 None 반환하므로 [50,50] 생성 경로 없음.
+           dto.py 안전망은 [100,100]→None만 유지. [50,50]은 그대로 통과.
+    """
     room = RoomDetail.model_validate(
-        _room_payload(max_capacity=8, recommend_capacity_range=[50, 50])
+        _room_payload(max_capacity=50, recommend_capacity_range=[50, 50])
     )
-    assert room.recommendCapacityRange is None
+    assert room.recommendCapacityRange == [50, 50]
 
 
 def test_recommend_capacity_range_upper_exceeds_max_is_clamped():
