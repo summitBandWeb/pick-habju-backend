@@ -1,7 +1,7 @@
 """
 룸 정보 파싱 서비스.
 
-정규표현식과 키워드 규칙을 사용하여 비정형 합주실 정보를 구조화된 데이터로 변환합니다.
+정규표현식을 사용하여 비정형 합주실 정보를 구조화된 데이터로 변환합니다.
 """
 
 import logging
@@ -11,29 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-# 명확한 의미가 있는 키워드만 사용
-KEYWORD_CAPACITY_MAP = {
-    "대형": 15,
-    "중형": 8,
-    "소형": 4,
-    "대합주실": 15,
-    "소합주실": 4,
-}
-
-
 class RoomParserService:
     """Rule-based parser for rehearsal room information."""
 
     async def parse_room_desc(self, name: str, desc: str) -> Dict[str, Any]:
         """룸 이름과 설명을 기반으로 구조화된 정보를 추출합니다."""
-        keyword_capacity = self._infer_capacity_from_keyword(name)
-        parsed = self._parse_with_regex(name, desc)
-
-        if keyword_capacity:
-            parsed["max_capacity"] = keyword_capacity
-            logger.debug("Keyword capacity applied: %s -> %s", name, keyword_capacity)
-
-        return parsed
+        return self._parse_with_regex(name, desc)
 
     async def parse_room_desc_batch(self, items: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """여러 룸 정보를 한 번에 파싱합니다."""
@@ -47,17 +30,7 @@ class RoomParserService:
             if not room_desc:
                 room_desc = item.get("business_desc") or ""
             results[room_id] = self._parse_with_regex(item["name"], room_desc)
-            keyword_capacity = self._infer_capacity_from_keyword(item["name"])
-            if keyword_capacity:
-                results[room_id]["max_capacity"] = keyword_capacity
         return results
-
-    def _infer_capacity_from_keyword(self, name: str) -> Optional[int]:
-        """룸 이름에서 키워드 기반으로 수용 인원을 추론합니다."""
-        for keyword, capacity in KEYWORD_CAPACITY_MAP.items():
-            if keyword in name:
-                return capacity
-        return None
 
     def _parse_with_regex(self, name: str, desc: Optional[str]) -> Dict[str, Any]:
         """정규표현식 기반 룸 정보 파싱."""

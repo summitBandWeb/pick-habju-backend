@@ -32,71 +32,8 @@ class RoomCollectionService:
     # app.constants.MANUAL_REVIEW_CAPACITY_FLAG 와 동기화 (단일 선언)
     MANUAL_REVIEW_FLAG = _MANUAL_REVIEW_CAPACITY_FLAG
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
-    PRICE_MATCH_TOLERANCE = 1000
     # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
     MIN_REHEARSAL_PRICE = 5000
-    # Global fallback when room-level basic capacity info is missing.
-    # Rule from ops:
-    # - 10,000~14,999 KRW -> 4~5 people
-    # - 15,000~19,999 KRW -> 7~8 people
-    # - 20,000+ KRW -> 10+ people
-    # max_capacity 규칙: recommend_range 상한 + 3 이상
-    # recommend_capacity_range: 모든 rec_cap에 대해 ±1 고정 (delta=1, #258)
-    PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
-        {
-            "name": "5k_10k",
-            "min_price": 5000,
-            "max_price": 9999,
-            "max_capacity": 6,
-            "recommend_capacity": 3,
-            "recommend_range": [2, 4],
-        },
-        {
-            "name": "10k_15k",
-            "min_price": 10000,
-            "max_price": 14999,
-            "max_capacity": 8,
-            "recommend_capacity": 4,
-            "recommend_range": [3, 5],
-        },
-        {
-            "name": "15k_20k",
-            "min_price": 15000,
-            "max_price": 19999,
-            "max_capacity": 11,
-            "recommend_capacity": 7,
-            "recommend_range": [6, 8],
-        },
-        {
-            "name": "20k_plus",
-            "min_price": 20000,
-            "max_price": None,  # open upper bound
-            "max_capacity": 15,
-            "recommend_capacity": 10,
-            "recommend_range": [8, 12],
-        },
-    ]
-    PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
-        # Groove sadang (manual baseline)
-        "sadang": [
-            {"price": 8000, "max_capacity": 4, "recommend_capacity": 2, "recommend_range": [1, 2]},
-            {"price": 10000, "max_capacity": 6, "recommend_capacity": 3, "recommend_range": [1, 3]},
-        ],
-        # Biju rehearsal rooms (manual baseline)
-        "522011": [
-            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [4, 6]},
-        ],
-        "706924": [
-            {"price": 12000, "max_capacity": 8, "recommend_capacity": 4, "recommend_range": [3, 5]},
-        ],
-        "917236": [
-            {"price": 20000, "max_capacity": 12, "recommend_capacity": 6, "recommend_range": [4, 6]},
-        ],
-        # Junsound sadang (manual baseline)
-        "1384809": [
-            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [3, 5]},
-        ],
-    }
     REHEARSAL_KEYWORDS: Tuple[str, ...] = (
         "합주실",
         "합주",
@@ -1005,11 +942,6 @@ class RoomCollectionService:
                 new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
-            price_inferred = self._infer_capacity_from_price(
-                business_id=business_id,
-                room_name=room.get("name"),
-                price_per_hour=new_price,
-            )
             new_price_config = parsed.get("price_config")
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
@@ -1035,14 +967,6 @@ class RoomCollectionService:
                 existing_price = existing.get("price_per_hour")
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
-
-            price_inferred_applied = False
-            if final_max_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
-                final_max_cap = price_inferred["max_capacity"]
-                price_inferred_applied = True
-            if final_rec_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
-                final_rec_cap = price_inferred["recommend_capacity"]
-                price_inferred_applied = True
 
             # Preserve existing JSON values unless parser explicitly provides replacements.
             existing_price_config = existing.get("price_config", []) if existing else []
@@ -1132,17 +1056,11 @@ class RoomCollectionService:
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
                 # None 반환 시 Supabase 클라이언트가 NULL로 저장 (근거 없는 경우 의도적 NULL)
                 "recommend_capacity_range": self._calculate_capacity_range(
-                    text_rec_range
-                    or parsed.get("recommend_capacity_range")
-                    or (
-                        price_inferred.get("recommend_range")
-                        if price_inferred and price_inferred_applied
-                        else None
-                    ),
+                    text_rec_range or parsed.get("recommend_capacity_range"),
                     final_rec_cap_int,
                     final_max_cap_int,
                     final_base_cap_int,
-                    final_extra_charge_int
+                    final_extra_charge_int,
                 ),
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap_int,
@@ -1156,94 +1074,6 @@ class RoomCollectionService:
             self._upsert_room_with_schema_fallback(room_data)
 
         return True
-
-    def _infer_capacity_from_price(
-        self,
-        business_id: Optional[str],
-        room_name: Optional[str],
-        price_per_hour: Optional[int],
-    ) -> Optional[Dict[str, Any]]:
-        """Infer capacity using curated per-business price rules."""
-        if not business_id or not isinstance(price_per_hour, int) or price_per_hour <= 0:
-            return None
-
-        rules = self.PRICE_CAPACITY_RULES.get(str(business_id))
-        if rules:
-            best_rule: Optional[Dict[str, Any]] = None
-            best_gap: Optional[int] = None
-
-            for rule in rules:
-                rule_price = rule.get("price")
-                if not isinstance(rule_price, int):
-                    continue
-                gap = abs(rule_price - price_per_hour)
-                if gap > self.PRICE_MATCH_TOLERANCE:
-                    continue
-                if best_gap is None or gap < best_gap:
-                    best_gap = gap
-                    best_rule = rule
-
-            if best_rule:
-                logger.info(
-                    "Price-based capacity inference applied: business_id=%s room=%s price=%s rule_price=%s max=%s",
-                    business_id,
-                    room_name or "",
-                    price_per_hour,
-                    best_rule.get("price"),
-                    best_rule.get("max_capacity"),
-                )
-                return {
-                    "max_capacity": best_rule.get("max_capacity"),
-                    "recommend_capacity": best_rule.get("recommend_capacity"),
-                    "recommend_range": best_rule.get("recommend_range"),
-                }
-
-        # Global fallback by price band when no business-specific rule matched.
-        for band_rule in self.PRICE_BAND_CAPACITY_DEFAULTS:
-            band_name = band_rule.get("name")
-            min_price = band_rule.get("min_price")
-            max_price = band_rule.get("max_price")
-            default_max = band_rule.get("max_capacity")
-            default_rec = band_rule.get("recommend_capacity")
-            default_range = band_rule.get("recommend_range")
-
-            if not isinstance(min_price, int) or not isinstance(default_max, int):
-                continue
-            if max_price is not None and not isinstance(max_price, int):
-                continue
-            if price_per_hour < min_price:
-                continue
-            if max_price is not None and price_per_hour > max_price:
-                continue
-
-            if not isinstance(default_rec, int):
-                default_rec = default_max // 2 if default_max > 4 else default_max
-            if not (
-                isinstance(default_range, list)
-                and len(default_range) == 2
-                and all(isinstance(v, int) for v in default_range)
-            ):
-                delta = 1  # ±1 고정 (rec_cap >= 9 → ±2 분기 제거, #258)
-                default_range = [max(default_rec - delta, 1), min(default_rec + delta, default_max)]
-
-            rec_cap = default_rec
-            rec_range = default_range
-
-            logger.info(
-                "Price-band fallback inference applied: business_id=%s room=%s price=%s band=%s max=%s",
-                business_id,
-                room_name or "",
-                price_per_hour,
-                band_name,
-                default_max,
-            )
-            return {
-                "max_capacity": default_max,
-                "recommend_capacity": rec_cap,
-                "recommend_range": rec_range,
-            }
-
-        return None
 
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
         """Upsert room row and retry if payload contains unknown columns.

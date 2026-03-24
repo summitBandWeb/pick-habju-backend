@@ -92,11 +92,6 @@ class TestRuleBasedParsing:
         return RoomParserService()
 
     @pytest.mark.asyncio
-    async def test_keyword_map_applies(self, parser):
-        result = await parser.parse_room_desc("대형 합주실", "")
-        assert result["max_capacity"] == 15
-
-    @pytest.mark.asyncio
     async def test_keyword_map_not_triggered_by_alphabet(self, parser):
         result = await parser.parse_room_desc("S룸", "최대 20인")
         assert result["max_capacity"] == 20
