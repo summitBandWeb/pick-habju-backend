@@ -921,25 +921,17 @@ class RoomCollectionService:
             images = room.get("bizItemResources", [])
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
-            # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            # Priority for capacity:
-            #   1) High-confidence text patterns in room name/desc
-            #   2) Parser output
-            #   3) Manual review flag
+            # Capacity 우선순위: 1) 텍스트 시그널 2) 파서 출력 3) None (파싱 실패)
             text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
 
             new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
-            if new_max_cap is None:
-                new_max_cap = self.MANUAL_REVIEW_FLAG
-                
+
             # HACK: [이슈 6 기술부채] recommend_capacity(단일값) 레거시.
             # DTO에서는 제거됐으나 DB 컬럼과 _calculate_capacity_range 의존성 때문에 upsert 유지.
             # 향후 recommend_capacity_range로 완전히 대체 시 이 컬럼 제거 예정.
             new_rec_cap = text_rec_cap if text_rec_cap is not None else parsed.get("recommend_capacity")
-            if new_rec_cap is None and new_max_cap != self.MANUAL_REVIEW_FLAG:
+            if new_rec_cap is None and new_max_cap is not None:
                 new_rec_cap = new_max_cap // 2 if new_max_cap > 4 else new_max_cap
-            if new_rec_cap is None:
-                new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
             new_price_config = parsed.get("price_config")
@@ -954,12 +946,12 @@ class RoomCollectionService:
                 existing_max = existing.get("max_capacity", 0)
                 existing_rec = existing.get("recommend_capacity", 0)
 
-                # [Logic] 기존 값이 유효하고(>1), 새 값이 기본값(1)이거나 수동검토플래그(100)인 경우 기존 값 보존
-                # 단, 기존 값 자체가 100인 경우는 제외
-                if (new_max_cap <= 1 or new_max_cap == self.MANUAL_REVIEW_FLAG) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
+                # 파싱 실패(None) 또는 기본값(≤1)이면 기존 유효값 보존
+                # 단, 기존 값이 FLAG(100)이면 보존하지 않음
+                if (final_max_cap is None or final_max_cap <= 1) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
                     final_max_cap = existing_max
-                
-                if (new_rec_cap <= 1 or new_rec_cap == self.MANUAL_REVIEW_FLAG) and existing_rec > 1 and existing_rec != self.MANUAL_REVIEW_FLAG:
+
+                if (final_rec_cap is None or final_rec_cap <= 1) and existing_rec > 1 and existing_rec != self.MANUAL_REVIEW_FLAG:
                     final_rec_cap = existing_rec
 
                 # If new price is 0/None but existing is valid, keep existing
@@ -1011,16 +1003,14 @@ class RoomCollectionService:
             else:
                 final_requires_call = existing_requires_call
 
-            # Room Data
+            # Room Data — None이면 FLAG(100) 저장 (DB NOT NULL 제약)
             final_max_cap_int = self._coerce_int(final_max_cap)
             if final_max_cap_int is None:
                 final_max_cap_int = self.MANUAL_REVIEW_FLAG
 
             final_rec_cap_int = self._coerce_int(final_rec_cap)
             if final_rec_cap_int is None:
-                final_rec_cap_int = (
-                    final_max_cap_int // 2 if final_max_cap_int != self.MANUAL_REVIEW_FLAG else self.MANUAL_REVIEW_FLAG
-                )
+                final_rec_cap_int = self.MANUAL_REVIEW_FLAG
 
             # DB 제약조건 보정: recommend_capacity <= max_capacity
             if (
