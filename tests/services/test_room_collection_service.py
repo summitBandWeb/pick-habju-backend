@@ -369,8 +369,9 @@ class TestV2NewFields:
         TO-BE: 근거 없음 → None 반환 (#264)
 
         Rationale:
-            _save_to_db 경유 시 가격 밴드(5k~)가 항상 FLAG를 교체하므로
-            _calculate_capacity_range를 직접 호출해 단위 검증한다.
+            _save_to_db 경유 시 가격 밴드(5k~)가 항상 FLAG를 교체하므로 이 경로를
+            통합 테스트로 검증할 수 없다. 파이프라인 전제(유효 가격 필수)가 바뀌면
+            이 단위 테스트가 최후 방어선이 됨.
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
@@ -396,6 +397,25 @@ class TestV2NewFields:
             extra_charge=None,
         )
         # rec=4, max_cap=FLAG(상한 없음) → [3, 5]
+        assert result == [3, 5]
+
+    # ============== TC: extra_charge 있으나 base_cap FLAG → rec_cap ±1 fallback (#264) ==============
+    def test_capacity_range_fallback_when_extra_charge_but_flag_base_cap(self, service):
+        """extra_charge가 있어도 base_cap이 FLAG(100)이면 effective_base_cap=None
+        → step 3 스킵 → rec_cap ±1 fallback
+
+        Rationale:
+            추가 요금 기준 인원을 신뢰할 수 없으면 [base_cap, max_cap] 형태 계산 불가.
+            rec_cap 기반 ±1이 차선책. 허구 base_cap으로 범위를 만들지 않는다.
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=4,
+            max_cap=8,
+            base_cap=100,       # FLAG
+            extra_charge=5000,
+        )
+        # base_cap=FLAG → effective_base_cap=None → step 3 스킵 → [3, 5]
         assert result == [3, 5]
 
     # ============== TC: range 없으면 ±1 Fallback ==============

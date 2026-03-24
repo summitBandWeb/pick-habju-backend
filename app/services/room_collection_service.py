@@ -1128,6 +1128,7 @@ class RoomCollectionService:
                 "max_capacity": final_max_cap_int,
                 "recommend_capacity": final_rec_cap_int,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
+                # None 반환 시 Supabase 클라이언트가 NULL로 저장 (근거 없는 경우 의도적 NULL)
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range
                     or parsed.get("recommend_capacity_range")
@@ -2128,10 +2129,14 @@ class RoomCollectionService:
         Rationale:
             1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
             2. rec_cap, max_cap 모두 FLAG → None (근거 없음, 허구 생성 금지)
-            3. 추가 요금 발생 시 [base_cap, max_cap]
-            4. 추가 요금 없을 시 [rec_cap - 1, rec_cap + 1] (최대 max_cap)
+            3. 추가 요금 발생 시 [effective_base_cap, effective_max_cap]
+               단, base_cap이 FLAG면 effective_base_cap=None → step 4 fallback
+            4. 추가 요금 없을 시 [rec_cap - 1, rec_cap + 1] (최대 effective_max_cap)
+
+        Precondition (save_to_db 흐름 보장):
+            rec_cap >= FLAG 이면 max_cap >= FLAG. 역은 성립하지 않음 (Case 3).
         """
-        # max_cap이 FLAG면 상한 제약 없음으로 처리
+        # max_cap=0 은 FLAG와 동일하게 "미확인"으로 처리 → 상한 제약 없음
         effective_max_cap = max_cap if 0 < max_cap < self.MANUAL_REVIEW_FLAG else 0
 
         # 1. 파싱된 범위 검증 후 우선 사용
@@ -2156,6 +2161,8 @@ class RoomCollectionService:
             return None
 
         # base_cap FLAG 처리
+        # base_cap=FLAG 이면 effective_base_cap=None → step 3 조건 미충족 → step 4(rec_cap ±1) fallback
+        # extra_charge가 있더라도 기준 인원을 신뢰할 수 없으면 rec_cap 기반 추정이 차선책
         effective_base_cap = base_cap if base_cap is not None and base_cap < self.MANUAL_REVIEW_FLAG else None
 
         # 3. 추가 요금 있는 경우
