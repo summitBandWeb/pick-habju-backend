@@ -15,6 +15,7 @@ from app.services.room_parser_service import RoomParserService
 from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
 from app.core.name_utils import normalize_name_token
+from app.constants import MANUAL_REVIEW_CAPACITY_FLAG as _MANUAL_REVIEW_CAPACITY_FLAG
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class RoomCollectionService:
     
     # Capacity value indicating parsing failure - flags for manual review
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
-    MANUAL_REVIEW_FLAG = 100
+    # app.constants.MANUAL_REVIEW_CAPACITY_FLAG 와 동기화 (단일 선언)
+    MANUAL_REVIEW_FLAG = _MANUAL_REVIEW_CAPACITY_FLAG
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
     # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
@@ -2128,14 +2130,25 @@ class RoomCollectionService:
 
         Rationale:
             1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
-            2. rec_cap, max_cap 모두 FLAG → None (근거 없음, 허구 생성 금지)
+            2. rec_cap >= FLAG → None (근거 없음, 허구 생성 금지)
+               - max_cap도 FLAG면 당연히 None
+               - rec_cap만 FLAG여도 step 4가 rec_cap 기반 계산을 하므로 None이 안전
             3. 추가 요금 발생 시 [effective_base_cap, effective_max_cap]
                단, base_cap이 FLAG면 effective_base_cap=None → step 4 fallback
+               max_cap이 FLAG면 effective_max_cap=0 → [base_cap, base_cap] 반환 (의도된 동작)
             4. 추가 요금 없을 시 [rec_cap - 1, rec_cap + 1] (최대 effective_max_cap)
 
-        Precondition (save_to_db 흐름 보장):
-            rec_cap >= FLAG 이면 max_cap >= FLAG. 역은 성립하지 않음 (Case 3).
+        Examples:
+            rec=4, max=8           → [3, 5]
+            rec=4, max=FLAG        → [3, 5]  (상한 없음)
+            rec=1, max=FLAG        → [1, 2]
+            rec=FLAG, max=FLAG     → None
+            rec=FLAG, max=5        → None    (Precondition 위반, 방어적 처리)
+            base=6, extra=5000, max=8      → [6, 8]
+            base=6, extra=5000, max=FLAG   → [6, 6]  (max 불명, base=base)
         """
+        # NOTE: effective_max_cap은 step 1(parsed_range clamp)에서도 사용하므로
+        #       Fail-Fast(step 2) 이전에 계산한다.
         # max_cap=0 은 FLAG와 동일하게 "미확인"으로 처리 → 상한 제약 없음
         effective_max_cap = max_cap if 0 < max_cap < self.MANUAL_REVIEW_FLAG else 0
 
@@ -2156,8 +2169,14 @@ class RoomCollectionService:
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
 
-        # 2. rec_cap, max_cap 모두 FLAG → 근거 없음, None 반환 (#264)
-        if rec_cap >= self.MANUAL_REVIEW_FLAG and max_cap >= self.MANUAL_REVIEW_FLAG:
+        # 2. rec_cap >= FLAG → 근거 없음, None 반환 (#264)
+        # rec_cap만 FLAG인 경우(Precondition 위반)도 방어적으로 None 반환
+        if rec_cap >= self.MANUAL_REVIEW_FLAG:
+            if max_cap < self.MANUAL_REVIEW_FLAG:
+                logger.warning(
+                    "[capacity_range] precondition violation: rec_cap=FLAG but max_cap=%d — returning None",
+                    max_cap,
+                )
             return None
 
         # base_cap FLAG 처리

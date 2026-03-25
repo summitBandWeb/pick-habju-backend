@@ -3,6 +3,7 @@ from datetime import datetime, date
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
 import logging
 from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
+from app.constants import MANUAL_REVIEW_CAPACITY_FLAG as _MANUAL_REVIEW_CAPACITY_FLAG
 
 class HealthResponse(BaseModel):
     """Health Check Response Model"""
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
-    MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = 100
+    MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = _MANUAL_REVIEW_CAPACITY_FLAG
     BRANCH_FALLBACK_NAME: ClassVar[str] = "지점 정보 없음"
 
     # DB 컬럼명과 일치 (room 테이블 + branch(name) join)

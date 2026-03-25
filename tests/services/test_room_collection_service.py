@@ -399,6 +399,40 @@ class TestV2NewFields:
         # rec=4, max_cap=FLAG(상한 없음) → [3, 5]
         assert result == [3, 5]
 
+    # ============== TC: rec_cap FLAG, max_cap 유효 → Precondition 위반 방어 (#264) ==============
+    def test_capacity_range_none_when_rec_cap_flag_only(self, service):
+        """rec_cap=FLAG, max_cap=유효 — Precondition 위반 케이스 방어적 None 반환
+
+        save_to_db 정상 흐름에서는 발생하지 않으나,
+        파서가 recommend_capacity=100을 직접 반환하는 경우 위반 가능.
+        rec_cap 기반 step 4 계산([99, 99])보다 None이 안전하다.
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=100,    # FLAG
+            max_cap=5,      # 유효값 — Precondition 위반
+            base_cap=None,
+            extra_charge=None,
+        )
+        assert result is None
+
+    # ============== TC: extra_charge + max_cap FLAG → [base_cap, base_cap] (P1-2) ==============
+    def test_capacity_range_single_value_when_extra_charge_and_flag_max_cap(self, service):
+        """extra_charge 유효 + base_cap 유효 + max_cap FLAG → [base_cap, base_cap]
+
+        max_cap이 FLAG면 effective_max_cap=0 → real_max = base_cap → [base_cap, base_cap].
+        상한을 알 수 없으나 기준 인원은 신뢰할 수 있는 경우의 의도된 동작.
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=4,
+            max_cap=100,    # FLAG
+            base_cap=6,
+            extra_charge=5000,
+        )
+        # effective_max_cap=0 → real_max = max(0, 6) if 0>0 else 6 = 6 → [6, 6]
+        assert result == [6, 6]
+
     # ============== TC: extra_charge 있으나 base_cap FLAG → rec_cap ±1 fallback (#264) ==============
     def test_capacity_range_fallback_when_extra_charge_but_flag_base_cap(self, service):
         """extra_charge가 있어도 base_cap이 FLAG(100)이면 effective_base_cap=None
