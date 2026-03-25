@@ -416,6 +416,22 @@ class TestV2NewFields:
         )
         assert result is None
 
+    # ============== TC: rec_cap=0, max_cap=0 → [1,1] 허구 범위 생성 방지 ==============
+    def test_capacity_range_none_when_both_zero(self, service):
+        """rec_cap=0, max_cap=0, parsed_range=None → None 반환 (허구 [1,1] 방지)
+
+        파서가 max_capacity=0을 반환하면 _save_to_db에서 FLAG로 올리지 않고 통과.
+        step 4에서 min_c=max(-1,1)=1, max_c=1 → [1,1] 이 생성되는 경로를 차단.
+        """
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            rec_cap=0,
+            max_cap=0,
+            base_cap=None,
+            extra_charge=None,
+        )
+        assert result is None
+
     # ============== TC: extra_charge + max_cap FLAG → [base_cap, base_cap] (P1-2) ==============
     def test_capacity_range_single_value_when_extra_charge_and_flag_max_cap(self, service):
         """extra_charge 유효 + base_cap 유효 + max_cap FLAG → [base_cap, base_cap]

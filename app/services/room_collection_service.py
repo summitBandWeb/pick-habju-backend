@@ -2191,6 +2191,12 @@ class RoomCollectionService:
             real_max = max(effective_max_cap, effective_base_cap) if effective_max_cap > 0 else effective_base_cap
             return [effective_base_cap, real_max]
 
+        # 3.5. 파서 기본값 sentinel: rec_cap=0, effective_max_cap=0 → 근거 없음, None 반환
+        # max_cap=0은 파서가 아무 값도 얻지 못했을 때의 기본값으로,
+        # step 4에서 [1, 1]을 생성하는 것은 FLAG 케이스와 동일한 허구 범위 문제.
+        if rec_cap == 0 and effective_max_cap == 0 and not parsed_range:
+            return None
+
         # 4. 추가 요금 없는 경우 (기본)
         # ±1 고정: rec_cap >= 9 시 ±2 분기는 max_cap에 걸려 단일값([x,x])이 되는 역효과가 있어 제거 (#258)
         delta = 1
