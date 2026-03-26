@@ -3,6 +3,7 @@ from datetime import datetime, date
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator, AliasChoices
 import logging
 from typing import List, Dict, Union, Any, Optional, ClassVar, Literal
+from app.constants import MANUAL_REVIEW_CAPACITY_FLAG as _MANUAL_REVIEW_CAPACITY_FLAG
 
 class HealthResponse(BaseModel):
     """Health Check Response Model"""
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class RoomDetail(BaseModel):
     """Room detail information (DB column mapping with branch join)"""
     model_config = ConfigDict(populate_by_name=True)
-    MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = 100
+    MANUAL_REVIEW_CAPACITY_FLAG: ClassVar[int] = _MANUAL_REVIEW_CAPACITY_FLAG
     BRANCH_FALLBACK_NAME: ClassVar[str] = "지점 정보 없음"
 
     # DB 컬럼명과 일치 (room 테이블 + branch(name) join)
@@ -131,14 +132,11 @@ class RoomDetail(BaseModel):
         ):
             self.recommendCapacityRange = None
 
-        # ③ [#257] 레거시 sentinel clamp(100→50) 잔재 및 상한 초과 방어 (실제 maxCapacity 기준)
+        # ③ 상한 초과 방어 (실제 maxCapacity 기준)
         if self.recommendCapacityRange and len(self.recommendCapacityRange) == 2:
             lo, hi = self.recommendCapacityRange
-            # [50,50]: MANUAL_REVIEW_FLAG(100)이 50으로 clamp된 레거시 산물
-            if lo == 50 and hi == 50:
-                self.recommendCapacityRange = None
             # 상한이 max_capacity 초과: max_capacity 기준으로 clamp, 하한 최솟값 1 보장
-            elif self.maxCapacity > 0 and hi > self.maxCapacity:
+            if self.maxCapacity > 0 and hi > self.maxCapacity:
                 self.recommendCapacityRange = [max(1, min(lo, self.maxCapacity)), self.maxCapacity]
 
         # [이슈 6] recommendCapacity(단일값) fallback 로직 제거.

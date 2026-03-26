@@ -15,6 +15,7 @@ from app.services.room_parser_service import RoomParserService
 from app.core.constants import PRIORITY_AREA_QUERIES
 from app.core.supabase_client import get_supabase_client
 from app.core.name_utils import normalize_name_token
+from app.constants import MANUAL_REVIEW_CAPACITY_FLAG as _MANUAL_REVIEW_CAPACITY_FLAG
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class RoomCollectionService:
     
     # Capacity value indicating parsing failure - flags for manual review
     # Rationale: 100명을 수용하는 합주실은 현실적으로 없으므로 수동 검토 필요 목적으로 식별 가능
-    MANUAL_REVIEW_FLAG = 100
+    # app.constants.MANUAL_REVIEW_CAPACITY_FLAG 와 동기화 (단일 선언)
+    MANUAL_REVIEW_FLAG = _MANUAL_REVIEW_CAPACITY_FLAG
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
     PRICE_MATCH_TOLERANCE = 1000
     # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
@@ -1128,6 +1130,7 @@ class RoomCollectionService:
                 "max_capacity": final_max_cap_int,
                 "recommend_capacity": final_rec_cap_int,
                 # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
+                # None 반환 시 Supabase 클라이언트가 NULL로 저장 (근거 없는 경우 의도적 NULL)
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range
                     or parsed.get("recommend_capacity_range")
@@ -2112,7 +2115,7 @@ class RoomCollectionService:
         max_cap: int,
         base_cap: Optional[int],
         extra_charge: Optional[int]
-    ) -> List[int]:
+    ) -> Optional[List[int]]:
         """추가 요금 유무에 따라 권장 인원 범위 계산
 
         Args:
@@ -2123,13 +2126,32 @@ class RoomCollectionService:
             extra_charge: 추가 요금 (원)
 
         Returns:
-            [min, max] 형태의 권장 인원 범위 리스트
+            [min, max] 형태의 권장 인원 범위 리스트. 근거 없으면 None.
 
         Rationale:
             1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
-            2. 추가 요금 발생 시 [base_cap, max_cap]
-            3. 추가 요금 없을 시 [rec_cap, rec_cap + 2] (최대 max_cap)
+            2. rec_cap >= FLAG → None (근거 없음, 허구 생성 금지)
+               - max_cap도 FLAG면 당연히 None
+               - rec_cap만 FLAG여도 step 4가 rec_cap 기반 계산을 하므로 None이 안전
+            3. 추가 요금 발생 시 [effective_base_cap, effective_max_cap]
+               단, base_cap이 FLAG면 effective_base_cap=None → step 4 fallback
+               max_cap이 FLAG면 effective_max_cap=0 → [base_cap, base_cap] 반환 (의도된 동작)
+            4. 추가 요금 없을 시 [rec_cap - 1, rec_cap + 1] (최대 effective_max_cap)
+
+        Examples:
+            rec=4, max=8           → [3, 5]
+            rec=4, max=FLAG        → [3, 5]  (상한 없음)
+            rec=1, max=FLAG        → [1, 2]
+            rec=FLAG, max=FLAG     → None
+            rec=FLAG, max=5        → None    (Precondition 위반, 방어적 처리)
+            base=6, extra=5000, max=8      → [6, 8]
+            base=6, extra=5000, max=FLAG   → [6, 6]  (max 불명, base=base)
         """
+        # NOTE: effective_max_cap은 step 1(parsed_range clamp)에서도 사용하므로
+        #       Fail-Fast(step 2) 이전에 계산한다.
+        # max_cap=0 은 FLAG와 동일하게 "미확인"으로 처리 → 상한 제약 없음
+        effective_max_cap = max_cap if 0 < max_cap < self.MANUAL_REVIEW_FLAG else 0
+
         # 1. 파싱된 범위 검증 후 우선 사용
         # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
         # NOTE: 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
@@ -2142,38 +2164,48 @@ class RoomCollectionService:
         ):
             # float → int 변환 및 합리적 범위로 clamp
             clamped_min = max(int(parsed_range[0]), 1)
-            clamped_max = min(int(parsed_range[1]), max_cap) if max_cap > 0 else int(parsed_range[1])
+            clamped_max = min(int(parsed_range[1]), effective_max_cap) if effective_max_cap > 0 else int(parsed_range[1])
             # clamp 후에도 min <= max 보장
             clamped_max = max(clamped_max, clamped_min)
             return [clamped_min, clamped_max]
 
-        # --- Sentinel 방어 ---
-        # NOTE: MANUAL_REVIEW_FLAG(100)이 rec_cap/max_cap/base_cap에 들어오면
-        #        [100, 102] 같은 비현실적 범위가 반환되므로 현실적 상한(50)으로 clamp
-        MAX_REALISTIC_CAP = 50
-        if max_cap >= self.MANUAL_REVIEW_FLAG:
-            max_cap = MAX_REALISTIC_CAP
+        # 2. rec_cap >= FLAG → 근거 없음, None 반환 (#264)
+        # rec_cap만 FLAG인 경우(Precondition 위반)도 방어적으로 None 반환
         if rec_cap >= self.MANUAL_REVIEW_FLAG:
-            rec_cap = MAX_REALISTIC_CAP
-        if base_cap and base_cap >= self.MANUAL_REVIEW_FLAG:
-            base_cap = MAX_REALISTIC_CAP
+            if max_cap < self.MANUAL_REVIEW_FLAG:
+                logger.warning(
+                    "[capacity_range] precondition violation: rec_cap=FLAG but max_cap=%d — returning None",
+                    max_cap,
+                )
+            return None
 
-        # 2. 추가 요금 있는 경우
-        if extra_charge and extra_charge > 0 and base_cap:
+        # base_cap FLAG 처리
+        # base_cap=FLAG 이면 effective_base_cap=None → step 3 조건 미충족 → step 4(rec_cap ±1) fallback
+        # extra_charge가 있더라도 기준 인원을 신뢰할 수 없으면 rec_cap 기반 추정이 차선책
+        effective_base_cap = base_cap if base_cap is not None and base_cap < self.MANUAL_REVIEW_FLAG else None
+
+        # 3. 추가 요금 있는 경우
+        if extra_charge and extra_charge > 0 and effective_base_cap:
             # min: base_cap, max: max_cap
             # 단 max_cap < base_cap인 비정상 데이터 방어
-            real_max = max(max_cap, base_cap)
-            return [base_cap, real_max]
-            
-        # 3. 추가 요금 없는 경우 (기본)
+            real_max = max(effective_max_cap, effective_base_cap) if effective_max_cap > 0 else effective_base_cap
+            return [effective_base_cap, real_max]
+
+        # 3.5. 파서 기본값 sentinel: rec_cap=0, effective_max_cap=0 → 근거 없음, None 반환
+        # max_cap=0은 파서가 아무 값도 얻지 못했을 때의 기본값으로,
+        # step 4에서 [1, 1]을 생성하는 것은 FLAG 케이스와 동일한 허구 범위 문제.
+        if rec_cap == 0 and effective_max_cap == 0 and not parsed_range:
+            return None
+
+        # 4. 추가 요금 없는 경우 (기본)
         # ±1 고정: rec_cap >= 9 시 ±2 분기는 max_cap에 걸려 단일값([x,x])이 되는 역효과가 있어 제거 (#258)
         delta = 1
         min_c = max(rec_cap - delta, 1)
-        max_c = min(rec_cap + delta, max_cap) if max_cap > 0 else rec_cap + delta
+        max_c = min(rec_cap + delta, effective_max_cap) if effective_max_cap > 0 else rec_cap + delta
 
         # min <= max 보장
         max_c = max(max_c, min_c)
-        
+
         return [min_c, max_c]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):

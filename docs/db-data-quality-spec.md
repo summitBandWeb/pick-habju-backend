@@ -283,8 +283,9 @@ SELECT count(*) FROM room WHERE name ~ '\[.*(특가|할인|이벤트|EVENT).*\]'
 SELECT count(*) FROM branch WHERE lat IS NULL OR lng IS NULL;
 
 -- 5) 인원수 논리 위반 (recommend_capacity_range 기준)
+-- recommend_capacity_range는 integer[] 타입 (1-indexed: [1]=하한, [2]=상한)
 SELECT count(*) FROM room
-WHERE upper(recommend_capacity_range) > max_capacity
+WHERE (recommend_capacity_range IS NOT NULL AND recommend_capacity_range[2] > max_capacity)
    OR max_capacity > 50
    OR max_capacity <= 0;
 
@@ -311,5 +312,6 @@ WHERE name ~* '레슨|lesson|수업|클래스|원데이|기타 대여|베이스 
 
 -- 12) recommend_capacity_range 하한이 상한보다 큰 경우
 SELECT count(*) FROM room
-WHERE lower(recommend_capacity_range) > upper(recommend_capacity_range);
+WHERE recommend_capacity_range IS NOT NULL
+  AND recommend_capacity_range[1] > recommend_capacity_range[2];
 ```
