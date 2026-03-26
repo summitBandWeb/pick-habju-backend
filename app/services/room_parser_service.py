@@ -55,7 +55,7 @@ class RoomParserService:
         if not parsed_range:
             parsed_range = range_from_name
         # rec_cap + max_cap이 둘 다 있는데 range가 없으면 합성 (신호 보존)
-        if rec_cap and max_cap and not parsed_range:
+        if rec_cap and max_cap and not parsed_range and rec_cap <= max_cap:
             parsed_range = [rec_cap, max_cap]
 
         base_cap = None

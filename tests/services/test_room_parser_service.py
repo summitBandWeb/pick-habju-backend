@@ -84,6 +84,19 @@ class TestParseWithRegex:
         assert result["clean_name"] == "C룸"
         assert result["max_capacity"] == 20
 
+    def test_range_synthesis_from_rec_and_max(self, parser):
+        """rec_cap + max_cap이 있는데 range가 없으면 [rec, max]로 합성 (#266)"""
+        result = parser._parse_with_regex("룸A", "정원 3인, 최대 10인")
+        assert result["max_capacity"] == 10
+        assert result["recommend_capacity_range"] == [3, 10]
+
+    def test_range_synthesis_skipped_when_inverted(self, parser):
+        """rec_cap > max_cap이면 합성하지 않음 (역방향 방어)"""
+        result = parser._parse_with_regex("룸A (정원 10명, 최대 8명)", "")
+        assert result["max_capacity"] == 8
+        # rec(10) > max(8) → 합성 안 됨
+        assert result["recommend_capacity_range"] is None
+
 
 class TestRuleBasedParsing:
     @pytest.fixture

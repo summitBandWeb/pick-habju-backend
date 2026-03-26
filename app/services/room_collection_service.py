@@ -1408,7 +1408,7 @@ class RoomCollectionService:
         if pair_match:
             rec = int(pair_match.group(1))
             max_cap = int(pair_match.group(2))
-            return max_cap, rec, [rec, max_cap]
+            return max_cap, rec, [rec, max_cap] if rec <= max_cap else None
 
         rec_cap: Optional[int] = None
         max_cap: Optional[int] = None
@@ -1432,7 +1432,7 @@ class RoomCollectionService:
             max_cap = int(max_match.group(1))
 
         # rec_cap + max_cap이 둘 다 있는데 range가 없으면 합성 (신호 보존)
-        if rec_cap and max_cap and not rec_range:
+        if rec_cap and max_cap and not rec_range and rec_cap <= max_cap:
             rec_range = [rec_cap, max_cap]
         return max_cap, rec_cap, rec_range
 
