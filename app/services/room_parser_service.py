@@ -54,8 +54,9 @@ class RoomParserService:
             rec_cap = rec_cap_from_name
         if not parsed_range:
             parsed_range = range_from_name
-        if max_cap and not rec_cap:
-            rec_cap = max_cap // 2 if max_cap > 4 else max_cap
+        # rec_cap + max_cap이 둘 다 있는데 range가 없으면 합성 (신호 보존)
+        if rec_cap and max_cap and not parsed_range:
+            parsed_range = [rec_cap, max_cap]
 
         base_cap = None
         extra_charge = None
@@ -144,7 +145,6 @@ class RoomParserService:
             "clean_name": clean_name,
             "day_type": day_type,
             "max_capacity": max_cap,
-            "recommend_capacity": rec_cap,
             "recommend_capacity_range": rec_range,
             "base_capacity": base_cap,
             "extra_charge": extra_charge,

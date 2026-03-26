@@ -141,7 +141,7 @@ class TestCollectByIdFlow:
         assert room1_data["name"] in ("A룸", "[평일] A룸")
         assert room1_data["price_per_hour"] == 15000
         assert room1_data["max_capacity"] == 6
-        assert room1_data["recommend_capacity"] == 4
+        assert room1_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
         assert room1_data["base_capacity"] == 4
         assert room1_data["extra_charge"] == 3000
         assert len(room1_data["image_urls"]) == 2

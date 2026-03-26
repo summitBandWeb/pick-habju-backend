@@ -155,7 +155,6 @@ class TestMergeDayVariantRooms:
         _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
 
         assert merged_parsed["wd-1"]["max_capacity"] == 8
-        assert merged_parsed["wd-1"]["recommend_capacity"] == 5
 
     def test_recommend_capacity_none_not_overwritten(self, service):
         """주말 recommend_capacity가 None이면 평일 값 유지"""

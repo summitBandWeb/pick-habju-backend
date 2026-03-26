@@ -53,7 +53,6 @@ router = APIRouter(prefix="/api/rooms/availability", tags=["예약 가능 여부
                                             "estimated_price": 30000,
                                             "image_urls": ["https://example.com/ground_a_room.jpg"],
                                             "max_capacity": 10,
-                                            "recommend_capacity": 5,
                                             "base_capacity": 4,
                                             "extra_charge": 2000,
                                             "min_capacity": 1,

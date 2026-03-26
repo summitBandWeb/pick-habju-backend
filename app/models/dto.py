@@ -299,7 +299,6 @@ class RoomResponse(BaseModel):
     estimated_price: Optional[int] = None
     image_urls: List[str]
     max_capacity: int
-    recommend_capacity: Optional[int] = None
     recommend_capacity_range: Optional[List[int]] = None
     base_capacity: Optional[int] = None
     extra_charge: Optional[int] = None

@@ -22,7 +22,6 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("화이트룸 (주말)", "4~6인 권장, 최대 8인")
         assert result["clean_name"] == "화이트룸"
         assert result["day_type"] == "weekend"
-        assert result["recommend_capacity"] == 5
         assert result["max_capacity"] == 8
         assert result["recommend_capacity_range"] == [4, 6]
 
@@ -50,7 +49,7 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("블랙룸 (정원 13명, 최대 18명)", "")
         assert result["clean_name"] == "블랙룸"
         assert result["max_capacity"] == 18
-        assert result["recommend_capacity"] == 13
+        assert result["recommend_capacity_range"] == [13, 18]
 
     def test_paren_dash_capacity(self, parser):
         result = parser._parse_with_regex("R룸 (-15명)", "")
@@ -65,7 +64,7 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("[개강특가] 블랙룸 (정원 20명, 최대 30명)", "")
         assert result["clean_name"] == "블랙룸"
         assert result["max_capacity"] == 30
-        assert result["recommend_capacity"] == 20
+        assert result["recommend_capacity_range"] == [20, 30]
 
     def test_clean_name_strips_reservation_parenthetical_note(self, parser):
         result = parser._parse_with_regex("Room A (예약 시 오전, 오후 확인)", "")

@@ -125,7 +125,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 10
-        assert upsert_data["recommend_capacity"] == 8
+        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
     
     # ============== TC13: 새 값=5, 기존 값=10 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -145,7 +145,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 5
-        assert upsert_data["recommend_capacity"] == 4
+        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
     
     # ============== TC14: 새 값=8, 기존 값=1 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -165,7 +165,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 8
-        assert upsert_data["recommend_capacity"] == 6
+        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
     
     # ============== TC15: 기존 값 없음, 새 값=1 → 새 값 사용 ==============
     @pytest.mark.asyncio
@@ -183,7 +183,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
         
         assert upsert_data["max_capacity"] == 1
-        assert upsert_data["recommend_capacity"] == 1
+        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
     
     # ============== TC: 가격 보존 로직 ==============
     @pytest.mark.asyncio
@@ -375,7 +375,6 @@ class TestV2NewFields:
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=100,
             max_cap=100,
             base_cap=None,
             extra_charge=None,
@@ -384,20 +383,19 @@ class TestV2NewFields:
 
     # ============== TC: rec_cap 유효, max_cap FLAG → range 정상 계산 (#264) ==============
     def test_capacity_range_computed_without_flag_max_cap(self, service):
-        """rec_cap은 유효하나 max_cap이 FLAG(100)인 경우, 상한 제약 없이 range 계산
+        """max_cap이 FLAG(100)인 경우 effective_max_cap=0 → None
 
         AS-IS: FLAG max_cap을 50으로 clamp 후 delta 적용
-        TO-BE: FLAG max_cap은 상한 제약 없음으로 처리 → [rec-1, rec+1]
+        TO-BE: rec_cap 파라미터 제거됨. max_cap=FLAG → effective=0 → None
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=4,
             max_cap=100,
             base_cap=None,
             extra_charge=None,
         )
-        # rec=4, max_cap=FLAG(상한 없음) → [3, 5]
-        assert result == [3, 5]
+        # max_cap=FLAG → effective_max_cap=0 → step 3 → None
+        assert result is None
 
     # ============== TC: rec_cap FLAG, max_cap 유효 → Precondition 위반 방어 (#264) ==============
     def test_capacity_range_none_when_rec_cap_flag_only(self, service):
@@ -409,12 +407,12 @@ class TestV2NewFields:
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=100,    # FLAG
-            max_cap=5,      # 유효값 — Precondition 위반
+            max_cap=5,
             base_cap=None,
             extra_charge=None,
         )
-        assert result is None
+        # rec_cap 파라미터 제거됨. max_cap=5 → step 4: 5//2=2, ±1 → [1, 3]
+        assert result == [1, 3]
 
     # ============== TC: rec_cap=0, max_cap=0 → [1,1] 허구 범위 생성 방지 ==============
     def test_capacity_range_none_when_both_zero(self, service):
@@ -425,7 +423,6 @@ class TestV2NewFields:
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=0,
             max_cap=0,
             base_cap=None,
             extra_charge=None,
@@ -441,7 +438,6 @@ class TestV2NewFields:
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=4,
             max_cap=100,    # FLAG
             base_cap=6,
             extra_charge=5000,
@@ -460,12 +456,11 @@ class TestV2NewFields:
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
-            rec_cap=4,
             max_cap=8,
             base_cap=100,       # FLAG
             extra_charge=5000,
         )
-        # base_cap=FLAG → effective_base_cap=None → step 3 스킵 → [3, 5]
+        # base_cap=FLAG → effective_base_cap=None → step 2 스킵 → step 4: 8//2=4, ±1 → [3, 5]
         assert result == [3, 5]
 
     # ============== TC: range 없으면 ±1 Fallback ==============
@@ -495,8 +490,8 @@ class TestV2NewFields:
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
 
-        # rec=4 (<9) → ±1 → [3, 5]
-        assert room_data["recommend_capacity_range"] == [3, 5]
+        # rec_cap 제거됨 → step 4: max=6, 6//2=3, ±1 → [2, 4]
+        assert room_data["recommend_capacity_range"] == [2, 4]
     
     # ============== TC: display_name 저장 ==============
     @pytest.mark.asyncio
