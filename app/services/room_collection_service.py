@@ -1928,7 +1928,8 @@ class RoomCollectionService:
         Examples:
             parsed=[3,8], max=10      → [3, 10]
             base=6, extra=5000, max=8  → [6, 8]
-            max=8                      → [3, 5]  (8//2=4, ±1)
+            max=8                      → [4, 8]  (8//2=4, max 포함)
+            max=4                      → [2, 4]
             max=FLAG                   → None
             max=0                      → None
         """
@@ -1957,14 +1958,9 @@ class RoomCollectionService:
         if effective_max_cap == 0:
             return None
 
-        # 4. max_cap 기반 역산 (heuristic, 개선 예정 #273)
-        inferred_rec = effective_max_cap // 2
-        delta = 1
-        min_c = max(inferred_rec - delta, 1)
-        max_c = min(inferred_rec + delta, effective_max_cap)
-        max_c = max(max_c, min_c)
-
-        return [min_c, max_c]
+        # 4. max_cap 기반 역산: [max//2, max] (PM 요청: 상한에 max 포함, 개선 예정 #273)
+        min_c = max(effective_max_cap // 2, 1)
+        return [min_c, effective_max_cap]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """

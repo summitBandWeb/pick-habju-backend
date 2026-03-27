@@ -391,12 +391,11 @@ class TestV2NewFields:
         # max_cap=FLAG → effective_max_cap=0 → step 3 → None
         assert result is None
 
-    # ============== TC: 소형 룸 max_cap=5 → max//2 역산 (#266) ==============
-    def test_capacity_range_small_room_max_heuristic(self, service):
-        """max_cap만 있는 소형 룸 → max//2 ±1 역산
+    # ============== TC: max_cap=5 → [max//2, max] 역산 (#266) ==============
+    def test_capacity_range_max_heuristic(self, service):
+        """max_cap만 있는 경우 → [max//2, max] 역산 (PM 요청: 상한에 max 포함)
 
-        rec_cap 파라미터 제거(#266) 후 max_cap 기반 역산.
-        max=5 → inferred_rec=2 → [1, 3]
+        max=5 → 5//2=2 → [2, 5]
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
@@ -404,7 +403,7 @@ class TestV2NewFields:
             base_cap=None,
             extra_charge=None,
         )
-        assert result == [1, 3]
+        assert result == [2, 5]
 
     # ============== TC: max_cap=0 → None (허구 [1,1] 방지) ==============
     def test_capacity_range_none_when_max_zero(self, service):
@@ -439,7 +438,7 @@ class TestV2NewFields:
     # ============== TC: extra_charge 있으나 base_cap FLAG → max//2 역산 fallback (#266) ==============
     def test_capacity_range_fallback_when_extra_charge_but_flag_base_cap(self, service):
         """extra_charge가 있어도 base_cap=FLAG → effective_base_cap=None
-        → step 2 스킵 → max//2 ±1 역산 fallback
+        → step 2 스킵 → [max//2, max] 역산 fallback
 
         허구 base_cap으로 범위를 만들지 않는다.
         """
@@ -449,8 +448,8 @@ class TestV2NewFields:
             base_cap=100,       # FLAG
             extra_charge=5000,
         )
-        # base_cap=FLAG → effective_base_cap=None → step 2 스킵 → step 4: 8//2=4, ±1 → [3, 5]
-        assert result == [3, 5]
+        # base_cap=FLAG → effective_base_cap=None → step 2 스킵 → step 4: [8//2, 8] → [4, 8]
+        assert result == [4, 8]
 
     # ============== TC: range 없으면 ±1 Fallback ==============
     @pytest.mark.asyncio
@@ -479,24 +478,19 @@ class TestV2NewFields:
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
 
-        # rec_cap 제거됨 → step 4: max=6, 6//2=3, ±1 → [2, 4]
-        assert room_data["recommend_capacity_range"] == [2, 4]
+        # rec_cap 제거됨 → step 4: [max//2, max] = [3, 6]
+        assert room_data["recommend_capacity_range"] == [3, 6]
     
-    # ============== TC: max_cap=4 소형 룸 경계값 (#266, #273) ==============
+    # ============== TC: max_cap=4 소형 룸 경계값 (#266) ==============
     def test_capacity_range_boundary_max_4(self, service):
-        """max_cap=4 경계값 → inferred_rec=2 → [1, 3]
-
-        구 동작: rec_cap=max_cap(≤4) → [3, 4]
-        신 동작: max//2=2, ±1 → [1, 3]
-        경계값 변경 인지용 테스트. 개선은 #273에서 진행.
-        """
+        """max_cap=4 경계값 → [max//2, max] = [2, 4] (PM 요청: max 포함)"""
         result = service._calculate_capacity_range(
             parsed_range=None,
             max_cap=4,
             base_cap=None,
             extra_charge=None,
         )
-        assert result == [1, 3]
+        assert result == [2, 4]
 
     # ============== TC: 역방향 범위 입력 → 합성 차단 ==============
     def test_capacity_range_inverted_parsed_range_rejected(self, service):
@@ -507,8 +501,8 @@ class TestV2NewFields:
             base_cap=None,
             extra_charge=None,
         )
-        # parsed_range[0] > parsed_range[1] → step 1 거부 → step 4: 8//2=4, ±1 → [3, 5]
-        assert result == [3, 5]
+        # parsed_range[0] > parsed_range[1] → step 1 거부 → step 4: [8//2, 8] → [4, 8]
+        assert result == [4, 8]
 
     # ============== TC: display_name 저장 ==============
     @pytest.mark.asyncio
