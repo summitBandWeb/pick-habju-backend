@@ -155,8 +155,8 @@ class TestMergeDayVariantRooms:
 
         assert merged_parsed["wd-1"]["max_capacity"] == 8
 
-    def test_recommend_capacity_none_not_overwritten(self, service):
-        """주말 recommend_capacity가 None이면 평일 값 유지"""
+    def test_recommend_capacity_range_preserved_when_weekend_none(self, service):
+        """주말 recommend_capacity_range가 None이면 평일 값 유지"""
         rooms = [
             _room("wd-1", "[평일 낮] 1번룸", price=10000),
             _room("we-1", "[주말] 1번룸", price=10000),

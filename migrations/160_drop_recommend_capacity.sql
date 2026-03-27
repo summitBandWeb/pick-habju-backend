@@ -26,6 +26,7 @@
 --     COUNT(*) FILTER (WHERE recommend_capacity = 1) AS default_1
 -- FROM room;
 -- 기대값: legacy_heuristic = 0 (PR #272 배포 후 재크롤링 완료 시)
+-- NOTE: legacy_heuristic > 0이어도 마이그레이션 실행 자체는 안전함 (데이터 의미만 소실)
 
 
 BEGIN;
