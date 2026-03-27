@@ -32,71 +32,8 @@ class RoomCollectionService:
     # app.constants.MANUAL_REVIEW_CAPACITY_FLAG 와 동기화 (단일 선언)
     MANUAL_REVIEW_FLAG = _MANUAL_REVIEW_CAPACITY_FLAG
     MAX_BUSINESS_DESC_CHARS = int(os.getenv("MAX_BUSINESS_DESC_CHARS", "1200"))
-    PRICE_MATCH_TOLERANCE = 1000
     # 시간당 최소 가격 (원). 개인연습실(3,000~4,999원대) 자연 탈락 목적.
     MIN_REHEARSAL_PRICE = 5000
-    # Global fallback when room-level basic capacity info is missing.
-    # Rule from ops:
-    # - 10,000~14,999 KRW -> 4~5 people
-    # - 15,000~19,999 KRW -> 7~8 people
-    # - 20,000+ KRW -> 10+ people
-    # max_capacity 규칙: recommend_range 상한 + 3 이상
-    # recommend_capacity_range: 모든 rec_cap에 대해 ±1 고정 (delta=1, #258)
-    PRICE_BAND_CAPACITY_DEFAULTS: List[Dict[str, Any]] = [
-        {
-            "name": "5k_10k",
-            "min_price": 5000,
-            "max_price": 9999,
-            "max_capacity": 6,
-            "recommend_capacity": 3,
-            "recommend_range": [2, 4],
-        },
-        {
-            "name": "10k_15k",
-            "min_price": 10000,
-            "max_price": 14999,
-            "max_capacity": 8,
-            "recommend_capacity": 4,
-            "recommend_range": [3, 5],
-        },
-        {
-            "name": "15k_20k",
-            "min_price": 15000,
-            "max_price": 19999,
-            "max_capacity": 11,
-            "recommend_capacity": 7,
-            "recommend_range": [6, 8],
-        },
-        {
-            "name": "20k_plus",
-            "min_price": 20000,
-            "max_price": None,  # open upper bound
-            "max_capacity": 15,
-            "recommend_capacity": 10,
-            "recommend_range": [8, 12],
-        },
-    ]
-    PRICE_CAPACITY_RULES: Dict[str, List[Dict[str, Any]]] = {
-        # Groove sadang (manual baseline)
-        "sadang": [
-            {"price": 8000, "max_capacity": 4, "recommend_capacity": 2, "recommend_range": [1, 2]},
-            {"price": 10000, "max_capacity": 6, "recommend_capacity": 3, "recommend_range": [1, 3]},
-        ],
-        # Biju rehearsal rooms (manual baseline)
-        "522011": [
-            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [4, 6]},
-        ],
-        "706924": [
-            {"price": 12000, "max_capacity": 8, "recommend_capacity": 4, "recommend_range": [3, 5]},
-        ],
-        "917236": [
-            {"price": 20000, "max_capacity": 12, "recommend_capacity": 6, "recommend_range": [4, 6]},
-        ],
-        # Junsound sadang (manual baseline)
-        "1384809": [
-            {"price": 15000, "max_capacity": 10, "recommend_capacity": 5, "recommend_range": [3, 5]},
-        ],
-    }
     REHEARSAL_KEYWORDS: Tuple[str, ...] = (
         "합주실",
         "합주",
@@ -984,65 +921,41 @@ class RoomCollectionService:
             images = room.get("bizItemResources", [])
             image_urls = [img["resourceUrl"] for img in images] if images else []
 
-            # New Values (MANUAL_REVIEW_FLAG = 100, flags for manual review if parsing fails)
-            # Priority for capacity:
-            #   1) High-confidence text patterns in room name/desc
-            #   2) Parser output
-            #   3) Manual review flag
-            text_max_cap, text_rec_cap, text_rec_range = self._extract_capacity_text_signals(room)
+            # Capacity 우선순위: 1) 텍스트 시그널 2) 파서 출력 3) None (파싱 실패)
+            text_max_cap, _, text_rec_range = self._extract_capacity_text_signals(room)
+
+            # text signal을 parsed_results에 동기화 (_export_unresolved 오탐 방지)
+            if text_max_cap is not None or text_rec_range is not None:
+                parsed = dict(parsed)
+                if text_max_cap is not None:
+                    parsed["max_capacity"] = text_max_cap
+                if text_rec_range is not None:
+                    parsed["recommend_capacity_range"] = text_rec_range
+                parsed_results[rid] = parsed
 
             new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
-            if new_max_cap is None:
-                new_max_cap = self.MANUAL_REVIEW_FLAG
-                
-            # HACK: [이슈 6 기술부채] recommend_capacity(단일값) 레거시.
-            # DTO에서는 제거됐으나 DB 컬럼과 _calculate_capacity_range 의존성 때문에 upsert 유지.
-            # 향후 recommend_capacity_range로 완전히 대체 시 이 컬럼 제거 예정.
-            new_rec_cap = text_rec_cap if text_rec_cap is not None else parsed.get("recommend_capacity")
-            if new_rec_cap is None and new_max_cap != self.MANUAL_REVIEW_FLAG:
-                new_rec_cap = new_max_cap // 2 if new_max_cap > 4 else new_max_cap
-            if new_rec_cap is None:
-                new_rec_cap = self.MANUAL_REVIEW_FLAG
                 
             new_price = self._extract_price(room)
-            price_inferred = self._infer_capacity_from_price(
-                business_id=business_id,
-                room_name=room.get("name"),
-                price_per_hour=new_price,
-            )
             new_price_config = parsed.get("price_config")
 
             # [Logic] Preserve existing valid values if new ones are defaults (0 or 1)
             final_max_cap = new_max_cap
-            final_rec_cap = new_rec_cap
             final_price = new_price
             final_price_config = new_price_config
 
             if existing:
                 existing_max = existing.get("max_capacity", 0)
-                existing_rec = existing.get("recommend_capacity", 0)
 
-                # [Logic] 기존 값이 유효하고(>1), 새 값이 기본값(1)이거나 수동검토플래그(100)인 경우 기존 값 보존
-                # 단, 기존 값 자체가 100인 경우는 제외
-                if (new_max_cap <= 1 or new_max_cap == self.MANUAL_REVIEW_FLAG) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
+                # 파싱 실패(None) 또는 기본값(≤1)이면 기존 유효값 보존
+                # 단, 기존 값이 FLAG(100)이면 보존하지 않음
+                if (final_max_cap is None or final_max_cap <= 1) and existing_max > 1 and existing_max != self.MANUAL_REVIEW_FLAG:
                     final_max_cap = existing_max
-                
-                if (new_rec_cap <= 1 or new_rec_cap == self.MANUAL_REVIEW_FLAG) and existing_rec > 1 and existing_rec != self.MANUAL_REVIEW_FLAG:
-                    final_rec_cap = existing_rec
 
                 # If new price is 0/None but existing is valid, keep existing
                 # Note: self._extract_price returns None if missing, which is not > 0.
                 existing_price = existing.get("price_per_hour")
                 if (not new_price or new_price == 0) and existing_price and existing_price > 0:
                     final_price = existing_price
-
-            price_inferred_applied = False
-            if final_max_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
-                final_max_cap = price_inferred["max_capacity"]
-                price_inferred_applied = True
-            if final_rec_cap == self.MANUAL_REVIEW_FLAG and price_inferred:
-                final_rec_cap = price_inferred["recommend_capacity"]
-                price_inferred_applied = True
 
             # Preserve existing JSON values unless parser explicitly provides replacements.
             existing_price_config = existing.get("price_config", []) if existing else []
@@ -1087,24 +1000,10 @@ class RoomCollectionService:
             else:
                 final_requires_call = existing_requires_call
 
-            # Room Data
+            # Room Data — None이면 FLAG(100) 저장 (DB NOT NULL 제약)
             final_max_cap_int = self._coerce_int(final_max_cap)
             if final_max_cap_int is None:
                 final_max_cap_int = self.MANUAL_REVIEW_FLAG
-
-            final_rec_cap_int = self._coerce_int(final_rec_cap)
-            if final_rec_cap_int is None:
-                final_rec_cap_int = (
-                    final_max_cap_int // 2 if final_max_cap_int != self.MANUAL_REVIEW_FLAG else self.MANUAL_REVIEW_FLAG
-                )
-
-            # DB 제약조건 보정: recommend_capacity <= max_capacity
-            if (
-                final_rec_cap_int != self.MANUAL_REVIEW_FLAG
-                and final_max_cap_int != self.MANUAL_REVIEW_FLAG
-                and final_rec_cap_int > final_max_cap_int
-            ):
-                final_rec_cap_int = final_max_cap_int
 
             final_base_cap_int = self._coerce_int(final_base_cap)
             final_extra_charge_int = self._coerce_int(final_extra_charge)
@@ -1128,21 +1027,12 @@ class RoomCollectionService:
                 "price_per_hour": final_price_int,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
-                "recommend_capacity": final_rec_cap_int,
-                # [v2.0.0] 신규 필드: 권장 인원 범위 및 동적 가격 정책
-                # None 반환 시 Supabase 클라이언트가 NULL로 저장 (근거 없는 경우 의도적 NULL)
+                "recommend_capacity": min(final_max_cap_int, self.MANUAL_REVIEW_FLAG),  # CHECK(max>=rec) 준수, M5에서 드롭 (#268)
                 "recommend_capacity_range": self._calculate_capacity_range(
-                    text_rec_range
-                    or parsed.get("recommend_capacity_range")
-                    or (
-                        price_inferred.get("recommend_range")
-                        if price_inferred and price_inferred_applied
-                        else None
-                    ),
-                    final_rec_cap_int,
+                    text_rec_range or parsed.get("recommend_capacity_range"),
                     final_max_cap_int,
                     final_base_cap_int,
-                    final_extra_charge_int
+                    final_extra_charge_int,
                 ),
                 "price_config": final_price_config,
                 "base_capacity": final_base_cap_int,
@@ -1156,94 +1046,6 @@ class RoomCollectionService:
             self._upsert_room_with_schema_fallback(room_data)
 
         return True
-
-    def _infer_capacity_from_price(
-        self,
-        business_id: Optional[str],
-        room_name: Optional[str],
-        price_per_hour: Optional[int],
-    ) -> Optional[Dict[str, Any]]:
-        """Infer capacity using curated per-business price rules."""
-        if not business_id or not isinstance(price_per_hour, int) or price_per_hour <= 0:
-            return None
-
-        rules = self.PRICE_CAPACITY_RULES.get(str(business_id))
-        if rules:
-            best_rule: Optional[Dict[str, Any]] = None
-            best_gap: Optional[int] = None
-
-            for rule in rules:
-                rule_price = rule.get("price")
-                if not isinstance(rule_price, int):
-                    continue
-                gap = abs(rule_price - price_per_hour)
-                if gap > self.PRICE_MATCH_TOLERANCE:
-                    continue
-                if best_gap is None or gap < best_gap:
-                    best_gap = gap
-                    best_rule = rule
-
-            if best_rule:
-                logger.info(
-                    "Price-based capacity inference applied: business_id=%s room=%s price=%s rule_price=%s max=%s",
-                    business_id,
-                    room_name or "",
-                    price_per_hour,
-                    best_rule.get("price"),
-                    best_rule.get("max_capacity"),
-                )
-                return {
-                    "max_capacity": best_rule.get("max_capacity"),
-                    "recommend_capacity": best_rule.get("recommend_capacity"),
-                    "recommend_range": best_rule.get("recommend_range"),
-                }
-
-        # Global fallback by price band when no business-specific rule matched.
-        for band_rule in self.PRICE_BAND_CAPACITY_DEFAULTS:
-            band_name = band_rule.get("name")
-            min_price = band_rule.get("min_price")
-            max_price = band_rule.get("max_price")
-            default_max = band_rule.get("max_capacity")
-            default_rec = band_rule.get("recommend_capacity")
-            default_range = band_rule.get("recommend_range")
-
-            if not isinstance(min_price, int) or not isinstance(default_max, int):
-                continue
-            if max_price is not None and not isinstance(max_price, int):
-                continue
-            if price_per_hour < min_price:
-                continue
-            if max_price is not None and price_per_hour > max_price:
-                continue
-
-            if not isinstance(default_rec, int):
-                default_rec = default_max // 2 if default_max > 4 else default_max
-            if not (
-                isinstance(default_range, list)
-                and len(default_range) == 2
-                and all(isinstance(v, int) for v in default_range)
-            ):
-                delta = 1  # ±1 고정 (rec_cap >= 9 → ±2 분기 제거, #258)
-                default_range = [max(default_rec - delta, 1), min(default_rec + delta, default_max)]
-
-            rec_cap = default_rec
-            rec_range = default_range
-
-            logger.info(
-                "Price-band fallback inference applied: business_id=%s room=%s price=%s band=%s max=%s",
-                business_id,
-                room_name or "",
-                price_per_hour,
-                band_name,
-                default_max,
-            )
-            return {
-                "max_capacity": default_max,
-                "recommend_capacity": rec_cap,
-                "recommend_range": rec_range,
-            }
-
-        return None
 
     def _upsert_room_with_schema_fallback(self, room_data: Dict[str, Any]) -> None:
         """Upsert room row and retry if payload contains unknown columns.
@@ -1615,7 +1417,7 @@ class RoomCollectionService:
         if pair_match:
             rec = int(pair_match.group(1))
             max_cap = int(pair_match.group(2))
-            return max_cap, rec, None
+            return max_cap, rec, [rec, max_cap] if rec <= max_cap else None
 
         rec_cap: Optional[int] = None
         max_cap: Optional[int] = None
@@ -1638,6 +1440,9 @@ class RoomCollectionService:
         if max_match:
             max_cap = int(max_match.group(1))
 
+        # rec_cap + max_cap이 둘 다 있는데 range가 없으면 합성 (신호 보존)
+        if rec_cap and max_cap and not rec_range and rec_cap <= max_cap:
+            rec_range = [rec_cap, max_cap]
         return max_cap, rec_cap, rec_range
 
     def _filter_rooms_for_regex_parsing(
@@ -2037,9 +1842,6 @@ class RoomCollectionService:
                 we_max = secondary_parsed.get("max_capacity")
                 if isinstance(we_max, int) and isinstance(wd_max, int) and we_max > wd_max:
                     primary_parsed["max_capacity"] = we_max
-                    we_rec = secondary_parsed.get("recommend_capacity")
-                    if we_rec is not None:
-                        primary_parsed["recommend_capacity"] = we_rec
                     we_range = secondary_parsed.get("recommend_capacity_range")
                     if we_range is not None:
                         primary_parsed["recommend_capacity_range"] = we_range
@@ -2111,16 +1913,14 @@ class RoomCollectionService:
     def _calculate_capacity_range(
         self,
         parsed_range: Optional[List[int]],
-        rec_cap: int,
         max_cap: int,
         base_cap: Optional[int],
         extra_charge: Optional[int]
     ) -> Optional[List[int]]:
-        """추가 요금 유무에 따라 권장 인원 범위 계산
+        """권장 인원 범위 계산. 근거 불충분 시 None 반환 (Fail Fast).
 
         Args:
             parsed_range: 파서가 파싱한 범위 ([min, max] 형태)
-            rec_cap: 권장 인원 수
             max_cap: 최대 인원 수
             base_cap: 기준 인원 수 (추가 요금 계산 기준)
             extra_charge: 추가 요금 (원)
@@ -2128,33 +1928,23 @@ class RoomCollectionService:
         Returns:
             [min, max] 형태의 권장 인원 범위 리스트. 근거 없으면 None.
 
-        Rationale:
-            1. 파싱된 범위가 유효하면 우선 사용 (단 합리적 범위로 clamp)
-            2. rec_cap >= FLAG → None (근거 없음, 허구 생성 금지)
-               - max_cap도 FLAG면 당연히 None
-               - rec_cap만 FLAG여도 step 4가 rec_cap 기반 계산을 하므로 None이 안전
-            3. 추가 요금 발생 시 [effective_base_cap, effective_max_cap]
-               단, base_cap이 FLAG면 effective_base_cap=None → step 4 fallback
-               max_cap이 FLAG면 effective_max_cap=0 → [base_cap, base_cap] 반환 (의도된 동작)
-            4. 추가 요금 없을 시 [rec_cap - 1, rec_cap + 1] (최대 effective_max_cap)
+        Policy (#264, #266):
+            1. 파싱된 범위가 유효하면 우선 사용 (clamp)
+            2. 추가 요금 + base_cap → [base_cap, max_cap]
+            3. max_cap만 있으면 max//2 ±1 역산 (개선 예정 #273)
+            4. 근거 없으면 None
 
         Examples:
-            rec=4, max=8           → [3, 5]
-            rec=4, max=FLAG        → [3, 5]  (상한 없음)
-            rec=1, max=FLAG        → [1, 2]
-            rec=FLAG, max=FLAG     → None
-            rec=FLAG, max=5        → None    (Precondition 위반, 방어적 처리)
-            base=6, extra=5000, max=8      → [6, 8]
-            base=6, extra=5000, max=FLAG   → [6, 6]  (max 불명, base=base)
+            parsed=[3,8], max=10      → [3, 10]
+            base=6, extra=5000, max=8  → [6, 8]
+            max=8                      → [4, 8]  (8//2=4, max 포함)
+            max=4                      → [2, 4]
+            max=FLAG                   → None
+            max=0                      → None
         """
-        # NOTE: effective_max_cap은 step 1(parsed_range clamp)에서도 사용하므로
-        #       Fail-Fast(step 2) 이전에 계산한다.
-        # max_cap=0 은 FLAG와 동일하게 "미확인"으로 처리 → 상한 제약 없음
         effective_max_cap = max_cap if 0 < max_cap < self.MANUAL_REVIEW_FLAG else 0
 
         # 1. 파싱된 범위 검증 후 우선 사용
-        # 조건: 2개 숫자(int 또는 float), min <= max, 합주실 현실적 범위(1~50명 이내)
-        # NOTE: 파서가 float(예: 4.0)을 반환할 수 있으므로 int/float 모두 허용
         if (
             isinstance(parsed_range, list)
             and len(parsed_range) == 2
@@ -2162,51 +1952,26 @@ class RoomCollectionService:
             and parsed_range[0] <= parsed_range[1]
             and 1 <= parsed_range[0] and parsed_range[1] <= 50
         ):
-            # float → int 변환 및 합리적 범위로 clamp
             clamped_min = max(int(parsed_range[0]), 1)
-            clamped_max = min(int(parsed_range[1]), effective_max_cap) if effective_max_cap > 0 else int(parsed_range[1])
-            # clamp 후에도 min <= max 보장
-            clamped_max = max(clamped_max, clamped_min)
-            return [clamped_min, clamped_max]
+            if effective_max_cap > 0:
+                if clamped_min > effective_max_cap:
+                    return [effective_max_cap, effective_max_cap]
+                return [clamped_min, effective_max_cap]
+            return [clamped_min, int(parsed_range[1])]
 
-        # 2. rec_cap >= FLAG → 근거 없음, None 반환 (#264)
-        # rec_cap만 FLAG인 경우(Precondition 위반)도 방어적으로 None 반환
-        if rec_cap >= self.MANUAL_REVIEW_FLAG:
-            if max_cap < self.MANUAL_REVIEW_FLAG:
-                logger.warning(
-                    "[capacity_range] precondition violation: rec_cap=FLAG but max_cap=%d — returning None",
-                    max_cap,
-                )
-            return None
-
-        # base_cap FLAG 처리
-        # base_cap=FLAG 이면 effective_base_cap=None → step 3 조건 미충족 → step 4(rec_cap ±1) fallback
-        # extra_charge가 있더라도 기준 인원을 신뢰할 수 없으면 rec_cap 기반 추정이 차선책
+        # 2. 추가 요금 있는 경우: [base_cap, max_cap]
         effective_base_cap = base_cap if base_cap is not None and base_cap < self.MANUAL_REVIEW_FLAG else None
-
-        # 3. 추가 요금 있는 경우
         if extra_charge and extra_charge > 0 and effective_base_cap:
-            # min: base_cap, max: max_cap
-            # 단 max_cap < base_cap인 비정상 데이터 방어
             real_max = max(effective_max_cap, effective_base_cap) if effective_max_cap > 0 else effective_base_cap
             return [effective_base_cap, real_max]
 
-        # 3.5. 파서 기본값 sentinel: rec_cap=0, effective_max_cap=0 → 근거 없음, None 반환
-        # max_cap=0은 파서가 아무 값도 얻지 못했을 때의 기본값으로,
-        # step 4에서 [1, 1]을 생성하는 것은 FLAG 케이스와 동일한 허구 범위 문제.
-        if rec_cap == 0 and effective_max_cap == 0 and not parsed_range:
+        # 3. max 정보 없음 → 근거 없음, None 반환
+        if effective_max_cap == 0:
             return None
 
-        # 4. 추가 요금 없는 경우 (기본)
-        # ±1 고정: rec_cap >= 9 시 ±2 분기는 max_cap에 걸려 단일값([x,x])이 되는 역효과가 있어 제거 (#258)
-        delta = 1
-        min_c = max(rec_cap - delta, 1)
-        max_c = min(rec_cap + delta, effective_max_cap) if effective_max_cap > 0 else rec_cap + delta
-
-        # min <= max 보장
-        max_c = max(max_c, min_c)
-
-        return [min_c, max_c]
+        # 4. max_cap 기반 역산: [max//2, max] (PM 요청: 상한에 max 포함, 개선 예정 #273)
+        min_c = max(effective_max_cap // 2, 1)
+        return [min_c, effective_max_cap]
 
     async def _export_unresolved(self, business: Dict, rooms: List[Dict], parsed_results: Dict):
         """

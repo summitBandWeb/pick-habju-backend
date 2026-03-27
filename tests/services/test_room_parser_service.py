@@ -22,7 +22,6 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("화이트룸 (주말)", "4~6인 권장, 최대 8인")
         assert result["clean_name"] == "화이트룸"
         assert result["day_type"] == "weekend"
-        assert result["recommend_capacity"] == 5
         assert result["max_capacity"] == 8
         assert result["recommend_capacity_range"] == [4, 6]
 
@@ -50,7 +49,7 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("블랙룸 (정원 13명, 최대 18명)", "")
         assert result["clean_name"] == "블랙룸"
         assert result["max_capacity"] == 18
-        assert result["recommend_capacity"] == 13
+        assert result["recommend_capacity_range"] == [13, 18]
 
     def test_paren_dash_capacity(self, parser):
         result = parser._parse_with_regex("R룸 (-15명)", "")
@@ -65,7 +64,7 @@ class TestParseWithRegex:
         result = parser._parse_with_regex("[개강특가] 블랙룸 (정원 20명, 최대 30명)", "")
         assert result["clean_name"] == "블랙룸"
         assert result["max_capacity"] == 30
-        assert result["recommend_capacity"] == 20
+        assert result["recommend_capacity_range"] == [20, 30]
 
     def test_clean_name_strips_reservation_parenthetical_note(self, parser):
         result = parser._parse_with_regex("Room A (예약 시 오전, 오후 확인)", "")
@@ -85,16 +84,24 @@ class TestParseWithRegex:
         assert result["clean_name"] == "C룸"
         assert result["max_capacity"] == 20
 
+    def test_range_synthesis_from_rec_and_max(self, parser):
+        """rec_cap + max_cap이 있는데 range가 없으면 [rec, max]로 합성 (#266)"""
+        result = parser._parse_with_regex("룸A", "정원 3인, 최대 10인")
+        assert result["max_capacity"] == 10
+        assert result["recommend_capacity_range"] == [3, 10]
+
+    def test_range_synthesis_skipped_when_inverted(self, parser):
+        """rec_cap > max_cap이면 합성하지 않음 (역방향 방어)"""
+        result = parser._parse_with_regex("룸A (정원 10명, 최대 8명)", "")
+        assert result["max_capacity"] == 8
+        # rec(10) > max(8) → 합성 안 됨
+        assert result["recommend_capacity_range"] is None
+
 
 class TestRuleBasedParsing:
     @pytest.fixture
     def parser(self):
         return RoomParserService()
-
-    @pytest.mark.asyncio
-    async def test_keyword_map_applies(self, parser):
-        result = await parser.parse_room_desc("대형 합주실", "")
-        assert result["max_capacity"] == 15
 
     @pytest.mark.asyncio
     async def test_keyword_map_not_triggered_by_alphabet(self, parser):

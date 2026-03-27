@@ -57,7 +57,6 @@ class TestCollectByIdFlow:
                 "clean_name": "A룸",
                 "day_type": "weekday",
                 "max_capacity": 6,
-                "recommend_capacity": 4,
                 "recommend_capacity_range": None,
                 "base_capacity": 4,
                 "extra_charge": 3000,
@@ -68,7 +67,6 @@ class TestCollectByIdFlow:
                 "clean_name": "B룸",
                 "day_type": "weekend",
                 "max_capacity": 6,
-                "recommend_capacity": 5,
                 "recommend_capacity_range": [4, 6],
                 "base_capacity": None,
                 "extra_charge": None,
@@ -141,7 +139,7 @@ class TestCollectByIdFlow:
         assert room1_data["name"] in ("A룸", "[평일] A룸")
         assert room1_data["price_per_hour"] == 15000
         assert room1_data["max_capacity"] == 6
-        assert room1_data["recommend_capacity"] == 4
+        assert room1_data["recommend_capacity"] == 6  # min(max_cap, FLAG) — CHECK 제약 준수
         assert room1_data["base_capacity"] == 4
         assert room1_data["extra_charge"] == 3000
         assert len(room1_data["image_urls"]) == 2

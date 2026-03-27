@@ -509,8 +509,6 @@ class AvailabilityService:
                     estimated_price=total_price,
                     image_urls=room_detail.imageUrls,
                     max_capacity=room_detail.maxCapacity,
-                    # [이슈 6] fallback 계산 제거됨 (recommendCapacity가 None이면 0이 될 수 있음, 클라이언트에서 처리 필요)
-                    recommend_capacity=room_detail.recommendCapacityRange[0] if room_detail.recommendCapacityRange else None, # TODO: 제거 예정 필드 (하위호환 유지용)
                     recommend_capacity_range=room_detail.recommendCapacityRange,
                     base_capacity=room_detail.baseCapacity,
                     extra_charge=room_detail.extraCharge,
