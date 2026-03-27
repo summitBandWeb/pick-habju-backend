@@ -198,14 +198,14 @@ async def test_text_capacity_signals_override_parser_capacity(service, mock_supa
             "extraFeeSettingJson": {},
         }
     ]
-    parsed_results = {"room1": {"max_capacity": 6, "recommend_capacity": 4}}
+    parsed_results = {"room1": {"max_capacity": 6}}
 
     await service._save_to_db(business, rooms, parsed_results)
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 30
-    assert room_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
+    assert room_data["recommend_capacity"] == 30  # min(max_cap, FLAG) — CHECK 제약 준수
 
 
 @pytest.mark.asyncio
@@ -227,15 +227,15 @@ async def test_text_recommend_range_used_for_capacity_range(service, mock_supaba
             "extraFeeSettingJson": {},
         }
     ]
-    parsed_results = {"room1": {"max_capacity": 7, "recommend_capacity": 5, "recommend_capacity_range": None}}
+    parsed_results = {"room1": {"max_capacity": 7, "recommend_capacity_range": None}}
 
     await service._save_to_db(business, rooms, parsed_results)
 
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 8
-    assert room_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
-    assert room_data["recommend_capacity_range"] == [4, 6]
+    assert room_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
+    assert room_data["recommend_capacity_range"] == [4, 8]
 
 
 @pytest.mark.asyncio
@@ -258,7 +258,7 @@ async def test_text_range_wins_when_both_text_and_parser_ranges_exist(service, m
         }
     ]
     parsed_results = {
-        "room1": {"max_capacity": 7, "recommend_capacity": 5, "recommend_capacity_range": [5, 7]}
+        "room1": {"max_capacity": 7, "recommend_capacity_range": [5, 7]}
     }
 
     await service._save_to_db(business, rooms, parsed_results)
@@ -266,8 +266,8 @@ async def test_text_range_wins_when_both_text_and_parser_ranges_exist(service, m
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 8
-    assert room_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
-    assert room_data["recommend_capacity_range"] == [4, 6]
+    assert room_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
+    assert room_data["recommend_capacity_range"] == [4, 8]
 
 
 @pytest.mark.asyncio

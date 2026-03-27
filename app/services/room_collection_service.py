@@ -924,6 +924,15 @@ class RoomCollectionService:
             # Capacity 우선순위: 1) 텍스트 시그널 2) 파서 출력 3) None (파싱 실패)
             text_max_cap, _, text_rec_range = self._extract_capacity_text_signals(room)
 
+            # text signal을 parsed_results에 동기화 (_export_unresolved 오탐 방지)
+            if text_max_cap is not None or text_rec_range is not None:
+                parsed = dict(parsed)
+                if text_max_cap is not None:
+                    parsed["max_capacity"] = text_max_cap
+                if text_rec_range is not None:
+                    parsed["recommend_capacity_range"] = text_rec_range
+                parsed_results[rid] = parsed
+
             new_max_cap = text_max_cap if text_max_cap is not None else parsed.get("max_capacity")
                 
             new_price = self._extract_price(room)
@@ -1018,7 +1027,7 @@ class RoomCollectionService:
                 "price_per_hour": final_price_int,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
-                "recommend_capacity": self.MANUAL_REVIEW_FLAG,  # M5에서 컬럼 드롭 예정 (#268)
+                "recommend_capacity": min(final_max_cap_int, self.MANUAL_REVIEW_FLAG),  # CHECK(max>=rec) 준수, M5에서 드롭 (#268)
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range or parsed.get("recommend_capacity_range"),
                     final_max_cap_int,
@@ -1944,9 +1953,11 @@ class RoomCollectionService:
             and 1 <= parsed_range[0] and parsed_range[1] <= 50
         ):
             clamped_min = max(int(parsed_range[0]), 1)
-            clamped_max = min(int(parsed_range[1]), effective_max_cap) if effective_max_cap > 0 else int(parsed_range[1])
-            clamped_max = max(clamped_max, clamped_min)
-            return [clamped_min, clamped_max]
+            if effective_max_cap > 0:
+                if clamped_min > effective_max_cap:
+                    return [effective_max_cap, effective_max_cap]
+                return [clamped_min, effective_max_cap]
+            return [clamped_min, int(parsed_range[1])]
 
         # 2. 추가 요금 있는 경우: [base_cap, max_cap]
         effective_base_cap = base_cap if base_cap is not None and base_cap < self.MANUAL_REVIEW_FLAG else None

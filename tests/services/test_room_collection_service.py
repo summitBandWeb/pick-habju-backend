@@ -116,16 +116,16 @@ class TestDataPreservationLogic:
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
         rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
-        parsed_results = {"room1": {"max_capacity": 1, "recommend_capacity": 1}}  # LLM이 기본값 반환
-        
+        parsed_results = {"room1": {"max_capacity": 1}}  # LLM이 기본값 반환
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         # Verify: upsert 호출 시 max_capacity=10 (기존 값 유지)
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
-        
+
         assert upsert_data["max_capacity"] == 10
-        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
+        assert upsert_data["recommend_capacity"] == 10  # min(max_cap, FLAG) — CHECK 제약 준수
     
     # ============== TC13: 새 값=5, 기존 값=10 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -137,15 +137,15 @@ class TestDataPreservationLogic:
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
         rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
-        parsed_results = {"room1": {"max_capacity": 5, "recommend_capacity": 4}}  # LLM이 유효한 값 반환
-        
+        parsed_results = {"room1": {"max_capacity": 5}}  # LLM이 유효한 값 반환
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
-        
+
         assert upsert_data["max_capacity"] == 5
-        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
+        assert upsert_data["recommend_capacity"] == 5  # min(max_cap, FLAG) — CHECK 제약 준수
     
     # ============== TC14: 새 값=8, 기존 값=1 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -157,15 +157,15 @@ class TestDataPreservationLogic:
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
         rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
-        parsed_results = {"room1": {"max_capacity": 8, "recommend_capacity": 6}}
-        
+        parsed_results = {"room1": {"max_capacity": 8}}
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
-        
+
         assert upsert_data["max_capacity"] == 8
-        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
+        assert upsert_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
     
     # ============== TC15: 기존 값 없음, 새 값=1 → 새 값 사용 ==============
     @pytest.mark.asyncio
@@ -175,15 +175,15 @@ class TestDataPreservationLogic:
         
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실"}
         rooms = [{"bizItemId": "room1", "name": "룸1", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
-        parsed_results = {"room1": {"max_capacity": 1, "recommend_capacity": 1}}
-        
+        parsed_results = {"room1": {"max_capacity": 1}}
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         upsert_data = upsert_call[0][0]
-        
+
         assert upsert_data["max_capacity"] == 1
-        assert upsert_data["recommend_capacity"] == 100  # hardcoded MANUAL_REVIEW_FLAG
+        assert upsert_data["recommend_capacity"] == 1  # min(max_cap, FLAG) — CHECK 제약 준수
     
     # ============== TC: 가격 보존 로직 ==============
     @pytest.mark.asyncio
@@ -331,19 +331,17 @@ class TestV2NewFields:
     # ============== TC: recommend_capacity_range 저장 ==============
     @pytest.mark.asyncio
     async def test_saves_recommend_capacity_range_from_parser(self, service, mock_supabase):
-        """파싱된 범위가 유효하면 우선 사용: [4, 6] → 검증 통과 → [4, 6] (max_cap=8 이내)
-        
+        """파싱된 범위 [4,6] + max_cap=8 → 상한을 max로 확장 → [4, 8] (PM 정책)
+
         Rationale:
-            v2 리팩토링으로 유효한 parsed_range를 규칙 기반 계산보다 우선 사용하도록 변경.
-            [4, 6]은 2개 정수, min<=max, 1~50 범위이므로 검증 통과.
-            max_cap(8) 이내이므로 clamp 없이 그대로 반환.
+            v2 리팩토링으로 유효한 parsed_range를 규칙 기반 계산보다 우선 사용.
+            [4, 6]은 검증 통과하지만, PM 정책에 따라 상한을 max_cap(8)으로 확장.
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트 합주실", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 15000}}]
         parsed_results = {
             "r1": {
                 "max_capacity": 8,
-                "recommend_capacity": 5,
                 "recommend_capacity_range": [4, 6],
                 "price_config": [],
                 "base_capacity": None,
@@ -351,22 +349,21 @@ class TestV2NewFields:
                 "requires_call_on_sameday": False
             }
         }
-        
+
         await service._save_to_db(business, rooms, parsed_results)
-        
+
         upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
         room_data = upsert_call[0][0]
-        
-        # NOTE: 유효한 parsed_range [4, 6]이 우선 사용됨
-        assert room_data["recommend_capacity_range"] == [4, 6]
+
+        # parsed_range [4, 6] + max_cap=8 → 상한 확장 [4, 8]
+        assert room_data["recommend_capacity_range"] == [4, 8]
         assert room_data["price_config"] == []
     
     # ============== TC: max_cap FLAG → None 반환 (#264, #266) ==============
-    def test_capacity_range_is_none_when_max_flag(self, service):
+    def test_capacity_range_none_when_max_cap_is_flag(self, service):
         """max_cap=FLAG(100) → effective_max_cap=0 → None 반환
 
-        rec_cap 파라미터 제거(#266) 후, max_cap만으로 판단.
-        FLAG면 근거 없음 → None.
+        parsed_range/base_cap/extra_charge 모두 없고 max_cap=FLAG면 근거 없음 → None.
         """
         result = service._calculate_capacity_range(
             parsed_range=None,
@@ -374,21 +371,6 @@ class TestV2NewFields:
             base_cap=None,
             extra_charge=None,
         )
-        assert result is None
-
-    # ============== TC: max_cap FLAG (중복 확인) → None (#266) ==============
-    def test_capacity_range_none_when_max_flag_no_parsed_range(self, service):
-        """max_cap=FLAG, parsed_range=None → effective_max_cap=0 → None
-
-        rec_cap 파라미터 제거(#266) 후 max_cap=FLAG는 항상 None.
-        """
-        result = service._calculate_capacity_range(
-            parsed_range=None,
-            max_cap=100,
-            base_cap=None,
-            extra_charge=None,
-        )
-        # max_cap=FLAG → effective_max_cap=0 → step 3 → None
         assert result is None
 
     # ============== TC: max_cap=5 → [max//2, max] 역산 (#266) ==============
@@ -454,18 +436,17 @@ class TestV2NewFields:
     # ============== TC: range 없으면 ±1 Fallback ==============
     @pytest.mark.asyncio
     async def test_fallback_range_from_single_capacity(self, service, mock_supabase):
-        """파서가 범위를 반환하지 않으면 규칙 기반으로 계산
+        """파서가 범위를 반환하지 않으면 max_cap 기반 역산
 
         Rationale:
-            모든 rec_cap에 대해 ±1 고정 (delta=1, #258)
-            rec=4, price=10000 → price band(10k_15k) 적용 → rec=4, ±1 → [3, 5]
+            rec_cap 파라미터 제거(#266) 후 max_cap 기반 역산.
+            max=6 → 6//2=3 → [3, 6]
         """
         business = {"businessId": "biz1", "businessDisplayName": "테스트", "coordinates": None}
         rooms = [{"bizItemId": "r1", "name": "룸A", "bizItemResources": [], "minMaxPrice": {"minPrice": 10000}}]
         parsed_results = {
             "r1": {
                 "max_capacity": 6,
-                "recommend_capacity": 4,
                 "recommend_capacity_range": None,
                 "base_capacity": None,
                 "extra_charge": None,
@@ -503,6 +484,28 @@ class TestV2NewFields:
         )
         # parsed_range[0] > parsed_range[1] → step 1 거부 → step 4: [8//2, 8] → [4, 8]
         assert result == [4, 8]
+
+    # ============== TC: max_cap=8 canonical 역산 (#273 docstring 기준) ==============
+    def test_capacity_range_max_8_heuristic(self, service):
+        """max_cap=8 → 8//2=4 → [4, 8] (docstring canonical example)"""
+        result = service._calculate_capacity_range(
+            parsed_range=None,
+            max_cap=8,
+            base_cap=None,
+            extra_charge=None,
+        )
+        assert result == [4, 8]
+
+    # ============== TC: parsed_range 상한 max 확장 (PM 정책) ==============
+    def test_capacity_range_parsed_range_expanded_to_max(self, service):
+        """parsed_range=[3,6], max=10 → 상한을 max로 확장 → [3, 10]"""
+        result = service._calculate_capacity_range(
+            parsed_range=[3, 6],
+            max_cap=10,
+            base_cap=None,
+            extra_charge=None,
+        )
+        assert result == [3, 10]
 
     # ============== TC: display_name 저장 ==============
     @pytest.mark.asyncio
