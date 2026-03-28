@@ -125,7 +125,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
 
         assert upsert_data["max_capacity"] == 10
-        assert upsert_data["recommend_capacity"] == 10  # min(max_cap, FLAG) — CHECK 제약 준수
+        assert "recommend_capacity" not in upsert_data  # 컬럼 드롭 (#268)
     
     # ============== TC13: 새 값=5, 기존 값=10 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -145,7 +145,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
 
         assert upsert_data["max_capacity"] == 5
-        assert upsert_data["recommend_capacity"] == 5  # min(max_cap, FLAG) — CHECK 제약 준수
+        assert "recommend_capacity" not in upsert_data  # 컬럼 드롭 (#268)
     
     # ============== TC14: 새 값=8, 기존 값=1 → 새 값으로 업데이트 ==============
     @pytest.mark.asyncio
@@ -165,7 +165,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
 
         assert upsert_data["max_capacity"] == 8
-        assert upsert_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
+        assert "recommend_capacity" not in upsert_data  # 컬럼 드롭 (#268)
     
     # ============== TC15: 기존 값 없음, 새 값=1 → 새 값 사용 ==============
     @pytest.mark.asyncio
@@ -183,7 +183,7 @@ class TestDataPreservationLogic:
         upsert_data = upsert_call[0][0]
 
         assert upsert_data["max_capacity"] == 1
-        assert upsert_data["recommend_capacity"] == 1  # min(max_cap, FLAG) — CHECK 제약 준수
+        assert "recommend_capacity" not in upsert_data  # 컬럼 드롭 (#268)
     
     # ============== TC: 가격 보존 로직 ==============
     @pytest.mark.asyncio

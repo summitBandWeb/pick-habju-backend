@@ -33,7 +33,6 @@ def _parsed(clean_name: str, day_type=None, max_cap=5, rec_cap=3, price_config=N
         "clean_name": clean_name,
         "day_type": day_type,
         "max_capacity": max_cap,
-        "recommend_capacity": rec_cap,
         "recommend_capacity_range": [rec_cap - 1, rec_cap + 1],
         "price_config": price_config if price_config is not None else {},
     }
@@ -156,8 +155,8 @@ class TestMergeDayVariantRooms:
 
         assert merged_parsed["wd-1"]["max_capacity"] == 8
 
-    def test_recommend_capacity_none_not_overwritten(self, service):
-        """주말 recommend_capacity가 None이면 평일 값 유지"""
+    def test_recommend_capacity_range_preserved_when_weekend_none(self, service):
+        """주말 recommend_capacity_range가 None이면 평일 값 유지"""
         rooms = [
             _room("wd-1", "[평일 낮] 1번룸", price=10000),
             _room("we-1", "[주말] 1번룸", price=10000),
@@ -168,16 +167,14 @@ class TestMergeDayVariantRooms:
                 "clean_name": "1번룸",
                 "day_type": "weekend",
                 "max_capacity": 8,
-                "recommend_capacity": None,
                 "recommend_capacity_range": None,
                 "price_config": {},
             },
         }
         _, merged_parsed, _ = service._merge_day_variant_rooms(rooms, parsed)
 
-        # we_max(8) > wd_max(5)이지만 we_rec=None → recommend_capacity 유지 안 됨 확인
+        # we_max(8) > wd_max(5) → max는 병합, range는 we가 None이므로 wd 유지
         assert merged_parsed["wd-1"]["max_capacity"] == 8
-        assert merged_parsed["wd-1"]["recommend_capacity"] == 3  # 평일 값 유지
 
     def test_merge_skipped_when_three_variants(self, service):
         """3개 이상 variant → 병합 조건 미충족, 모두 원형 유지"""

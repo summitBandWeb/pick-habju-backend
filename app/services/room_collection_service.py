@@ -1027,7 +1027,6 @@ class RoomCollectionService:
                 "price_per_hour": final_price_int,
                 # Schema constraint: Default to 1 if null
                 "max_capacity": final_max_cap_int,
-                "recommend_capacity": min(final_max_cap_int, self.MANUAL_REVIEW_FLAG),  # CHECK(max>=rec) 준수, M5에서 드롭 (#268)
                 "recommend_capacity_range": self._calculate_capacity_range(
                     text_rec_range or parsed.get("recommend_capacity_range"),
                     final_max_cap_int,
@@ -1406,7 +1405,7 @@ class RoomCollectionService:
         """Extract high-confidence capacity signals from room name/desc text.
 
         Returns:
-            (max_capacity, recommend_capacity, recommend_capacity_range)
+            (max_capacity, rec_cap (unused, legacy), recommend_capacity_range)
         """
         name = room.get("name") or ""
         desc = room.get("desc") or ""

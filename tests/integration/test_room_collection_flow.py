@@ -139,7 +139,7 @@ class TestCollectByIdFlow:
         assert room1_data["name"] in ("A룸", "[평일] A룸")
         assert room1_data["price_per_hour"] == 15000
         assert room1_data["max_capacity"] == 6
-        assert room1_data["recommend_capacity"] == 6  # min(max_cap, FLAG) — CHECK 제약 준수
+        assert "recommend_capacity" not in room1_data  # 컬럼 드롭 (#268)
         assert room1_data["base_capacity"] == 4
         assert room1_data["extra_charge"] == 3000
         assert len(room1_data["image_urls"]) == 2

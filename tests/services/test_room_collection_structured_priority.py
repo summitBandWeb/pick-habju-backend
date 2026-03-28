@@ -205,7 +205,7 @@ async def test_text_capacity_signals_override_parser_capacity(service, mock_supa
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 30
-    assert room_data["recommend_capacity"] == 30  # min(max_cap, FLAG) — CHECK 제약 준수
+    assert "recommend_capacity" not in room_data  # 컬럼 드롭 (#268)
 
 
 @pytest.mark.asyncio
@@ -234,7 +234,7 @@ async def test_text_recommend_range_used_for_capacity_range(service, mock_supaba
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 8
-    assert room_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
+    assert "recommend_capacity" not in room_data  # 컬럼 드롭 (#268)
     assert room_data["recommend_capacity_range"] == [4, 8]
 
 
@@ -266,7 +266,7 @@ async def test_text_range_wins_when_both_text_and_parser_ranges_exist(service, m
     upsert_call = mock_supabase._room_table.upsert.call_args_list[-1]
     room_data = upsert_call[0][0]
     assert room_data["max_capacity"] == 8
-    assert room_data["recommend_capacity"] == 8  # min(max_cap, FLAG) — CHECK 제약 준수
+    assert "recommend_capacity" not in room_data  # 컬럼 드롭 (#268)
     assert room_data["recommend_capacity_range"] == [4, 8]
 
 
