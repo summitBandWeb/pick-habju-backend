@@ -5,14 +5,14 @@ from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
 from app.core.constants import is_in_service_area
-from app.core.supabase_client import supabase
+from app.core.supabase_client import get_async_supabase_client
 from app.exception.api.room_loader_exception import RoomLoaderFailedError
 from app.models.dto import RoomDetail
 
 logger = logging.getLogger(__name__)
 
 
-def get_rooms_by_criteria(
+async def get_rooms_by_criteria(
     capacity: int,
     swLat: Optional[float] = None,
     swLng: Optional[float] = None,
@@ -25,6 +25,7 @@ def get_rooms_by_criteria(
     좌표가 주어지면 해당 범위 내의 룸만 추가 필터링합니다.
     """
     try:
+        supabase = await get_async_supabase_client()
         # Deploy 환경마다 branch 컬럼 반영 시점이 다를 수 있어 select를 순차 fallback.
         # !inner 조인으로 branch 테이블 조건을 room 조회에 반영.
         select_candidates = [
@@ -43,7 +44,7 @@ def get_rooms_by_criteria(
                     # 포스트그레스트에서 외래키 필터링 시 테이블명.컬럼명 형식 사용
                     query = query.gte("branch.lat", swLat).lte("branch.lat", neLat).gte("branch.lng", swLng).lte("branch.lng", neLng)
 
-                response = query.execute()
+                response = await query.execute()
                 break
             except APIError as e:
                 last_error = e
