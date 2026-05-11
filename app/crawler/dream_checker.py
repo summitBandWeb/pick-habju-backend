@@ -29,6 +29,7 @@ class DreamCrawler(BaseCrawler):
         - 최대 예약 가능 일자(121일) 제한을 걸어, 서버 부하와 불필요한 크롤링을 방지.
     """
     _URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(15)
     HEADERS = {
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
@@ -78,9 +79,6 @@ class DreamCrawler(BaseCrawler):
                 for room in target_rooms
             ]
 
-        # 드림합주실 서버 부하 방지를 위해 동시 요청 수를 15개로 제한
-        semaphore = asyncio.Semaphore(15)
-
         async def safe_fetch(room: RoomDetail) -> RoomResult:
             """개별 방 조회를 예외-안전하게 감싸 실패 시 Exception 객체를 반환한다.
 
@@ -90,7 +88,7 @@ class DreamCrawler(BaseCrawler):
             Returns:
                 RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
             """
-            async with semaphore:
+            async with self._semaphore:
                 try:
                     return await self._fetch_dream_availability_room(date, hour_slots, room)
                 except BaseCustomException as e:
