@@ -32,6 +32,7 @@ async def get_async_supabase_client() -> AsyncClient:
                     schema="public",
                     auto_refresh_token=True,
                     persist_session=True,
+                    postgrest_client_timeout=10,
                 )
                 _async_client = await create_async_client(SUPABASE_URL, SUPABASE_KEY, options=options)
     return _async_client
