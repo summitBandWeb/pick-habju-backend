@@ -1,3 +1,4 @@
+import asyncio
 import time
 import pytest
 from unittest.mock import patch
@@ -52,3 +53,101 @@ def test_cache_clear_removes_all_entries(cache):
     cache.set(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, CACHED_DATA)
     cache.clear()
     assert cache.get(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID) is None
+
+
+# ---------------------------------------------------------------------------
+# is_pending
+# ---------------------------------------------------------------------------
+
+def test_is_pending_returns_false_when_no_cache_and_no_inflight(cache):
+    """캐시도 없고 진행 중인 요청도 없으면 False를 반환한다."""
+    assert cache.is_pending(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID) is False
+
+
+def test_is_pending_returns_true_when_cache_alive(cache):
+    """유효한 캐시가 있으면 True를 반환한다."""
+    cache.set(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, CACHED_DATA)
+    assert cache.is_pending(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID) is True
+
+
+def test_is_pending_returns_true_when_inflight(cache):
+    """_inflight에 진행 중인 Future가 있으면 True를 반환한다."""
+    key = cache._get_key(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID)
+    loop = asyncio.new_event_loop()
+    try:
+        future = loop.create_future()
+        cache._inflight[key] = future
+        assert cache.is_pending(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID) is True
+    finally:
+        future.cancel()
+        loop.close()
+
+
+# ---------------------------------------------------------------------------
+# get_or_compute
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_or_compute_cache_miss_calls_factory_once_and_caches(cache):
+    """캐시 미스 시 factory가 정확히 1회 호출되고 결과가 캐싱된다."""
+    call_count = 0
+
+    async def factory():
+        nonlocal call_count
+        call_count += 1
+        return CACHED_DATA
+
+    result = await cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, factory)
+    assert result == CACHED_DATA
+    assert call_count == 1
+    assert cache.get(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID) == CACHED_DATA
+
+
+@pytest.mark.asyncio
+async def test_get_or_compute_cache_hit_skips_factory(cache):
+    """캐시 히트 시 factory가 호출되지 않는다."""
+    cache.set(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, CACHED_DATA)
+    call_count = 0
+
+    async def factory():
+        nonlocal call_count
+        call_count += 1
+        return {"should": "not reach here"}
+
+    result = await cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, factory)
+    assert result == CACHED_DATA
+    assert call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_get_or_compute_stampede_factory_called_once(cache):
+    """동시 요청이 몰려도 factory는 1회만 실행되고 모든 호출이 같은 결과를 받는다."""
+    call_count = 0
+
+    async def slow_factory():
+        nonlocal call_count
+        call_count += 1
+        await asyncio.sleep(0)  # 이벤트 루프에 제어권을 넘겨 다른 코루틴이 실행되도록 함
+        return CACHED_DATA
+
+    results = await asyncio.gather(
+        cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, slow_factory),
+        cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, slow_factory),
+        cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, slow_factory),
+    )
+
+    assert call_count == 1
+    assert all(r == CACHED_DATA for r in results)
+
+
+@pytest.mark.asyncio
+async def test_get_or_compute_factory_exception_propagates_and_cleans_inflight(cache):
+    """factory 예외 발생 시 예외가 호출부로 전파되고 _inflight에서 정리된다."""
+    async def failing_factory():
+        raise ValueError("computation failed")
+
+    with pytest.raises(ValueError, match="computation failed"):
+        await cache.get_or_compute(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, failing_factory)
+
+    key = cache._get_key(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID)
+    assert key not in cache._inflight
