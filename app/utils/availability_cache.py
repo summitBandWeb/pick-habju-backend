@@ -11,12 +11,12 @@ class AvailabilityCache:
     """합주실 예약 가능 여부 조회를 위한 인메모리 TTL 캐시
     
     외부 API(Naver, Dream 등) 크롤링은 속도가 느리고 호출 제한이 있으므로,
-    짧은 시간(60초) 동안 결과를 캐싱하여 동시 접속 시의 서버 부하를 방지합니다.
+    180초 동안 결과를 캐싱하여 동시 접속 시의 서버 부하를 방지합니다.
     """
     
     def __init__(self, ttl_seconds: Optional[int] = None):
         if ttl_seconds is None:
-            ttl_seconds = int(os.getenv("AVAILABILITY_CACHE_TTL_SECONDS", "60"))
+            ttl_seconds = int(os.getenv("AVAILABILITY_CACHE_TTL_SECONDS", "180"))
         self._cache: Dict[str, Tuple[float, Any]] = {}
         self._inflight: Dict[str, asyncio.Future] = {}
         self._ttl = ttl_seconds
