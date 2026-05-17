@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from app.core import supabase_client
 import app.crawler
 
 from app.api.available_room import router as available_router
@@ -72,6 +73,12 @@ async def lifespan(app: FastAPI):
             await close_global_client()
         except Exception as e:
             logger.error(f"Error closing global client: {e}", exc_info=True)
+        try:
+            if supabase_client._async_client is not None:
+                await supabase_client._async_client.aclose()
+                supabase_client._async_client = None
+        except Exception as e:
+            logger.error(f"Error closing async supabase client: {e}", exc_info=True)
 
 
 app = FastAPI(
