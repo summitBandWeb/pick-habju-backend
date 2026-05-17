@@ -19,7 +19,7 @@ async def test_get_naver_availability():
     date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     hour_slots = ["15:00", "16:00", "17:00"]
     naver_rooms = []
-    for item in get_rooms_by_criteria(capacity=1):
+    for item in await get_rooms_by_criteria(capacity=1):
         if item.branch != "그루브 사당점" and item.branch != "드림합주실 사당점":
             room = RoomDetail(
                 name=item.name,

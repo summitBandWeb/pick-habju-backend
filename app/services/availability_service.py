@@ -320,7 +320,7 @@ class AvailabilityService:
         # 1.5. 지도 좌표 유효성 검증 (필수) -> DTO model_validator로 이관됨
 
         # 2. 인원수 및 지도 범위에 맞는 룸 필터링(DB)
-        target_rooms = get_rooms_by_criteria(
+        target_rooms = await get_rooms_by_criteria(
             capacity=request.capacity,
             swLat=request.swLat,
             swLng=request.swLng,
