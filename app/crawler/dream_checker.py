@@ -32,7 +32,7 @@ class DreamCrawler(BaseCrawler):
     _URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
     # 드림합주실 서버 부하 방지: 동시 API 요청 수를 클래스 수준에서 공유하여 전역 동시성을 제한한다.
     # check_availability 호출마다 새 세마포어를 만들면 호출 간 공유가 되지 않으므로 클래스 속성으로 초기화한다.
-    _semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("DREAM_CRAWLER_SEMAPHORE", "15")))
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("DREAM_CRAWLER_SEMAPHORE", "15"))))
     HEADERS = {
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
