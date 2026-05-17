@@ -9,9 +9,10 @@ logger = logging.getLogger("app")
 
 class AvailabilityCache:
     """합주실 예약 가능 여부 조회를 위한 인메모리 TTL 캐시
-    
+
     외부 API(Naver, Dream 등) 크롤링은 속도가 느리고 호출 제한이 있으므로,
-    180초 동안 결과를 캐싱하여 동시 접속 시의 서버 부하를 방지합니다.
+    결과를 캐싱하여 동시 접속 시의 서버 부하를 방지합니다.
+    기본 TTL은 180초이며, AVAILABILITY_CACHE_TTL_SECONDS 환경변수로 조정할 수 있습니다.
     """
     
     def __init__(self, ttl_seconds: Optional[int] = None):
