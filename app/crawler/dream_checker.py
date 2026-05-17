@@ -1,3 +1,4 @@
+import os
 import html
 import asyncio
 import logging
@@ -29,7 +30,9 @@ class DreamCrawler(BaseCrawler):
         - 최대 예약 가능 일자(121일) 제한을 걸어, 서버 부하와 불필요한 크롤링을 방지.
     """
     _URL = "https://www.xn--hy1bm6g6ujjkgomr.com/plugin/wz.bookingT1.prm/ajax.calendar.time.php"
-    _semaphore: asyncio.Semaphore = asyncio.Semaphore(15)
+    # 드림합주실 서버 부하 방지: 동시 API 요청 수를 클래스 수준에서 공유하여 전역 동시성을 제한한다.
+    # check_availability 호출마다 새 세마포어를 만들면 호출 간 공유가 되지 않으므로 클래스 속성으로 초기화한다.
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("DREAM_CRAWLER_SEMAPHORE", "15")))
     HEADERS = {
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
