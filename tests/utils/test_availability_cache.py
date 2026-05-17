@@ -1,6 +1,9 @@
 import time
 import pytest
+<<<<<<< HEAD
 from unittest.mock import patch
+=======
+>>>>>>> 78a7e99f2aa4cee640dc37f630188d4545cdea72
 from datetime import datetime, timedelta
 from app.utils.availability_cache import AvailabilityCache
 
@@ -22,11 +25,20 @@ def test_cache_hit_within_ttl(cache):
     result = cache.get(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID)
     assert result == CACHED_DATA
 
+<<<<<<< HEAD
 def test_cache_miss_after_ttl_expires(cache):
     cache.set(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, CACHED_DATA)
     with patch("app.utils.availability_cache.time") as mock_time:
         mock_time.time.return_value = time.time() + 2  # TTL(1s) 초과
         result = cache.get(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID)
+=======
+
+def test_cache_miss_after_ttl_expires(cache):
+    """TTL 만료 후 동일 키 조회 시 캐시 미스(None)를 반환한다."""
+    cache.set(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID, CACHED_DATA)
+    time.sleep(1.1)
+    result = cache.get(FUTURE_DATE, START_HOUR, END_HOUR, BIZ_ITEM_ID)
+>>>>>>> 78a7e99f2aa4cee640dc37f630188d4545cdea72
     assert result is None
 
 
