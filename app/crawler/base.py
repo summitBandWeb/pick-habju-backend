@@ -22,7 +22,7 @@ class BaseCrawler(ABC):
         registry.register("new", NewCrawler())
     """
     @abstractmethod
-    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail], *, prefetch: bool = False) -> List[RoomResult]:
         """
         주어진 날짜와 시간대에 대한 방 예약 가능 여부를 확인.
         
@@ -30,7 +30,8 @@ class BaseCrawler(ABC):
             date: 조회할 날짜 (YYYY-MM-DD 형식)
             hour_slots: 조회할 시간대 리스트 (예: ["18:00", "19:00"])
             target_rooms: 조회할 방 정보 리스트
-            
+            prefetch: True이면 프리페치 전용 세마포어를 사용한다. 기본값 False(재검색).
+
         Returns:
             RoomAvailability 또는 Exception 리스트
             - 성공 시: RoomAvailability 객체 반환

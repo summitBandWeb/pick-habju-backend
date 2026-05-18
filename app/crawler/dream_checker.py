@@ -33,6 +33,8 @@ class DreamCrawler(BaseCrawler):
     # 드림합주실 서버 부하 방지: 동시 API 요청 수를 클래스 수준에서 공유하여 전역 동시성을 제한한다.
     # check_availability 호출마다 새 세마포어를 만들면 호출 간 공유가 되지 않으므로 클래스 속성으로 초기화한다.
     _semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("DREAM_CRAWLER_SEMAPHORE", "15"))))
+    # 프리페치 전용 세마포어: _semaphore와 슬롯을 공유하지 않아 프리페치가 재검색을 블로킹하지 않는다.
+    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("DREAM_PREFETCH_SEMAPHORE", "15"))))
     HEADERS = {
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/x-www-form-urlencoded"
@@ -50,13 +52,15 @@ class DreamCrawler(BaseCrawler):
         """
         return f"{int(hour_slot.split(':')[0]):02d}시00분"
 
-    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail], *, prefetch: bool = False) -> List[RoomResult]:
         """드림 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회합니다.
 
         Args:
             date (str): 조회할 날짜 (예: '2026-05-20')
             hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00'])
             target_rooms (List[RoomDetail]): 합주실 방 정보 리스트 (용량/지점 필터링이 완료된 상태)
+            prefetch (bool): True이면 _prefetch_semaphore를, False(기본값)이면 _semaphore를 사용한다.
+                프리페치 요청이 재검색 요청을 블로킹하지 않도록 세마포어를 분리한다.
 
         Returns:
             List[RoomResult]: 방별 예약 가능 여부(RoomAvailability) 또는 에러(Exception) 객체 배열
@@ -91,7 +95,8 @@ class DreamCrawler(BaseCrawler):
             Returns:
                 RoomResult: 성공 시 RoomAvailability, 실패 시 Exception 객체.
             """
-            async with self._semaphore:
+            sem = self._prefetch_semaphore if prefetch else self._semaphore
+            async with sem:
                 try:
                     return await self._fetch_dream_availability_room(date, hour_slots, room)
                 except BaseCustomException as e:
