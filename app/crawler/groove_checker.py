@@ -1,8 +1,10 @@
-from typing import List
-from bs4 import BeautifulSoup
-import httpx
 import asyncio
+import os
 from datetime import datetime
+from typing import List
+
+import httpx
+from bs4 import BeautifulSoup
 
 from app.core.config import GROOVE_RESERVE_URL, GROOVE_RESERVE_URL1
 from app.exception.crawler.groove_exception import GrooveCredentialError, GrooveLoginError
@@ -20,8 +22,11 @@ class GrooveCrawler(BaseCrawler):
     """
 
     RESERVATION_LIMIT_DAYS = 84  # Reservation window limit per Groove policy.
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("GROOVE_CRAWLER_SEMAPHORE", "10")))
+    # 프리페치 전용 세마포어: _semaphore와 슬롯을 공유하지 않아 프리페치가 재검색을 블로킹하지 않는다.
+    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("GROOVE_PREFETCH_SEMAPHORE", "10")))
 
-    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail]) -> List[RoomResult]:
+    async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail], *, prefetch: bool = False) -> List[RoomResult]:
         """그루브 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회한다.
 
         로그인 후 예약 페이지 HTML을 가져와 각 방의 슬롯 상태를 파싱한다.
@@ -54,8 +59,10 @@ class GrooveCrawler(BaseCrawler):
             ]
 
         # 3. 날짜가 유효한 범위 내에 있으면 데이터 가져오기 진행
+        sem = self._prefetch_semaphore if prefetch else self._semaphore
         try:
-            html = await self._login_and_fetch_html(date, branch_gubun="sadang")
+            async with sem:
+                html = await self._login_and_fetch_html(date, branch_gubun="sadang")
             soup = BeautifulSoup(html, "html.parser")
             tasks = [self._fetch_room_availability(room, hour_slots, soup) for room in target_rooms]
             results = await asyncio.gather(*tasks)
