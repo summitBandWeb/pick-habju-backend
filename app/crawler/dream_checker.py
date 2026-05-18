@@ -59,6 +59,8 @@ class DreamCrawler(BaseCrawler):
             date (str): 조회할 날짜 (예: '2026-05-20')
             hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00'])
             target_rooms (List[RoomDetail]): 합주실 방 정보 리스트 (용량/지점 필터링이 완료된 상태)
+            prefetch (bool): True이면 _prefetch_semaphore를, False(기본값)이면 _semaphore를 사용한다.
+                프리페치 요청이 재검색 요청을 블로킹하지 않도록 세마포어를 분리한다.
 
         Returns:
             List[RoomResult]: 방별 예약 가능 여부(RoomAvailability) 또는 에러(Exception) 객체 배열

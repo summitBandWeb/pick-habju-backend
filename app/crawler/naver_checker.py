@@ -22,9 +22,9 @@ class NaverCrawler(BaseCrawler):
     # 네이버 RATE LIMIT 대응: 동시 API 요청 수를 클래스 수준에서 공유하여 전역 동시성을 제한한다.
     # check_availability 호출마다 새 세마포어를 만들면 호출 간 공유가 되지 않으므로 클래스 속성으로 초기화한다.
     # 높은 부하의 경우 환경 변수(NAVER_CRAWLER_SEMAPHORE)를 통해 조정 가능하도록 지원.
-    _semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("NAVER_CRAWLER_SEMAPHORE", "30")))
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("NAVER_CRAWLER_SEMAPHORE", "30"))))
     # 프리페치 전용 세마포어: _semaphore와 슬롯을 공유하지 않아 프리페치가 재검색을 블로킹하지 않는다.
-    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("NAVER_PREFETCH_SEMAPHORE", "30")))
+    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("NAVER_PREFETCH_SEMAPHORE", "30"))))
 
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail], *, prefetch: bool = False) -> List[RoomResult]:
         """네이버 예약 API로 특정 날짜와 시간대에 예약 가능한 방들을 조회한다.
@@ -36,6 +36,8 @@ class NaverCrawler(BaseCrawler):
             date (str): 조회할 날짜 (예: '2026-05-20').
             hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00']).
             target_rooms (List[RoomDetail]): 조회 대상 방 리스트.
+            prefetch (bool): True이면 _prefetch_semaphore를, False(기본값)이면 _semaphore를 사용한다.
+                프리페치 요청이 재검색 요청을 블로킹하지 않도록 세마포어를 분리한다.
 
         Returns:
             List[RoomResult]: 방별 RoomAvailability 또는 에러 Exception 객체 배열.

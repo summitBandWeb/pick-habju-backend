@@ -30,7 +30,8 @@ class BaseCrawler(ABC):
             date: 조회할 날짜 (YYYY-MM-DD 형식)
             hour_slots: 조회할 시간대 리스트 (예: ["18:00", "19:00"])
             target_rooms: 조회할 방 정보 리스트
-            
+            prefetch: True이면 프리페치 전용 세마포어를 사용한다. 기본값 False(재검색).
+
         Returns:
             RoomAvailability 또는 Exception 리스트
             - 성공 시: RoomAvailability 객체 반환

@@ -27,19 +27,23 @@ HOUR_SLOTS = ["15:00"]
 
 class _TrackedSemaphore:
     """어떤 세마포어가 실제로 acquire됐는지 추적하는 가짜 세마포어."""
+
     def __init__(self):
+        """acquired 플래그를 False로 초기화한다."""
         self.acquired = False
 
     async def __aenter__(self):
+        """컨텍스트 진입 시 acquired를 True로 설정한다."""
         self.acquired = True
         return self
 
     async def __aexit__(self, *args):
-        pass
+        """컨텍스트 종료 시 아무 작업도 하지 않는다."""
 
 
 @pytest.fixture
 def naver_room():
+    """네이버 크롤러 테스트용 RoomDetail 픽스처."""
     return RoomDetail(
         name="테스트룸", branch="테스트 지점", business_id="123456", biz_item_id="999",
         imageUrls=[], maxCapacity=6, recommend_capacity_range=[2, 4],
@@ -49,6 +53,7 @@ def naver_room():
 
 @pytest.fixture
 def dream_room():
+    """드림 크롤러 테스트용 RoomDetail 픽스처."""
     return RoomDetail(
         name="드림 1룸", branch="드림합주실 사당점", business_id="dream_sadang", biz_item_id="1",
         imageUrls=[], maxCapacity=6, recommend_capacity_range=[2, 4],
@@ -58,6 +63,7 @@ def dream_room():
 
 @pytest.fixture
 def groove_room():
+    """그루브 크롤러 테스트용 RoomDetail 픽스처."""
     return RoomDetail(
         name="A룸", branch="그루브 사당점", business_id="groove_sadang", biz_item_id="13",
         imageUrls=[], maxCapacity=6, recommend_capacity_range=[2, 4],
@@ -66,12 +72,14 @@ def groove_room():
 
 
 def _naver_mock_response():
+    """빈 hourly 슬롯을 반환하는 네이버 API 모의 응답을 생성한다."""
     resp = MagicMock()
     resp.json.return_value = {"data": {"schedule": {"bizItemSchedule": {"hourly": []}}}}
     return resp
 
 
 def _dream_mock_response():
+    """빈 items HTML을 반환하는 드림 API 모의 응답을 생성한다."""
     resp = MagicMock()
     resp.json.return_value = {"items": ""}
     return resp
@@ -175,6 +183,7 @@ async def test_dream_normal_not_blocked_by_full_prefetch_semaphore(dream_room):
 
 @pytest.fixture
 def groove_mock_html(groove_room):
+    """그루브 예약 페이지 HTML 모의 데이터 픽스처."""
     biz_item_id = groove_room.biz_item_id
     return f'<div id="reserve_time_{biz_item_id}_15" class="reserve_time_off"></div>'
 

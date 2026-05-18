@@ -22,9 +22,11 @@ class GrooveCrawler(BaseCrawler):
     """
 
     RESERVATION_LIMIT_DAYS = 84  # Reservation window limit per Groove policy.
-    _semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("GROOVE_CRAWLER_SEMAPHORE", "10")))
+    # NOTE: Naver/Dream과 달리 세마포어 적용 단위가 방(Room)이 아닌 로그인+HTML 패치 호출(배치 전체)임.
+    #       Groove는 단일 HTML 응답으로 모든 방을 파싱하는 구조이기 때문.
+    _semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("GROOVE_CRAWLER_SEMAPHORE", "10"))))
     # 프리페치 전용 세마포어: _semaphore와 슬롯을 공유하지 않아 프리페치가 재검색을 블로킹하지 않는다.
-    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(int(os.getenv("GROOVE_PREFETCH_SEMAPHORE", "10")))
+    _prefetch_semaphore: asyncio.Semaphore = asyncio.Semaphore(max(1, int(os.getenv("GROOVE_PREFETCH_SEMAPHORE", "10"))))
 
     async def check_availability(self, date: str, hour_slots: List[str], target_rooms: List[RoomDetail], *, prefetch: bool = False) -> List[RoomResult]:
         """그루브 합주실의 특정 날짜와 시간대에 예약 가능한 방들을 조회한다.
@@ -36,6 +38,8 @@ class GrooveCrawler(BaseCrawler):
             date (str): 조회할 날짜 (예: '2026-05-20').
             hour_slots (List[str]): 1시간 단위 시간 슬롯 배열 (예: ['14:00', '15:00']).
             target_rooms (List[RoomDetail]): 조회 대상 방 리스트.
+            prefetch (bool): True이면 _prefetch_semaphore를, False(기본값)이면 _semaphore를 사용한다.
+                세마포어는 _login_and_fetch_html 호출(배치 전체) 단위로 획득한다.
 
         Returns:
             List[RoomResult]: 방별 RoomAvailability 또는 에러 Exception 객체 배열.
