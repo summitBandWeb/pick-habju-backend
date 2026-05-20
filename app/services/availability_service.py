@@ -67,29 +67,33 @@ class FailedCrawl:
 
 class AvailabilityService:
     """합주실 예약 가능 여부 조회 서비스
-    
+
     여러 크롤러를 사용하여 동시에 예약 가능 여부를 조회하고,
     결과를 통합하여 반환합니다. 비즈니스 로직을 API 라우터에서 분리하여
     테스트 가능성과 재사용성을 높입니다.
-    
+
     비즈니스 맥락:
     - Dream, Groove, Naver 등 여러 플랫폼의 합주실을 통합 조회
     - 각 크롤러마다 다른 크롤링 기법을 사용하여 데이터 수집
     - 일부 크롤러 실패 시에도 성공한 결과 반환 (Graceful Degradation)
-    
+
     설계 결정:
     - Dependency Injection을 통해 크롤러 주입 (테스트 용이성 확보)
     - 비동기 병렬 처리로 응답 속도 최적화 (asyncio.gather 사용)
     - 에러를 Exception 객체로 반환하여 로깅 및 필터링
-    
+
     사용 예시:
         >>> crawlers_map = {"dream": DreamCrawler(), "groove": GrooveCrawler()}
         >>> service = AvailabilityService(crawlers_map)
         >>> response = await service.check_availability(request)
-    
+
     Attributes:
         crawlers_map (dict): 크롤러 타입을 키로, BaseCrawler 인스턴스를 값으로 하는 딕셔너리
     """
+
+    # get_availability_service 의존성이 요청마다 새 인스턴스를 생성하므로,
+    # 중복 실행 방지를 위한 in-flight set은 클래스 레벨에서 공유해야 한다.
+    _prefetch_in_flight: set = set()
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
         """서비스 초기화
@@ -100,7 +104,6 @@ class AvailabilityService:
         """
         self.crawlers_map = crawlers_map
         self.pricing_service = PricingService()
-        self._prefetch_in_flight: set = set()
 
     # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
@@ -376,6 +379,7 @@ class AvailabilityService:
                     continue
                 for item in res_list:
                     if not isinstance(item, RoomAvailability):
+                        logger.debug(f"[prefetch_all] 룸 단위 크롤링 실패: {item}")
                         continue
                     bid = item.room_detail.biz_item_id
                     if bid in merge_temp:

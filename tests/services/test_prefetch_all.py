@@ -21,10 +21,12 @@ FUTURE_DATE = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
 @pytest.fixture(autouse=True)
 def clear_cache():
-    """각 테스트 전후로 캐시를 비워 테스트 간 오염을 방지한다."""
+    """각 테스트 전후로 캐시 및 클래스 레벨 in-flight set을 초기화하여 테스트 간 오염을 방지한다."""
     availability_cache.clear()
+    AvailabilityService._prefetch_in_flight.clear()
     yield
     availability_cache.clear()
+    AvailabilityService._prefetch_in_flight.clear()
 
 
 def _make_request(**kwargs) -> AvailabilityRequest:
@@ -37,10 +39,10 @@ def _make_request(**kwargs) -> AvailabilityRequest:
     return AvailabilityRequest(**defaults)
 
 
-def _make_room(biz_item_id: str = "r1") -> RoomDetail:
+def _make_room(biz_item_id: str = "r1", business_id: str = "b1") -> RoomDetail:
     """테스트용 RoomDetail 팩토리."""
     return RoomDetail(
-        name="TestRoom", branch="Branch", business_id="b1", biz_item_id=biz_item_id,
+        name="TestRoom", branch="Branch", business_id=business_id, biz_item_id=biz_item_id,
         pricePerHour=10000, max_capacity=10, can_reserve_one_hour=True,
         requiresContactOnSameDay=False, recommend_capacity_range=[2, 4],
     )
@@ -70,13 +72,12 @@ def service(mock_crawler):
 
 @pytest.mark.asyncio
 async def test_prefetch_all_skips_pending_rooms(service, mock_crawler):
-    """is_pending()이 True인 룸은 크롤러에 전달되지 않는다."""
+    """is_pending()이 True인 룸은 target_rooms에서 제외되어 크롤러가 호출되지 않는다."""
     room = _make_room("r1")
     availability_cache.set(FUTURE_DATE, "14:00", "16:00", "r1", _make_avail(room))
 
     req = _make_request()
-    with patch("app.services.availability_service.get_rooms_by_criteria", return_value=[room]), \
-         patch("app.services.availability_service.filter_rooms_by_type", return_value=[]):
+    with patch("app.services.availability_service.get_rooms_by_criteria", return_value=[room]):
         await service.prefetch_all(req)
 
     mock_crawler.check_availability.assert_not_called()
@@ -87,16 +88,13 @@ async def test_prefetch_all_prevents_duplicate_execution(service, mock_crawler):
     """_prefetch_in_flight에 동일 키가 있으면 두 번째 호출은 DB 조회 없이 즉시 반환된다."""
     req = _make_request()
     lock_key = (req.date, req.start_hour, req.end_hour)
-    service._prefetch_in_flight.add(lock_key)
+    AvailabilityService._prefetch_in_flight.add(lock_key)
 
-    try:
-        with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db:
-            await service.prefetch_all(req)
+    with patch("app.services.availability_service.get_rooms_by_criteria") as mock_db:
+        await service.prefetch_all(req)
 
-        mock_db.assert_not_called()
-        mock_crawler.check_availability.assert_not_called()
-    finally:
-        service._prefetch_in_flight.discard(lock_key)
+    mock_db.assert_not_called()
+    mock_crawler.check_availability.assert_not_called()
 
 
 @pytest.mark.asyncio
