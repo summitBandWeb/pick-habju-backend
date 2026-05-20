@@ -93,13 +93,14 @@ class AvailabilityService:
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
         """서비스 초기화
-        
+
         Args:
             crawlers_map: 플랫폼 타입을 키로 하고 BaseCrawler 인스턴스를 값으로 하는 매핑 딕셔너리
                          예: {"dream": DreamCrawler(), "groove": GrooveCrawler()}
         """
         self.crawlers_map = crawlers_map
         self.pricing_service = PricingService()
+        self._prefetch_in_flight: set = set()
 
     # 시작시간과 종료시간으로 시간 슬롯 리스트 생성
     def generate_time_slots(self, start_str: str, end_str: str) -> List[str]:
@@ -288,6 +289,116 @@ class AvailabilityService:
             and any(v is True for v in res.available_slots.values())
         )
         
+
+    async def prefetch_all(self, request: AvailabilityRequest) -> None:
+        """백그라운드 프리페치: 서비스 지역 내 전체 룸의 예약 가능 여부를 미리 조회하여 캐시에 채워넣는다.
+
+        check_availability API 응답 직후 BackgroundTasks로 실행되며,
+        다음 사용자 요청 시 캐시에서 즉시 응답할 수 있도록 준비한다.
+
+        Args:
+            request: 원본 검색 요청. date/start_hour/end_hour을 공유 캐시 키로 사용한다.
+
+        Rationale:
+            _prefetch_in_flight set으로 동일 (date, start_hour, end_hour) 조합에 대한
+            중복 실행을 방지한다. asyncio 단일 스레드 특성 덕분에 별도 Lock 없이 안전하다.
+        """
+        lock_key = (request.date, request.start_hour, request.end_hour)
+        if lock_key in self._prefetch_in_flight:
+            logger.info(f"[prefetch_all] 이미 진행 중, 스킵: {lock_key}")
+            return
+        self._prefetch_in_flight.add(lock_key)
+
+        try:
+            # 1. 서비스 지역 내 전체 룸 조회 (capacity=1, 좌표 없음 → 서비스 지역 전체)
+            try:
+                all_rooms = await get_rooms_by_criteria(capacity=1)
+            except Exception as e:
+                logger.warning(f"[prefetch_all] DB 조회 실패, 조기 종료: {e}")
+                return
+
+            # 2. 이미 캐시 또는 inflight에 있는 룸 제외
+            target_rooms = [
+                room for room in all_rooms
+                if not availability_cache.is_pending(
+                    request.date, request.start_hour, request.end_hour, room.biz_item_id
+                )
+            ]
+
+            if not target_rooms:
+                logger.info(f"[prefetch_all] 프리페치 대상 없음 (전부 캐시/inflight): {lock_key}")
+                return
+
+            # 3. 시간 슬롯 생성
+            try:
+                hour_slots = self.generate_time_slots(request.start_hour, request.end_hour)
+            except ValueError as e:
+                logger.warning(f"[prefetch_all] 시간 슬롯 생성 실패: {e}")
+                return
+
+            slots_to_check = hour_slots[:-1]
+            start_mins = self._slot_to_minutes(request.start_hour)
+            end_min = self._slot_to_minutes(request.end_hour)
+            is_overnight = start_mins > end_min
+
+            if is_overnight:
+                day1_slots = [s for s in slots_to_check if self._slot_to_minutes(s) >= start_mins]
+                day2_slots = [s for s in slots_to_check if s not in day1_slots]
+                next_date = self._get_next_day_str(request.date)
+            else:
+                day1_slots = slots_to_check
+                day2_slots = []
+
+            # 4. 크롤러별 prefetch=True로 실행
+            tasks = []
+            for crawler_type, crawler in self.crawlers_map.items():
+                filtered = filter_rooms_by_type(target_rooms, crawler_type)
+                if not filtered:
+                    continue
+                if is_overnight:
+                    if day1_slots:
+                        tasks.append(crawler.check_availability(request.date, day1_slots, filtered, prefetch=True))
+                    if day2_slots:
+                        tasks.append(crawler.check_availability(next_date, day2_slots, filtered, prefetch=True))
+                else:
+                    tasks.append(crawler.check_availability(request.date, day1_slots, filtered, prefetch=True))
+
+            if not tasks:
+                return
+
+            results_of_lists = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # 5. overnight 결과 병합 및 캐시 저장
+            merge_temp: Dict[str, RoomAvailability] = {}
+            for res_list in results_of_lists:
+                if isinstance(res_list, Exception):
+                    logger.warning(f"[prefetch_all] 크롤러 배치 실패: {res_list}")
+                    continue
+                for item in res_list:
+                    if not isinstance(item, RoomAvailability):
+                        continue
+                    bid = item.room_detail.biz_item_id
+                    if bid in merge_temp:
+                        existing = merge_temp[bid]
+                        if existing.available != item.available:
+                            existing.available = False
+                        existing.available_slots.update(item.available_slots)
+                    else:
+                        merge_temp[bid] = item
+
+            for bid, result in merge_temp.items():
+                availability_cache.set(
+                    request.date, request.start_hour, request.end_hour, bid, result
+                )
+
+            logger.info(
+                f"[prefetch_all] 완료: date={request.date} {request.start_hour}-{request.end_hour} | "
+                f"대상={len(target_rooms)}개 | 저장={len(merge_temp)}개"
+            )
+        except Exception as e:
+            logger.warning(f"[prefetch_all] 예상치 못한 오류: {e}")
+        finally:
+            self._prefetch_in_flight.discard(lock_key)
 
     async def check_availability(self, request: AvailabilityRequest) -> AvailabilityResponse:
         """조건에 맞는 합주실들의 예약 가능 여부를 일괄 조회합니다.
