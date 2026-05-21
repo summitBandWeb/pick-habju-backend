@@ -93,6 +93,8 @@ class AvailabilityService:
 
     # get_availability_service 의존성이 요청마다 새 인스턴스를 생성하므로,
     # 중복 실행 방지를 위한 in-flight set은 클래스 레벨에서 공유해야 한다.
+    # NOTE: 단일 프로세스(워커) 환경에서만 중복 방지 보장.
+    #       멀티 워커 배포 시 Redis 기반 분산 락으로 교체 필요.
     _prefetch_in_flight: set = set()
 
     def __init__(self, crawlers_map: dict[str, BaseCrawler]):
@@ -300,7 +302,11 @@ class AvailabilityService:
         다음 사용자 요청 시 캐시에서 즉시 응답할 수 있도록 준비한다.
 
         Args:
-            request: 원본 검색 요청. date/start_hour/end_hour을 공유 캐시 키로 사용한다.
+            request: 원본 검색 요청.
+
+        Note:
+            request의 date, start_hour, end_hour만 사용한다.
+            capacity, swLat 등 뷰포트 필드는 무시되며, 서비스 지역 전체 룸(capacity=1)을 대상으로 한다.
 
         Rationale:
             _prefetch_in_flight set으로 동일 (date, start_hour, end_hour) 조합에 대한
@@ -387,6 +393,11 @@ class AvailabilityService:
                         if existing.available != item.available:
                             existing.available = False
                         existing.available_slots.update(item.available_slots)
+                        # overnight 분할 결과 가격 누산 (check_availability 병합 로직과 동일)
+                        if isinstance(existing.estimated_price, int) and isinstance(item.estimated_price, int):
+                            existing.estimated_price += item.estimated_price
+                        elif isinstance(item.estimated_price, int):
+                            existing.estimated_price = item.estimated_price
                     else:
                         merge_temp[bid] = item
 

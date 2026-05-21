@@ -155,7 +155,7 @@ async def test_prefetch_all_inflight_cleared_after_completion(service, mock_craw
          patch("app.services.availability_service.filter_rooms_by_type", return_value=[room]):
         await service.prefetch_all(req)
 
-    assert lock_key not in service._prefetch_in_flight
+    assert lock_key not in AvailabilityService._prefetch_in_flight
 
 
 @pytest.mark.asyncio
@@ -167,4 +167,33 @@ async def test_prefetch_all_inflight_cleared_on_db_failure(service, mock_crawler
     with patch("app.services.availability_service.get_rooms_by_criteria", side_effect=Exception("DB 오류")):
         await service.prefetch_all(req)
 
-    assert lock_key not in service._prefetch_in_flight
+    assert lock_key not in AvailabilityService._prefetch_in_flight
+
+
+@pytest.mark.asyncio
+async def test_prefetch_all_overnight_merges_day1_and_day2(service, mock_crawler):
+    """overnight(start > end) 요청 시 day1/day2 크롤러 결과가 병합되어 캐시에 저장된다."""
+    room = _make_room("r1")
+    day1_avail = RoomAvailability(
+        room_detail=room, available=True,
+        available_slots={"23:00": True},
+        estimated_price=10000,
+    )
+    day2_avail = RoomAvailability(
+        room_detail=room, available=True,
+        available_slots={"00:00": True, "01:00": True},
+        estimated_price=20000,
+    )
+    mock_crawler.check_availability.side_effect = [[day1_avail], [day2_avail]]
+
+    req = _make_request(start_hour="23:00", end_hour="02:00")
+    with patch("app.services.availability_service.get_rooms_by_criteria", return_value=[room]), \
+         patch("app.services.availability_service.filter_rooms_by_type", return_value=[room]):
+        await service.prefetch_all(req)
+
+    assert mock_crawler.check_availability.call_count == 2
+
+    cached = availability_cache.get(FUTURE_DATE, "23:00", "02:00", "r1")
+    assert cached is not None
+    assert cached.available_slots == {"23:00": True, "00:00": True, "01:00": True}
+    assert cached.estimated_price == 30000  # day1(10000) + day2(20000) 누산
