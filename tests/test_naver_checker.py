@@ -1,6 +1,7 @@
 # tests/test_naver_checker.py
 import pytest
 import os
+import importlib
 
 from datetime import datetime, timedelta
 from app.crawler.naver_checker import NaverCrawler
@@ -8,6 +9,30 @@ from app.models.dto import RoomDetail
 from app.utils.room_loader import get_rooms_by_criteria
 
 RUN_EXTERNAL_TESTS = os.getenv("RUN_EXTERNAL_TESTS") == "1"
+
+
+def test_semaphore_default_values(monkeypatch):
+    """NAVER_CRAWLER_SEMAPHORE, NAVER_PREFETCH_SEMAPHORE 미설정 시 기본값이 60인지 확인."""
+    monkeypatch.delenv("NAVER_CRAWLER_SEMAPHORE", raising=False)
+    monkeypatch.delenv("NAVER_PREFETCH_SEMAPHORE", raising=False)
+
+    import app.crawler.naver_checker as m
+    importlib.reload(m)
+
+    assert m.NaverCrawler._semaphore._value == 60
+    assert m.NaverCrawler._prefetch_semaphore._value == 60
+
+
+def test_semaphore_invalid_env(monkeypatch):
+    """환경변수에 정수로 변환 불가한 값이 있을 때 기본값 60으로 폴백하는지 확인."""
+    monkeypatch.setenv("NAVER_CRAWLER_SEMAPHORE", "abc")
+    monkeypatch.setenv("NAVER_PREFETCH_SEMAPHORE", "xyz")
+
+    import app.crawler.naver_checker as m
+    importlib.reload(m)
+
+    assert m.NaverCrawler._semaphore._value == 60
+    assert m.NaverCrawler._prefetch_semaphore._value == 60
 
 
 @pytest.mark.skipif(
