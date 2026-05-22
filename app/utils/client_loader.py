@@ -16,14 +16,14 @@ async def set_global_client():
     
     HTTP/2 지원 및 연결 풀 최적화 설정:
     - Timeout: 전체 10초, 연결 5초
-    - 연결 풀: 최대 100개 연결, keepalive 20개
+    - 연결 풀: 최대 150개 연결, keepalive 60개
     """
     global _shared_client
     async with _client_lock:
         if _shared_client is None:
             _shared_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
-                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                limits=httpx.Limits(max_keepalive_connections=60, max_connections=150),
                 http2=True,
             )
 
