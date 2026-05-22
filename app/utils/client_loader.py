@@ -23,6 +23,7 @@ async def set_global_client():
         if _shared_client is None:
             _shared_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
+                # _semaphore(60) + _prefetch_semaphore(60) = 최대 120 동시 연결이므로 max_connections=150으로 여유분 확보
                 limits=httpx.Limits(max_keepalive_connections=60, max_connections=150),
                 http2=True,
             )

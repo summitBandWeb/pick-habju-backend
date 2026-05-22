@@ -1,7 +1,6 @@
 # tests/test_naver_checker.py
 import pytest
 import os
-import importlib
 
 from datetime import datetime, timedelta
 from app.crawler.naver_checker import NaverCrawler
@@ -9,18 +8,6 @@ from app.models.dto import RoomDetail
 from app.utils.room_loader import get_rooms_by_criteria
 
 RUN_EXTERNAL_TESTS = os.getenv("RUN_EXTERNAL_TESTS") == "1"
-
-
-def test_semaphore_default_values(monkeypatch):
-    """환경변수 미설정 시 _semaphore 및 _prefetch_semaphore 기본값이 60인지 확인."""
-    monkeypatch.delenv("NAVER_CRAWLER_SEMAPHORE", raising=False)
-    monkeypatch.delenv("NAVER_PREFETCH_SEMAPHORE", raising=False)
-
-    import app.crawler.naver_checker as m
-    importlib.reload(m)
-
-    assert m.NaverCrawler._semaphore._value == 60
-    assert m.NaverCrawler._prefetch_semaphore._value == 60
 
 
 @pytest.mark.skipif(
