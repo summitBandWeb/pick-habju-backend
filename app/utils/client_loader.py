@@ -16,14 +16,15 @@ async def set_global_client():
     
     HTTP/2 지원 및 연결 풀 최적화 설정:
     - Timeout: 전체 10초, 연결 5초
-    - 연결 풀: 최대 100개 연결, keepalive 20개
+    - 연결 풀: 최대 150개 연결, keepalive 60개
     """
     global _shared_client
     async with _client_lock:
         if _shared_client is None:
             _shared_client = httpx.AsyncClient(
                 timeout=httpx.Timeout(10.0, connect=5.0),
-                limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                # _semaphore(60) + _prefetch_semaphore(60) = 최대 120 동시 연결이므로 max_connections=150으로 여유분 확보
+                limits=httpx.Limits(max_keepalive_connections=60, max_connections=150),
                 http2=True,
             )
 
@@ -54,7 +55,7 @@ def get_global_client() -> httpx.AsyncClient | None:
 async def _retry_request(client: httpx.AsyncClient, url: str, max_retries: int = 2, **kwargs):
     """재시도 로직을 분리한 헬퍼 함수.
     
-    네트워크 오류나 5xx 서버 에러 발생 시 지수 백오프로 재시도합니다.
+    네트워크 오류나 5xx 서버 에러 발생 시 선형 백오프로 재시도합니다.
     
     Args:
         client: HTTP 클라이언트 인스턴스
@@ -70,7 +71,7 @@ async def _retry_request(client: httpx.AsyncClient, url: str, max_retries: int =
     """
     for attempt in range(max_retries):
         try:
-            # 지수 백오프: 0.2초, 0.4초, 0.6초...
+            # 선형 백오프: 0.2초, 0.4초
             await asyncio.sleep(0.2 * (attempt + 1))
             response = await client.post(url, **kwargs)
             response.raise_for_status()

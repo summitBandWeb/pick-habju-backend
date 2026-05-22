@@ -2,7 +2,7 @@
 import pytest
 import httpx
 from unittest.mock import AsyncMock, patch, MagicMock
-from app.utils.client_loader import load_client
+from app.utils.client_loader import load_client, set_global_client
 from app.exception.api.client_loader_exception import RequestFailedError
 
 @pytest.mark.asyncio
@@ -59,3 +59,25 @@ async def test_no_retry_on_404():
 
     # 검증
     assert mock_client_instance.post.call_count == 1  # 재시도 없이 1번만 호출되어야 함
+
+
+@pytest.mark.asyncio
+async def test_global_client_limits():
+    """set_global_client()가 keepalive=60, max_connections=150 으로 클라이언트를 초기화하는지 확인."""
+    import app.utils.client_loader as m
+
+    # 테스트 환경에서는 _shared_client가 None이지만, 만약 앱이 초기화된 상태라면
+    # 기존 인스턴스를 보존하고 테스트 후 복원한다. _client_lock 상태는 건드리지 않으므로
+    # 프로덕션 환경에서의 동시 실행에는 적합하지 않다.
+    original = m._shared_client
+    m._shared_client = None
+
+    try:
+        with patch("app.utils.client_loader.httpx.AsyncClient") as mock_cls:
+            await set_global_client()
+
+            limits = mock_cls.call_args.kwargs["limits"]
+            assert limits.max_keepalive_connections == 60
+            assert limits.max_connections == 150
+    finally:
+        m._shared_client = original
